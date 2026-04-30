@@ -114,7 +114,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get selectAll => '全选';
 
   @override
-  String get clearAll => '清空';
+  String get clearAll => '清除全部';
 
   @override
   String get noAppsFound => '没有找到应用';
@@ -391,10 +391,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get screenshotSectionDesc => '间隔/质量/过期清理';
 
   @override
-  String get segmentSummarySectionTitle => '时间段总结';
+  String get segmentSummarySectionTitle => '动态设置';
 
   @override
-  String get segmentSummarySectionDesc => '采样/时长/AI 请求间隔';
+  String get segmentSummarySectionDesc => '采样 / 时长 / 合并 / AI 请求间隔';
 
   @override
   String get dailyReminderSectionTitle => '每日总结提醒';
@@ -2568,4 +2568,894 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get evidenceTitle => '证据';
+
+  @override
+  String get runtimeDiagnosticCopied => '诊断信息已复制';
+
+  @override
+  String get runtimeDiagnosticCopyFailed => '复制诊断信息失败';
+
+  @override
+  String get runtimeDiagnosticNoFileToOpen => '当前没有可打开的诊断文件';
+
+  @override
+  String get runtimeDiagnosticOpenAttempted => '已尝试打开诊断文件';
+
+  @override
+  String get runtimeDiagnosticOpenFallbackCopiedPath => '无法直接打开，已复制日志路径';
+
+  @override
+  String get runtimeDiagnosticCopyInfoAction => '复制信息';
+
+  @override
+  String get runtimeDiagnosticOpenFileAction => '打开此文件';
+
+  @override
+  String get runtimeDiagnosticOpenSettingsAction => '打开设置';
+
+  @override
+  String get importDiagnosticsReportCopied => '已复制诊断报告';
+
+  @override
+  String get importDiagnosticsNoRepairableOcr => '没有待修复的图片文字，诊断已刷新';
+
+  @override
+  String get importDiagnosticsOcrRepairStarted => '已在后台开始修复，可在通知栏查看进度';
+
+  @override
+  String get importDiagnosticsOcrRepairResumed => '后台修复任务已恢复，可在通知栏查看进度';
+
+  @override
+  String get importDiagnosticsOcrRepairStopped => '图片文字修复已停止';
+
+  @override
+  String get importDiagnosticsStopRepairFailed => '停止修复失败';
+
+  @override
+  String get importDiagnosticsTitle => '导入诊断';
+
+  @override
+  String get importDiagnosticsFailedTitle => '诊断失败';
+
+  @override
+  String importDiagnosticsDurationMs(Object durationMs) {
+    return '耗时：${durationMs}ms';
+  }
+
+  @override
+  String get importDiagnosticsBackgroundRepairTask => '后台修复任务';
+
+  @override
+  String get importDiagnosticsStopRepair => '停止修复';
+
+  @override
+  String get importDiagnosticsRepairIndex => '修复索引';
+
+  @override
+  String get memoryTabView => '查看记忆';
+
+  @override
+  String get memoryTabRebuild => '一键重建';
+
+  @override
+  String memorySignalStatusChip(Object label, Object count) {
+    return '$label $count';
+  }
+
+  @override
+  String get memoryForceCreate => '强制新建';
+
+  @override
+  String get actionIgnore => '忽略';
+
+  @override
+  String get memoryGenerateSuggestions => '生成建议';
+
+  @override
+  String get memoryApplyAllSuggestions => '全部应用';
+
+  @override
+  String get memoryApplyThisSuggestion => '应用这条';
+
+  @override
+  String get memoryDontApplySuggestion => '不应用';
+
+  @override
+  String get memoryCopyError => '复制错误';
+
+  @override
+  String get actionDescription => '说明';
+
+  @override
+  String get memoryRebuildAction => '一键重建';
+
+  @override
+  String get actionStop => '停止';
+
+  @override
+  String get memoryUriInputHint => '输入 URI（如 core://my_user）';
+
+  @override
+  String get memorySearchHint => '搜索记忆内容/路径…';
+
+  @override
+  String get memoryRoot => '根';
+
+  @override
+  String get memoryParent => '上级';
+
+  @override
+  String get memoryBoot => 'boot';
+
+  @override
+  String get memoryRecent => 'recent';
+
+  @override
+  String get memoryIndex => 'index';
+
+  @override
+  String get providerAddAtLeastOneEnabledApiKey => '请至少添加一个已启用的 API Key。';
+
+  @override
+  String get providerSaveBeforeBatchTest => '请先保存提供商，再执行批量测试。';
+
+  @override
+  String get providerKeepOneEnabledApiKey => '请至少保留一个已启用且非空的 API Key。';
+
+  @override
+  String get providerBatchTestFailed => '批量测试执行失败，请稍后重试。';
+
+  @override
+  String get providerBatchTestResultTitle => '批量测试结果';
+
+  @override
+  String get actionClose => '关闭';
+
+  @override
+  String get providerOnlyOneApiKeyCanEdit => '一次只能编辑一个 API Key';
+
+  @override
+  String get providerAddApiKey => 'Add API Key';
+
+  @override
+  String get providerEditApiKey => 'Edit API Key';
+
+  @override
+  String get providerFetchModelsAndBalance => '获取模型与余额';
+
+  @override
+  String get actionSaving => '保存中';
+
+  @override
+  String get providerFetchModelsFailedManual => '获取模型失败，可以手动添加。';
+
+  @override
+  String providerDeletedApiKeys(Object count) {
+    return '已删除 $count 个 API Key';
+  }
+
+  @override
+  String get providerAddKeyButton => '新增 Key';
+
+  @override
+  String get providerBatchTestButton => '批量测试';
+
+  @override
+  String get providerDeleteAllKeys => '删除全部';
+
+  @override
+  String get providerNoApiKeys => '暂无 API Key。';
+
+  @override
+  String get balanceEndpointNone => '不查询';
+
+  @override
+  String get balanceEndpointNewApi => 'new-api（/dashboard/billing）';
+
+  @override
+  String get balanceEndpointSub2api => 'sub2api（/v1/usage）';
+
+  @override
+  String get segmentEntryLogHint => '直接长按选择文本，或点复制按钮一次性复制。';
+
+  @override
+  String get segmentEntryLogCopied => '已复制动态进入日志';
+
+  @override
+  String get copyLogAction => '复制日志';
+
+  @override
+  String get segmentDynamicConcurrencySaveFailed => '保存并发天数失败';
+
+  @override
+  String get dynamicAutoRepairEnabled => '自动补建已开启';
+
+  @override
+  String get dynamicAutoRepairPaused => '自动补建已暂停';
+
+  @override
+  String get dynamicAutoRepairToggleFailed => '切换自动补建失败';
+
+  @override
+  String get dynamicRebuildStart => '开始重建';
+
+  @override
+  String get dynamicRebuildContinue => '继续重建';
+
+  @override
+  String savedToPath(Object path) {
+    return '已保存到：$path';
+  }
+
+  @override
+  String get dynamicRebuildNoSegments => '没有可重建的动态';
+
+  @override
+  String dynamicRebuildSwitchedModelContinue(Object model) {
+    return '已切换到模型 $model 继续重建';
+  }
+
+  @override
+  String get dynamicRebuildStartedInBackground => '已在后台开始重建，可在通知栏查看进度';
+
+  @override
+  String get dynamicRebuildTaskResumed => '后台重建任务已恢复';
+
+  @override
+  String get dynamicRebuildStopped => '动态重建已停止';
+
+  @override
+  String get dynamicRebuildStopFailed => '停止动态重建失败';
+
+  @override
+  String get dynamicRebuildBlockedRetry => '全量重建进行中，暂时禁止单条重新生成';
+
+  @override
+  String get dynamicRebuildBlockedForceMerge => '全量重建进行中，暂时禁止手动强制合并';
+
+  @override
+  String get rawResponseRetentionDaysTitle => '设置保留天数';
+
+  @override
+  String get rawResponseRetentionDaysLabel => '保留天数';
+
+  @override
+  String get rawResponseRetentionDaysHint => '请输入大于 0 的天数';
+
+  @override
+  String get rawResponseCleanupSaved => '原始响应清理设置已保存';
+
+  @override
+  String get chatContextTitlePrefix => '对话上下文（压缩/';
+
+  @override
+  String get chatContextTitleMemory => '记忆';
+
+  @override
+  String get chatContextTitleSuffix => '）';
+
+  @override
+  String rawResponseRetentionUpdatedDays(Object days) {
+    return '已更新为保留 $days 天';
+  }
+
+  @override
+  String get homeMorningTipsUpdated => '晨间提示已更新';
+
+  @override
+  String get homeMorningTipsGenerateFailed => '晨间提示生成失败';
+
+  @override
+  String eventCreateFailed(Object error) {
+    return 'Create failed: $error';
+  }
+
+  @override
+  String eventSwitchFailed(Object error) {
+    return 'Switch failed: $error';
+  }
+
+  @override
+  String get eventSessionSwitched => '已切换会话';
+
+  @override
+  String get eventSessionDeleted => '会话已删除';
+
+  @override
+  String get exclusionExcludedAppsTitle => '已排除的应用';
+
+  @override
+  String get exclusionSelfAppBullet => '· 本应用（避免自循环）';
+
+  @override
+  String get exclusionImeAppsBullet => '· 输入法（键盘）应用：';
+
+  @override
+  String get exclusionAutoFilteredBullet => '  - （已自动过滤）';
+
+  @override
+  String get exclusionUnknownIme => '未知输入法';
+
+  @override
+  String exclusionImeAppBullet(Object name) {
+    return '  - $name';
+  }
+
+  @override
+  String get imageError => 'Image Error';
+
+  @override
+  String get logDetailTitle => '日志详情';
+
+  @override
+  String get logLevelAll => '全部';
+
+  @override
+  String get logLevelDebugVerbose => '调试/详细';
+
+  @override
+  String get logLevelInfo => '信息';
+
+  @override
+  String get logLevelWarning => '警告';
+
+  @override
+  String get logLevelErrorSevere => '错误/严重';
+
+  @override
+  String get logSearchHint => '搜索（标题/内容/异常/堆栈）';
+
+  @override
+  String onboardingPermissionLoadFailed(Object error) {
+    return '加载权限状态失败: $error';
+  }
+
+  @override
+  String get permissionGuideSettingsOpened => '已打开应用设置页面，请按照指南进行设置';
+
+  @override
+  String permissionGuideOpenSettingsFailed(Object error) {
+    return '打开设置页面失败: $error';
+  }
+
+  @override
+  String get permissionGuideBatteryOpened => '已打开电池优化设置页面';
+
+  @override
+  String permissionGuideOpenBatteryFailed(Object error) {
+    return '打开电池优化设置失败: $error';
+  }
+
+  @override
+  String get permissionGuideAutostartOpened => '已打开自启动设置页面';
+
+  @override
+  String permissionGuideOpenAutostartFailed(Object error) {
+    return '打开自启动设置失败: $error';
+  }
+
+  @override
+  String get permissionGuideCompleted => '权限设置已标记为完成';
+
+  @override
+  String permissionGuideCompleteFailed(Object error) {
+    return '标记权限设置失败: $error';
+  }
+
+  @override
+  String get permissionGuideTitle => '权限设置指南';
+
+  @override
+  String get permissionGuideOpenAppSettings => '打开应用设置页面';
+
+  @override
+  String get permissionGuideOpenBatterySettings => '打开电池优化设置';
+
+  @override
+  String get permissionGuideOpenAutostartSettings => '打开自启动设置';
+
+  @override
+  String get permissionGuideAllDone => '我已完成所有设置';
+
+  @override
+  String get galleryDeleting => '正在删除...';
+
+  @override
+  String get galleryCleaningCache => '正在清理缓存...';
+
+  @override
+  String get favoriteRemoved => '已取消收藏';
+
+  @override
+  String get favoriteAdded => '已添加到收藏';
+
+  @override
+  String operationFailedWithError(Object error) {
+    return '操作失败: $error';
+  }
+
+  @override
+  String get searchSemantic => '搜索语义';
+
+  @override
+  String get searchDynamic => '搜索动态';
+
+  @override
+  String get searchMore => '搜索更多';
+
+  @override
+  String get openDailySummary => '打开每日总结';
+
+  @override
+  String get openWeeklySummary => '打开周总结';
+
+  @override
+  String get noAvailableTags => '暂无可用标签';
+
+  @override
+  String get clearFilter => '清除筛选';
+
+  @override
+  String get forceMerge => '强制合并';
+
+  @override
+  String get forceMergeNoPrevious => '没有可合并的上一事件';
+
+  @override
+  String get forceMergeQueuedFailed => '强制合并入队失败';
+
+  @override
+  String get forceMergeQueued => '强制合并已入队';
+
+  @override
+  String get forceMergeFailed => '强制合并失败';
+
+  @override
+  String get mergeCompleted => '合并完成';
+
+  @override
+  String get numberInputRequired => '请输入数字';
+
+  @override
+  String valueSaved(Object value) {
+    return '已保存：$value';
+  }
+
+  @override
+  String openChannelSettingsFailed(Object error) {
+    return 'Open channel settings failed: $error';
+  }
+
+  @override
+  String openAppNotificationSettingsFailed(Object error) {
+    return 'Open app notification settings failed: $error';
+  }
+
+  @override
+  String get evidencePrefix => '[evidence: ';
+
+  @override
+  String get actionMenu => '菜单';
+
+  @override
+  String get actionShare => '分享';
+
+  @override
+  String get actionResetToDefault => '恢复默认';
+
+  @override
+  String homeMorningTipNumberedTitle(Object index, Object title) {
+    return '$index. $title';
+  }
+
+  @override
+  String get homeMorningTipsRawTitle => '晨间提示 RAW';
+
+  @override
+  String labelWithColon(Object label) {
+    return '$label：';
+  }
+
+  @override
+  String warningBullet(Object warning) {
+    return '• $warning';
+  }
+
+  @override
+  String resetToDefaultValue(Object value) {
+    return '已恢复默认：$value';
+  }
+
+  @override
+  String get logPanelTitle => '日志面板';
+
+  @override
+  String get logCopiedToClipboard => '已复制到剪贴板';
+
+  @override
+  String get logShareText => 'ScreenMemo 日志';
+
+  @override
+  String get logShareFailed => '分享失败';
+
+  @override
+  String get logCleared => '已清空';
+
+  @override
+  String get logClearFailed => '清空失败';
+
+  @override
+  String get logNoLogs => '暂无日志';
+
+  @override
+  String get logNoMatchingLogs => '没有匹配的日志';
+
+  @override
+  String get logFilterTooltip => '筛选';
+
+  @override
+  String get logSortNewestFirst => '最新在前';
+
+  @override
+  String get logSortOldestFirst => '最早在前';
+
+  @override
+  String get logLevelCritical => '严重';
+
+  @override
+  String get logLevelError => '错误';
+
+  @override
+  String get logLevelVerbose => '详细';
+
+  @override
+  String get logLevelDebug => '调试';
+
+  @override
+  String get eventNewConversation => '新建会话';
+
+  @override
+  String get forceMergeConfirmMessage =>
+      '将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？';
+
+  @override
+  String get forceMergeRequestedReason => '已请求强制合并（排队中）';
+
+  @override
+  String get mergeStatusMerging => '强制合并中…';
+
+  @override
+  String get mergeStatusMerged => '已合并';
+
+  @override
+  String get mergeStatusForceRequested => '已请求强制合并';
+
+  @override
+  String get mergeStatusNotMerged => '未合并';
+
+  @override
+  String get mergeStatusPending => '待判定';
+
+  @override
+  String get semanticSearchNotStartedTitle => '语义搜索未开始';
+
+  @override
+  String get semanticSearchNotStartedDesc =>
+      '这里会搜索图片的 AI 描述/关键词/标签。为避免输入时卡顿，需要手动触发搜索。';
+
+  @override
+  String get segmentSearchNotStartedTitle => '动态搜索未开始';
+
+  @override
+  String get segmentSearchNotStartedDesc => '为避免输入时卡顿，需要手动触发搜索。';
+
+  @override
+  String foundImagesCount(Object count) {
+    return '找到 $count 张图片';
+  }
+
+  @override
+  String get tagsLabel => '标签';
+
+  @override
+  String tagCount(Object count) {
+    return '$count个标签';
+  }
+
+  @override
+  String get tagFilterTitle => '标签筛选';
+
+  @override
+  String get selectedAllLabel => '全部';
+
+  @override
+  String selectedTagsCount(Object count) {
+    return '已选$count个';
+  }
+
+  @override
+  String selectedTypesCount(Object count) {
+    return '已选$count类';
+  }
+
+  @override
+  String confirmSelectionLabel(Object selection) {
+    return '确定 ($selection)';
+  }
+
+  @override
+  String get noContentParenthesized => '（无内容）';
+
+  @override
+  String get typeFilterTitle => '类型筛选';
+
+  @override
+  String get rawResponseCleanupEnableTitle => '开启原始响应自动清理';
+
+  @override
+  String rawResponseCleanupEnableMessage(Object days) {
+    return '将自动清理 $days 天前的 raw_response，仅释放调试/原始响应占用，不影响摘要与 structured_json。';
+  }
+
+  @override
+  String get rawResponseCleanupEnableAction => '开启并立即清理';
+
+  @override
+  String get segmentsJsonAutoRetryHint => '次数（0-5）';
+
+  @override
+  String get rawResponseCleanupTitle => '原始响应自动清理';
+
+  @override
+  String get rawResponseCleanupKeepLabel => '保留';
+
+  @override
+  String rawResponseCleanupRetentionDays(Object days) {
+    return '$days 天';
+  }
+
+  @override
+  String get rawResponseCleanupDesc =>
+      '仅清理旧 raw_response，不影响摘要与 structured_json';
+
+  @override
+  String get mergeStatusMergingReason => '正在合并，请稍候…';
+
+  @override
+  String get permissionGuideLoading => '正在加载权限设置指南...';
+
+  @override
+  String get permissionGuideUnavailable => '无法获取权限设置指南';
+
+  @override
+  String get permissionGuideUnknownDevice => '未知设备';
+
+  @override
+  String permissionGuideLoadFailed(Object error) {
+    return '加载权限设置指南失败: $error';
+  }
+
+  @override
+  String get deviceInfoTitle => '设备信息';
+
+  @override
+  String get setupGuideTitle => '设置指南';
+
+  @override
+  String get permissionConfiguredStatus => '已配置';
+
+  @override
+  String get permissionNeedsConfigurationStatus => '需要配置';
+
+  @override
+  String get backgroundPermissionTitle => '后台运行权限';
+
+  @override
+  String get actualBatteryOptimizationStatusTitle => '实际电池优化状态';
+
+  @override
+  String get keyDialogProviderNotSavedHint => '请先保存提供商，再添加 API Key。';
+
+  @override
+  String get keyDialogNameLabel => 'Key 名称';
+
+  @override
+  String get keyDialogApiKeyLabel => 'API Key';
+
+  @override
+  String get keyDialogApiKeyLabelMulti => 'API Key（每行一个）';
+
+  @override
+  String get keyDialogApiKeyHintMulti => '每行一个 API Key，获取按钮会逐个扫描。';
+
+  @override
+  String get keyDialogPriorityLabel => '优先级（100 = 动态分配）';
+
+  @override
+  String get keyDialogModelsLabel => '支持的模型（每行一个）';
+
+  @override
+  String get keyDialogPhaseFetchModels => '获取模型';
+
+  @override
+  String get keyDialogPhaseFetchBalance => '获取余额';
+
+  @override
+  String get keyDialogPhaseScanKeys => '扫描 Key';
+
+  @override
+  String get keyDialogPhaseSaveKeys => '保存 Key';
+
+  @override
+  String get keyDialogPhaseSaveKey => '保存 Key';
+
+  @override
+  String get keyDialogPhaseSaveBalance => '保存余额';
+
+  @override
+  String get keyDialogPhaseFetchComplete => '获取完成';
+
+  @override
+  String get keyDialogPhaseSaveFailed => '保存失败';
+
+  @override
+  String get keyDialogFallbackKeyName => '当前 Key';
+
+  @override
+  String keyDialogPreparingScan(int count) {
+    return '准备扫描 $count 个 API Key…';
+  }
+
+  @override
+  String keyDialogFetchingModelsFor(String label) {
+    return '正在获取 $label 的模型…';
+  }
+
+  @override
+  String keyDialogFetchingBalanceFor(String label) {
+    return '正在获取 $label 的余额…';
+  }
+
+  @override
+  String keyDialogModelFetchFailed(String label, String error) {
+    return '$label 获取模型失败：$error';
+  }
+
+  @override
+  String keyDialogBalanceFetchFailed(String label, String error) {
+    return '$label 获取余额失败：$error';
+  }
+
+  @override
+  String keyDialogModelsCountText(int count) {
+    return '$count 个模型';
+  }
+
+  @override
+  String get keyDialogModelFetchSkipped => '获取模型失败，已跳过';
+
+  @override
+  String keyDialogBalanceSuffixSuccess(String value) {
+    return '，余额：$value';
+  }
+
+  @override
+  String get keyDialogBalanceSuffixFailed => '，余额失败';
+
+  @override
+  String keyDialogScanLine(
+    String label,
+    String modelMessage,
+    String balanceMessage,
+  ) {
+    return '$label：$modelMessage$balanceMessage';
+  }
+
+  @override
+  String keyDialogModelFetchSummarySuccess(
+    int ok,
+    int total,
+    int merged,
+    String balanceHint,
+    String failedHint,
+  ) {
+    return '模型获取完成：$ok/$total 个 Key 成功，合并 $merged 个模型$balanceHint$failedHint';
+  }
+
+  @override
+  String get keyDialogModelFetchSummaryNone => '未获取到任何模型，当前手填模型列表未变更。';
+
+  @override
+  String get keyDialogPreparingSave => '准备保存…';
+
+  @override
+  String keyDialogSavingItem(String label) {
+    return '正在保存 $label…';
+  }
+
+  @override
+  String keyDialogSavingBalanceItem(String label) {
+    return '正在保存 $label 的余额…';
+  }
+
+  @override
+  String keyDialogImportedKeys(
+    int count,
+    String balanceHint,
+    String skippedHint,
+  ) {
+    return '已导入 $count 个 API Key$balanceHint$skippedHint';
+  }
+
+  @override
+  String keyDialogApiKeySaved(String balanceHint) {
+    return 'API Key 已保存$balanceHint';
+  }
+
+  @override
+  String get keyDialogNoNewKey => '没有新增 Key：输入的 API Key 已全部存在。';
+
+  @override
+  String keyDialogSaveFailed(String error) {
+    return '保存 API Key 失败：$error';
+  }
+
+  @override
+  String keyDialogBalanceHintFraction(int ok, int total) {
+    return '，余额 $ok/$total';
+  }
+
+  @override
+  String keyDialogSkippedDuplicates(int count) {
+    return '，跳过 $count 个重复 Key';
+  }
+
+  @override
+  String keyDialogFailedItemsHint(int count) {
+    return '，$count 项失败';
+  }
+
+  @override
+  String keyDialogFinalSummary(
+    int modelOk,
+    int modelTotal,
+    int balanceOk,
+    int balanceTotal,
+  ) {
+    return '模型 $modelOk/$modelTotal，余额 $balanceOk/$balanceTotal';
+  }
+
+  @override
+  String get segmentSampleIntervalExplain =>
+      '在单个动态段内生成总结时，每隔多久从截图中采样一帧。值越小细节越多，但消耗的 token 也更多；值越大更省，但可能错过短暂事件。';
+
+  @override
+  String get segmentDurationExplain =>
+      '单个动态段的最长时长，超过后会自动开启新段。段越短总结越精细，越长则覆盖更广的上下文。';
+
+  @override
+  String get dynamicMergeMaxSpanExplain => '相邻多个动态段允许被合并成一条总结的总跨度上限。0 表示不限制。';
+
+  @override
+  String get dynamicMergeMaxGapExplain => '两个相邻动态段之间允许的最大空白时长，超过则不再合并。0 表示不限制。';
+
+  @override
+  String get dynamicMergeMaxImagesExplain =>
+      '一次合并总结里送给模型的最大截图数量。值越高上下文越完整，但耗时与费用也会增加。0 表示不限制。';
+
+  @override
+  String get aiRequestIntervalExplain =>
+      '应用对外发起 AI 请求的最小间隔。提供商触发限速、或希望整体节省时，可以适当调大。';
+
+  @override
+  String get segmentsJsonAutoRetryTitle => '自动重试次数';
+
+  @override
+  String segmentsJsonAutoRetryDesc(int count) {
+    return '当 AI 返回的内容不符合要求时，自动重新请求的次数（0 = 关闭，默认 1）。当前：$count';
+  }
+
+  @override
+  String get segmentsJsonAutoRetryExplain =>
+      'AI 偶尔会返回无法解析或不符合所需结构的内容。开启后应用会按设定次数自动重新请求，从而提升成功率，但会增加耗时与 token 消耗。';
 }

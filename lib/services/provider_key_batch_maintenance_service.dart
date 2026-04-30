@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -162,21 +161,20 @@ class ProviderKeyBatchMaintenanceService {
         await _providers.markProviderKeySuccess(key.id!);
         refreshedKeys.add(key);
         successfulModelPool.addAll(models);
-        // Best-effort：若提供商配置了余额接口，顺带刷新该 key 的余额。
-        // 失败仅由 refreshBalanceForKey 内部记日志，不阻塞批量流程。
         if (provider.hasBalanceQuery && provider.id != null) {
-          unawaited(
-            _providers.refreshBalanceForKey(
-              providerId: provider.id!,
-              keyId: key.id!,
-            ),
+          await _providers.refreshBalanceForKey(
+            providerId: provider.id!,
+            keyId: key.id!,
+            providerOverride: provider,
           );
         }
         emitProgress(
           phaseLabel: '刷新模型',
           current: index + 1,
           total: enabledKeys.length,
-          message: '${key.name} 模型列表刷新成功，获取到 ${models.length} 个模型',
+          message: provider.hasBalanceQuery
+              ? '${key.name} 模型列表与余额刷新成功，获取到 ${models.length} 个模型'
+              : '${key.name} 模型列表刷新成功，获取到 ${models.length} 个模型',
         );
       } catch (error) {
         final String errorText = _clip(error.toString(), 800);
@@ -444,11 +442,10 @@ class ProviderKeyBatchMaintenanceService {
         }
         await _providers.markProviderKeySuccess(key.id!);
         if (provider.hasBalanceQuery && provider.id != null) {
-          unawaited(
-            _providers.refreshBalanceForKey(
-              providerId: provider.id!,
-              keyId: key.id!,
-            ),
+          await _providers.refreshBalanceForKey(
+            providerId: provider.id!,
+            keyId: key.id!,
+            providerOverride: provider,
           );
         }
         return ProviderKeyProbeResult(

@@ -51,7 +51,7 @@
   },
   "refreshAppsTooltip": "刷新应用列表",
   "selectAll": "全选",
-  "clearAll": "清空",
+  "clearAll": "清除全部",
   "noAppsFound": "没有找到应用",
   "noAppsMatched": "没有匹配的应用",
   "pinduoduoWarningTitle": "风险提醒",
@@ -1384,5 +1384,366 @@
   "unknownTitle": "未知",
   "unknownTime": "时间未知",
   "empty": "空",
-  "evidenceTitle": "证据"
+  "evidenceTitle": "证据",
+  "runtimeDiagnosticCopied": "诊断信息已复制",
+  "runtimeDiagnosticCopyFailed": "复制诊断信息失败",
+  "runtimeDiagnosticNoFileToOpen": "当前没有可打开的诊断文件",
+  "runtimeDiagnosticOpenAttempted": "已尝试打开诊断文件",
+  "runtimeDiagnosticOpenFallbackCopiedPath": "无法直接打开，已复制日志路径",
+  "runtimeDiagnosticCopyInfoAction": "复制信息",
+  "runtimeDiagnosticOpenFileAction": "打开此文件",
+  "runtimeDiagnosticOpenSettingsAction": "打开设置",
+  "importDiagnosticsReportCopied": "已复制诊断报告",
+  "importDiagnosticsNoRepairableOcr": "没有待修复的图片文字，诊断已刷新",
+  "importDiagnosticsOcrRepairStarted": "已在后台开始修复，可在通知栏查看进度",
+  "importDiagnosticsOcrRepairResumed": "后台修复任务已恢复，可在通知栏查看进度",
+  "importDiagnosticsOcrRepairStopped": "图片文字修复已停止",
+  "importDiagnosticsStopRepairFailed": "停止修复失败",
+  "importDiagnosticsTitle": "导入诊断",
+  "importDiagnosticsFailedTitle": "诊断失败",
+  "importDiagnosticsDurationMs": "耗时：{durationMs}ms",
+  "@importDiagnosticsDurationMs": {
+    "placeholders": {
+      "durationMs": {}
+    }
+  },
+  "importDiagnosticsBackgroundRepairTask": "后台修复任务",
+  "importDiagnosticsStopRepair": "停止修复",
+  "importDiagnosticsRepairIndex": "修复索引",
+  "memoryTabView": "查看记忆",
+  "memoryTabRebuild": "一键重建",
+  "memorySignalStatusChip": "{label} {count}",
+  "@memorySignalStatusChip": {
+    "placeholders": {
+      "label": {},
+      "count": {}
+    }
+  },
+  "memoryForceCreate": "强制新建",
+  "actionIgnore": "忽略",
+  "memoryGenerateSuggestions": "生成建议",
+  "memoryApplyAllSuggestions": "全部应用",
+  "memoryApplyThisSuggestion": "应用这条",
+  "memoryDontApplySuggestion": "不应用",
+  "memoryCopyError": "复制错误",
+  "actionDescription": "说明",
+  "memoryRebuildAction": "一键重建",
+  "actionStop": "停止",
+  "memoryUriInputHint": "输入 URI（如 core://my_user）",
+  "memorySearchHint": "搜索记忆内容/路径…",
+  "memoryRoot": "根",
+  "memoryParent": "上级",
+  "memoryBoot": "boot",
+  "memoryRecent": "recent",
+  "memoryIndex": "index",
+  "providerAddAtLeastOneEnabledApiKey": "请至少添加一个已启用的 API Key。",
+  "providerSaveBeforeBatchTest": "请先保存提供商，再执行批量测试。",
+  "providerKeepOneEnabledApiKey": "请至少保留一个已启用且非空的 API Key。",
+  "providerBatchTestFailed": "批量测试执行失败，请稍后重试。",
+  "providerBatchTestResultTitle": "批量测试结果",
+  "actionClose": "关闭",
+  "providerOnlyOneApiKeyCanEdit": "一次只能编辑一个 API Key",
+  "providerAddApiKey": "Add API Key",
+  "providerEditApiKey": "Edit API Key",
+  "providerFetchModelsAndBalance": "获取模型与余额",
+  "actionSaving": "保存中",
+  "providerFetchModelsFailedManual": "获取模型失败，可以手动添加。",
+  "providerDeletedApiKeys": "已删除 {count} 个 API Key",
+  "@providerDeletedApiKeys": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerAddKeyButton": "新增 Key",
+  "providerBatchTestButton": "批量测试",
+  "providerDeleteAllKeys": "删除全部",
+  "providerNoApiKeys": "暂无 API Key。",
+  "balanceEndpointNone": "不查询",
+  "balanceEndpointNewApi": "new-api（/dashboard/billing）",
+  "balanceEndpointSub2api": "sub2api（/v1/usage）",
+  "segmentEntryLogHint": "直接长按选择文本，或点复制按钮一次性复制。",
+  "segmentEntryLogCopied": "已复制动态进入日志",
+  "copyLogAction": "复制日志",
+  "segmentDynamicConcurrencySaveFailed": "保存并发天数失败",
+  "dynamicAutoRepairEnabled": "自动补建已开启",
+  "dynamicAutoRepairPaused": "自动补建已暂停",
+  "dynamicAutoRepairToggleFailed": "切换自动补建失败",
+  "dynamicRebuildStart": "开始重建",
+  "dynamicRebuildContinue": "继续重建",
+  "savedToPath": "已保存到：{path}",
+  "@savedToPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "dynamicRebuildNoSegments": "没有可重建的动态",
+  "dynamicRebuildSwitchedModelContinue": "已切换到模型 {model} 继续重建",
+  "@dynamicRebuildSwitchedModelContinue": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "dynamicRebuildStartedInBackground": "已在后台开始重建，可在通知栏查看进度",
+  "dynamicRebuildTaskResumed": "后台重建任务已恢复",
+  "dynamicRebuildStopped": "动态重建已停止",
+  "dynamicRebuildStopFailed": "停止动态重建失败",
+  "dynamicRebuildBlockedRetry": "全量重建进行中，暂时禁止单条重新生成",
+  "dynamicRebuildBlockedForceMerge": "全量重建进行中，暂时禁止手动强制合并",
+  "rawResponseRetentionDaysTitle": "设置保留天数",
+  "rawResponseRetentionDaysLabel": "保留天数",
+  "rawResponseRetentionDaysHint": "请输入大于 0 的天数",
+  "rawResponseCleanupSaved": "原始响应清理设置已保存",
+  "chatContextTitlePrefix": "对话上下文（压缩/",
+  "chatContextTitleMemory": "记忆",
+  "chatContextTitleSuffix": "）",
+  "rawResponseRetentionUpdatedDays": "已更新为保留 {days} 天",
+  "@rawResponseRetentionUpdatedDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "homeMorningTipsUpdated": "晨间提示已更新",
+  "homeMorningTipsGenerateFailed": "晨间提示生成失败",
+  "eventCreateFailed": "Create failed: {error}",
+  "@eventCreateFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSwitchFailed": "Switch failed: {error}",
+  "@eventSwitchFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSessionSwitched": "已切换会话",
+  "eventSessionDeleted": "会话已删除",
+  "exclusionExcludedAppsTitle": "已排除的应用",
+  "exclusionSelfAppBullet": "· 本应用（避免自循环）",
+  "exclusionImeAppsBullet": "· 输入法（键盘）应用：",
+  "exclusionAutoFilteredBullet": "  - （已自动过滤）",
+  "exclusionUnknownIme": "未知输入法",
+  "exclusionImeAppBullet": "  - {name}",
+  "@exclusionImeAppBullet": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "imageError": "Image Error",
+  "logDetailTitle": "日志详情",
+  "logLevelAll": "全部",
+  "logLevelDebugVerbose": "调试/详细",
+  "logLevelInfo": "信息",
+  "logLevelWarning": "警告",
+  "logLevelErrorSevere": "错误/严重",
+  "logSearchHint": "搜索（标题/内容/异常/堆栈）",
+  "onboardingPermissionLoadFailed": "加载权限状态失败: {error}",
+  "@onboardingPermissionLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideSettingsOpened": "已打开应用设置页面，请按照指南进行设置",
+  "permissionGuideOpenSettingsFailed": "打开设置页面失败: {error}",
+  "@permissionGuideOpenSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideBatteryOpened": "已打开电池优化设置页面",
+  "permissionGuideOpenBatteryFailed": "打开电池优化设置失败: {error}",
+  "@permissionGuideOpenBatteryFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideAutostartOpened": "已打开自启动设置页面",
+  "permissionGuideOpenAutostartFailed": "打开自启动设置失败: {error}",
+  "@permissionGuideOpenAutostartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideCompleted": "权限设置已标记为完成",
+  "permissionGuideCompleteFailed": "标记权限设置失败: {error}",
+  "@permissionGuideCompleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideTitle": "权限设置指南",
+  "permissionGuideOpenAppSettings": "打开应用设置页面",
+  "permissionGuideOpenBatterySettings": "打开电池优化设置",
+  "permissionGuideOpenAutostartSettings": "打开自启动设置",
+  "permissionGuideAllDone": "我已完成所有设置",
+  "galleryDeleting": "正在删除...",
+  "galleryCleaningCache": "正在清理缓存...",
+  "favoriteRemoved": "已取消收藏",
+  "favoriteAdded": "已添加到收藏",
+  "operationFailedWithError": "操作失败: {error}",
+  "@operationFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchSemantic": "搜索语义",
+  "searchDynamic": "搜索动态",
+  "searchMore": "搜索更多",
+  "openDailySummary": "打开每日总结",
+  "openWeeklySummary": "打开周总结",
+  "noAvailableTags": "暂无可用标签",
+  "clearFilter": "清除筛选",
+  "forceMerge": "强制合并",
+  "forceMergeNoPrevious": "没有可合并的上一事件",
+  "forceMergeQueuedFailed": "强制合并入队失败",
+  "forceMergeQueued": "强制合并已入队",
+  "forceMergeFailed": "强制合并失败",
+  "mergeCompleted": "合并完成",
+  "numberInputRequired": "请输入数字",
+  "valueSaved": "已保存：{value}",
+  "@valueSaved": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "openChannelSettingsFailed": "Open channel settings failed: {error}",
+  "@openChannelSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "openAppNotificationSettingsFailed": "Open app notification settings failed: {error}",
+  "@openAppNotificationSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "evidencePrefix": "[evidence: ",
+  "actionMenu": "菜单",
+  "actionShare": "分享",
+  "actionResetToDefault": "恢复默认",
+  "homeMorningTipNumberedTitle": "{index}. {title}",
+  "@homeMorningTipNumberedTitle": {
+    "placeholders": {
+      "index": {},
+      "title": {}
+    }
+  },
+  "homeMorningTipsRawTitle": "晨间提示 RAW",
+  "labelWithColon": "{label}：",
+  "@labelWithColon": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "warningBullet": "• {warning}",
+  "@warningBullet": {
+    "placeholders": {
+      "warning": {}
+    }
+  },
+  "resetToDefaultValue": "已恢复默认：{value}",
+  "@resetToDefaultValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "logPanelTitle": "日志面板",
+  "logCopiedToClipboard": "已复制到剪贴板",
+  "logShareText": "ScreenMemo 日志",
+  "logShareFailed": "分享失败",
+  "logCleared": "已清空",
+  "logClearFailed": "清空失败",
+  "logNoLogs": "暂无日志",
+  "logNoMatchingLogs": "没有匹配的日志",
+  "logFilterTooltip": "筛选",
+  "logSortNewestFirst": "最新在前",
+  "logSortOldestFirst": "最早在前",
+  "logLevelCritical": "严重",
+  "logLevelError": "错误",
+  "logLevelVerbose": "详细",
+  "logLevelDebug": "调试",
+  "eventNewConversation": "新建会话",
+  "forceMergeConfirmMessage": "将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？",
+  "forceMergeRequestedReason": "已请求强制合并（排队中）",
+  "mergeStatusMerging": "强制合并中…",
+  "mergeStatusMerged": "已合并",
+  "mergeStatusForceRequested": "已请求强制合并",
+  "mergeStatusNotMerged": "未合并",
+  "mergeStatusPending": "待判定",
+  "semanticSearchNotStartedTitle": "语义搜索未开始",
+  "semanticSearchNotStartedDesc": "这里会搜索图片的 AI 描述/关键词/标签。为避免输入时卡顿，需要手动触发搜索。",
+  "segmentSearchNotStartedTitle": "动态搜索未开始",
+  "segmentSearchNotStartedDesc": "为避免输入时卡顿，需要手动触发搜索。",
+  "foundImagesCount": "找到 {count} 张图片",
+  "@foundImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagsLabel": "标签",
+  "tagCount": "{count}个标签",
+  "@tagCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagFilterTitle": "标签筛选",
+  "selectedAllLabel": "全部",
+  "selectedTagsCount": "已选{count}个",
+  "@selectedTagsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "selectedTypesCount": "已选{count}类",
+  "@selectedTypesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "confirmSelectionLabel": "确定 ({selection})",
+  "@confirmSelectionLabel": {
+    "placeholders": {
+      "selection": {}
+    }
+  },
+  "noContentParenthesized": "（无内容）",
+  "typeFilterTitle": "类型筛选",
+  "rawResponseCleanupEnableTitle": "开启原始响应自动清理",
+  "rawResponseCleanupEnableMessage": "将自动清理 {days} 天前的 raw_response，仅释放调试/原始响应占用，不影响摘要与 structured_json。",
+  "@rawResponseCleanupEnableMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupEnableAction": "开启并立即清理",
+  "segmentsJsonAutoRetryTitle": "自动重试次数",
+  "segmentsJsonAutoRetryDesc": "当动态摘要 structured_json 解析失败时，自动重试次数（0=关闭，默认1）。",
+  "segmentsJsonAutoRetryHint": "次数（0-5）",
+  "rawResponseCleanupTitle": "原始响应自动清理",
+  "rawResponseCleanupKeepLabel": "保留",
+  "rawResponseCleanupRetentionDays": "{days} 天",
+  "@rawResponseCleanupRetentionDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupDesc": "仅清理旧 raw_response，不影响摘要与 structured_json",
+  "mergeStatusMergingReason": "正在合并，请稍候…",
+  "permissionGuideLoading": "正在加载权限设置指南...",
+  "permissionGuideUnavailable": "无法获取权限设置指南",
+  "permissionGuideUnknownDevice": "未知设备",
+  "permissionGuideLoadFailed": "加载权限设置指南失败: {error}",
+  "@permissionGuideLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "deviceInfoTitle": "设备信息",
+  "setupGuideTitle": "设置指南",
+  "permissionConfiguredStatus": "已配置",
+  "permissionNeedsConfigurationStatus": "需要配置",
+  "backgroundPermissionTitle": "后台运行权限",
+  "actualBatteryOptimizationStatusTitle": "实际电池优化状态"
 }

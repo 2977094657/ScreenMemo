@@ -51,7 +51,7 @@
   },
   "refreshAppsTooltip": "Refresh apps",
   "selectAll": "Select all",
-  "clearAll": "Clear",
+  "clearAll": "Clear all",
   "noAppsFound": "No apps found",
   "noAppsMatched": "No matching apps",
   "pinduoduoWarningTitle": "Risk Reminder",
@@ -1384,5 +1384,366 @@
   "unknownTitle": "Unknown",
   "unknownTime": "Unknown time",
   "empty": "Empty",
-  "evidenceTitle": "Evidence"
+  "evidenceTitle": "Evidence",
+  "runtimeDiagnosticCopied": "Diagnostic info copied",
+  "runtimeDiagnosticCopyFailed": "Failed to copy diagnostic info",
+  "runtimeDiagnosticNoFileToOpen": "No diagnostic file available to open",
+  "runtimeDiagnosticOpenAttempted": "Tried to open diagnostic file",
+  "runtimeDiagnosticOpenFallbackCopiedPath": "Could not open directly; log path copied",
+  "runtimeDiagnosticCopyInfoAction": "Copy info",
+  "runtimeDiagnosticOpenFileAction": "Open this file",
+  "runtimeDiagnosticOpenSettingsAction": "Open settings",
+  "importDiagnosticsReportCopied": "Diagnostic report copied",
+  "importDiagnosticsNoRepairableOcr": "No OCR text needs repair; diagnostics refreshed",
+  "importDiagnosticsOcrRepairStarted": "Repair started in the background. Check notification progress.",
+  "importDiagnosticsOcrRepairResumed": "Background repair resumed. Check notification progress.",
+  "importDiagnosticsOcrRepairStopped": "OCR text repair stopped",
+  "importDiagnosticsStopRepairFailed": "Failed to stop repair",
+  "importDiagnosticsTitle": "Import diagnostics",
+  "importDiagnosticsFailedTitle": "Diagnostics failed",
+  "importDiagnosticsDurationMs": "Duration: {durationMs}ms",
+  "@importDiagnosticsDurationMs": {
+    "placeholders": {
+      "durationMs": {}
+    }
+  },
+  "importDiagnosticsBackgroundRepairTask": "Background repair task",
+  "importDiagnosticsStopRepair": "Stop repair",
+  "importDiagnosticsRepairIndex": "Repair index",
+  "memoryTabView": "View memory",
+  "memoryTabRebuild": "One-tap rebuild",
+  "memorySignalStatusChip": "{label} {count}",
+  "@memorySignalStatusChip": {
+    "placeholders": {
+      "label": {},
+      "count": {}
+    }
+  },
+  "memoryForceCreate": "Force create",
+  "actionIgnore": "Ignore",
+  "memoryGenerateSuggestions": "Generate suggestions",
+  "memoryApplyAllSuggestions": "Apply all",
+  "memoryApplyThisSuggestion": "Apply this",
+  "memoryDontApplySuggestion": "Do not apply",
+  "memoryCopyError": "Copy error",
+  "actionDescription": "Description",
+  "memoryRebuildAction": "One-tap rebuild",
+  "actionStop": "Stop",
+  "memoryUriInputHint": "Enter URI (e.g. core://my_user)",
+  "memorySearchHint": "Search memory content/path…",
+  "memoryRoot": "Root",
+  "memoryParent": "Parent",
+  "memoryBoot": "Boot",
+  "memoryRecent": "Recent",
+  "memoryIndex": "Index",
+  "providerAddAtLeastOneEnabledApiKey": "Please add at least one enabled API Key.",
+  "providerSaveBeforeBatchTest": "Please save the provider before running batch test.",
+  "providerKeepOneEnabledApiKey": "Please keep at least one enabled and non-empty API Key.",
+  "providerBatchTestFailed": "Batch test failed. Please try again later.",
+  "providerBatchTestResultTitle": "Batch test results",
+  "actionClose": "Close",
+  "providerOnlyOneApiKeyCanEdit": "Only one API Key can be edited at a time",
+  "providerAddApiKey": "Add API Key",
+  "providerEditApiKey": "Edit API Key",
+  "providerFetchModelsAndBalance": "Fetch models and balance",
+  "actionSaving": "Saving",
+  "providerFetchModelsFailedManual": "Failed to fetch models. You can add them manually.",
+  "providerDeletedApiKeys": "Deleted {count} API Keys",
+  "@providerDeletedApiKeys": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerAddKeyButton": "Add Key",
+  "providerBatchTestButton": "Batch test",
+  "providerDeleteAllKeys": "Delete all",
+  "providerNoApiKeys": "No API Keys.",
+  "balanceEndpointNone": "Do not query",
+  "balanceEndpointNewApi": "new-api (/dashboard/billing)",
+  "balanceEndpointSub2api": "sub2api (/v1/usage)",
+  "segmentEntryLogHint": "Long-press to select text, or tap Copy to copy everything.",
+  "segmentEntryLogCopied": "Dynamic entry log copied",
+  "copyLogAction": "Copy log",
+  "segmentDynamicConcurrencySaveFailed": "Failed to save day concurrency",
+  "dynamicAutoRepairEnabled": "Auto repair enabled",
+  "dynamicAutoRepairPaused": "Auto repair paused",
+  "dynamicAutoRepairToggleFailed": "Failed to toggle auto repair",
+  "dynamicRebuildStart": "Start rebuild",
+  "dynamicRebuildContinue": "Continue rebuild",
+  "savedToPath": "Saved to: {path}",
+  "@savedToPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "dynamicRebuildNoSegments": "No dynamics to rebuild",
+  "dynamicRebuildSwitchedModelContinue": "Switched to model {model} and continued rebuild",
+  "@dynamicRebuildSwitchedModelContinue": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "dynamicRebuildStartedInBackground": "Rebuild started in the background. Check notification progress.",
+  "dynamicRebuildTaskResumed": "Background rebuild task resumed",
+  "dynamicRebuildStopped": "Dynamic rebuild stopped",
+  "dynamicRebuildStopFailed": "Failed to stop dynamic rebuild",
+  "dynamicRebuildBlockedRetry": "Full rebuild is running. Single-item regeneration is temporarily disabled.",
+  "dynamicRebuildBlockedForceMerge": "Full rebuild is running. Manual force merge is temporarily disabled.",
+  "rawResponseRetentionDaysTitle": "Set retention days",
+  "rawResponseRetentionDaysLabel": "Retention days",
+  "rawResponseRetentionDaysHint": "Enter a number > 0",
+  "rawResponseCleanupSaved": "Raw response cleanup settings saved.",
+  "chatContextTitlePrefix": "Conversation Context (",
+  "chatContextTitleMemory": "Memory",
+  "chatContextTitleSuffix": ")",
+  "rawResponseRetentionUpdatedDays": "Retention updated to {days} days.",
+  "@rawResponseRetentionUpdatedDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "homeMorningTipsUpdated": "Morning tips updated",
+  "homeMorningTipsGenerateFailed": "Failed to generate morning tips",
+  "eventCreateFailed": "Create failed: {error}",
+  "@eventCreateFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSwitchFailed": "Switch failed: {error}",
+  "@eventSwitchFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSessionSwitched": "Conversation switched",
+  "eventSessionDeleted": "Conversation deleted",
+  "exclusionExcludedAppsTitle": "Excluded apps",
+  "exclusionSelfAppBullet": "· This app (avoid self-loop)",
+  "exclusionImeAppsBullet": "· Input method (keyboard) apps:",
+  "exclusionAutoFilteredBullet": "  - (automatically filtered)",
+  "exclusionUnknownIme": "Unknown input method",
+  "exclusionImeAppBullet": "  - {name}",
+  "@exclusionImeAppBullet": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "imageError": "Image Error",
+  "logDetailTitle": "Log detail",
+  "logLevelAll": "All",
+  "logLevelDebugVerbose": "Debug/Verbose",
+  "logLevelInfo": "Info",
+  "logLevelWarning": "Warning",
+  "logLevelErrorSevere": "Error/Severe",
+  "logSearchHint": "Search title/content/exception/stack",
+  "onboardingPermissionLoadFailed": "Failed to load permission status: {error}",
+  "@onboardingPermissionLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideSettingsOpened": "App settings opened. Please follow the guide.",
+  "permissionGuideOpenSettingsFailed": "Failed to open settings page: {error}",
+  "@permissionGuideOpenSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideBatteryOpened": "Battery optimization settings opened",
+  "permissionGuideOpenBatteryFailed": "Failed to open battery optimization settings: {error}",
+  "@permissionGuideOpenBatteryFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideAutostartOpened": "Autostart settings opened",
+  "permissionGuideOpenAutostartFailed": "Failed to open autostart settings: {error}",
+  "@permissionGuideOpenAutostartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideCompleted": "Permission setup marked as complete",
+  "permissionGuideCompleteFailed": "Failed to mark permission setup: {error}",
+  "@permissionGuideCompleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideTitle": "Permission setup guide",
+  "permissionGuideOpenAppSettings": "Open app settings",
+  "permissionGuideOpenBatterySettings": "Open battery optimization settings",
+  "permissionGuideOpenAutostartSettings": "Open autostart settings",
+  "permissionGuideAllDone": "I have completed all settings",
+  "galleryDeleting": "Deleting...",
+  "galleryCleaningCache": "Cleaning cache...",
+  "favoriteRemoved": "Removed from favorites",
+  "favoriteAdded": "Added to favorites",
+  "operationFailedWithError": "Operation failed: {error}",
+  "@operationFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchSemantic": "Semantic search",
+  "searchDynamic": "Search dynamics",
+  "searchMore": "Search more",
+  "openDailySummary": "Open daily summary",
+  "openWeeklySummary": "Open weekly summary",
+  "noAvailableTags": "No available tags",
+  "clearFilter": "Clear filter",
+  "forceMerge": "Force merge",
+  "forceMergeNoPrevious": "No previous event to merge",
+  "forceMergeQueuedFailed": "Failed to queue force merge",
+  "forceMergeQueued": "Force merge queued",
+  "forceMergeFailed": "Force merge failed",
+  "mergeCompleted": "Merge completed",
+  "numberInputRequired": "Please enter a number.",
+  "valueSaved": "Saved: {value}",
+  "@valueSaved": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "openChannelSettingsFailed": "Open channel settings failed: {error}",
+  "@openChannelSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "openAppNotificationSettingsFailed": "Open app notification settings failed: {error}",
+  "@openAppNotificationSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "evidencePrefix": "[evidence: ",
+  "actionMenu": "Menu",
+  "actionShare": "Share",
+  "actionResetToDefault": "Reset to default",
+  "homeMorningTipNumberedTitle": "{index}. {title}",
+  "@homeMorningTipNumberedTitle": {
+    "placeholders": {
+      "index": {},
+      "title": {}
+    }
+  },
+  "homeMorningTipsRawTitle": "Morning tips RAW",
+  "labelWithColon": "{label}: ",
+  "@labelWithColon": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "warningBullet": "• {warning}",
+  "@warningBullet": {
+    "placeholders": {
+      "warning": {}
+    }
+  },
+  "resetToDefaultValue": "Reset to default: {value}",
+  "@resetToDefaultValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "logPanelTitle": "Log panel",
+  "logCopiedToClipboard": "Copied to clipboard",
+  "logShareText": "ScreenMemo logs",
+  "logShareFailed": "Share failed",
+  "logCleared": "Logs cleared",
+  "logClearFailed": "Failed to clear logs",
+  "logNoLogs": "No logs yet",
+  "logNoMatchingLogs": "No matching logs",
+  "logFilterTooltip": "Filter",
+  "logSortNewestFirst": "Newest first",
+  "logSortOldestFirst": "Oldest first",
+  "logLevelCritical": "Critical",
+  "logLevelError": "Error",
+  "logLevelVerbose": "Verbose",
+  "logLevelDebug": "Debug",
+  "eventNewConversation": "New conversation",
+  "forceMergeConfirmMessage": "Force merge with the previous event, overwrite the current event summary, and delete the previous event. This cannot be undone. Continue?",
+  "forceMergeRequestedReason": "Force merge requested (queued)",
+  "mergeStatusMerging": "Force merging…",
+  "mergeStatusMerged": "Merged",
+  "mergeStatusForceRequested": "Force merge requested",
+  "mergeStatusNotMerged": "Not merged",
+  "mergeStatusPending": "Pending",
+  "semanticSearchNotStartedTitle": "Semantic search not started",
+  "semanticSearchNotStartedDesc": "This searches AI descriptions, keywords, and tags for images. To avoid lag while typing, start the search manually.",
+  "segmentSearchNotStartedTitle": "Dynamic search not started",
+  "segmentSearchNotStartedDesc": "To avoid lag while typing, start the search manually.",
+  "foundImagesCount": "Found {count} images",
+  "@foundImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagsLabel": "Tags",
+  "tagCount": "{count} tags",
+  "@tagCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagFilterTitle": "Tag filters",
+  "selectedAllLabel": "All",
+  "selectedTagsCount": "{count} selected",
+  "@selectedTagsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "selectedTypesCount": "{count} selected",
+  "@selectedTypesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "confirmSelectionLabel": "OK ({selection})",
+  "@confirmSelectionLabel": {
+    "placeholders": {
+      "selection": {}
+    }
+  },
+  "noContentParenthesized": "(empty)",
+  "typeFilterTitle": "Type filters",
+  "rawResponseCleanupEnableTitle": "Enable Raw Response Cleanup",
+  "rawResponseCleanupEnableMessage": "This will automatically clear raw_response older than {days} days. Summaries and structured_json are not affected.",
+  "@rawResponseCleanupEnableMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupEnableAction": "Enable & Clean Now",
+  "segmentsJsonAutoRetryTitle": "Auto Retry Times",
+  "segmentsJsonAutoRetryDesc": "Auto retry times when segment structured_json fails to parse (0=off, default 1).",
+  "segmentsJsonAutoRetryHint": "Times (0-5)",
+  "rawResponseCleanupTitle": "Auto Clean Raw Responses",
+  "rawResponseCleanupKeepLabel": "Keep",
+  "rawResponseCleanupRetentionDays": "{days} days",
+  "@rawResponseCleanupRetentionDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupDesc": "Only clears old raw_response; summaries and structured_json stay untouched",
+  "mergeStatusMergingReason": "Merging, please wait…",
+  "permissionGuideLoading": "Loading permission setup guide...",
+  "permissionGuideUnavailable": "Unable to get permission setup guide",
+  "permissionGuideUnknownDevice": "Unknown device",
+  "permissionGuideLoadFailed": "Failed to load permission setup guide: {error}",
+  "@permissionGuideLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "deviceInfoTitle": "Device info",
+  "setupGuideTitle": "Setup guide",
+  "permissionConfiguredStatus": "Configured",
+  "permissionNeedsConfigurationStatus": "Needs configuration",
+  "backgroundPermissionTitle": "Background run permission",
+  "actualBatteryOptimizationStatusTitle": "Actual battery optimization status"
 }

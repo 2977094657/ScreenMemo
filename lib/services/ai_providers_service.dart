@@ -215,6 +215,9 @@ class AIProviderKey {
       (balanceDisplay != null && balanceDisplay!.isNotEmpty) ||
       balanceTotal != null;
 
+  /// 兼容旧调用命名：是否已有可展示的余额数据。
+  bool get hasBalanceData => hasBalance;
+
   /// 余额是否为 0（仅在 [balanceTotal] 已知时判断）。
   bool get isBalanceZero {
     final t = balanceTotal;
@@ -784,8 +787,10 @@ class AIProvidersService {
   Future<List<String>> refreshModelsForKey({
     required int providerId,
     required int keyId,
+    AIProvider? providerOverride,
+    bool awaitBalance = false,
   }) async {
-    final provider = await getProvider(providerId);
+    final provider = providerOverride ?? await getProvider(providerId);
     final key = await getProviderKey(keyId);
     if (provider == null) throw Exception('Provider not found');
     if (key == null) throw Exception('Provider key not found');
@@ -794,9 +799,18 @@ class AIProvidersService {
       await updateProviderKey(id: keyId, models: models, clearErrorState: true);
       await markProviderKeySuccess(keyId);
       // Best-effort：若提供商配置了余额查询接口，顺带刷新该 key 的余额。
-      // 失败不影响模型刷新结果。
+      // awaitBalance=true 时等待余额写库，便于 UI 立即显示最新余额。
       if (provider.hasBalanceQuery) {
-        unawaited(refreshBalanceForKey(providerId: providerId, keyId: keyId));
+        final future = refreshBalanceForKey(
+          providerId: providerId,
+          keyId: keyId,
+          providerOverride: provider,
+        );
+        if (awaitBalance) {
+          await future;
+        } else {
+          unawaited(future);
+        }
       }
       return models;
     } catch (e) {
@@ -891,6 +905,42 @@ class AIProvidersService {
       return null;
     }
 
+    return _saveFetchedBalanceForKey(
+      provider: provider,
+      keyId: keyId,
+      keyName: key.name,
+      balance: balance,
+    );
+  }
+
+  /// 将已获取到的余额写入指定 Key。
+  ///
+  /// 批量新增 Key 时，弹窗内可能已经用明文 Key 获取过余额；保存后直接复用该
+  /// 结果，避免再次请求导致页面仍显示占位符或与通知里的余额不一致。
+  Future<ProviderKeyBalance?> saveFetchedBalanceForKey({
+    required int providerId,
+    required int keyId,
+    required ProviderKeyBalance balance,
+    AIProvider? providerOverride,
+  }) async {
+    final provider = providerOverride ?? await getProvider(providerId);
+    final key = await getProviderKey(keyId);
+    if (provider == null || key == null) return null;
+    if (!provider.hasBalanceQuery) return null;
+    return _saveFetchedBalanceForKey(
+      provider: provider,
+      keyId: keyId,
+      keyName: key.name,
+      balance: balance,
+    );
+  }
+
+  Future<ProviderKeyBalance?> _saveFetchedBalanceForKey({
+    required AIProvider provider,
+    required int keyId,
+    required String keyName,
+    required ProviderKeyBalance balance,
+  }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     await _db.updateAIProviderKeyBalance(
       keyId: keyId,
@@ -901,12 +951,12 @@ class AIProvidersService {
       balanceUpdatedAt: now,
     );
 
-    // 余额为 0 且开启了"自动删除"，则移除该 key
+    // 余额为 0 且开启了“自动删除”，则移除该 key。
     if (provider.balanceAutoDeleteZeroKey && balance.isZero) {
       try {
         await FlutterLogger.nativeInfo(
           'AI',
-          'auto-delete zero-balance key provider=${provider.name} key=${key.name}#$keyId',
+          'auto-delete zero-balance key provider=${provider.name} key=$keyName#$keyId',
         );
       } catch (_) {}
       await deleteProviderKey(keyId);

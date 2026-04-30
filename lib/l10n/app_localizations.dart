@@ -303,7 +303,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearAll.
   ///
   /// In en, this message translates to:
-  /// **'Clear'**
+  /// **'Clear all'**
   String get clearAll;
 
   /// No description provided for @noAppsFound.
@@ -831,13 +831,13 @@ abstract class AppLocalizations {
   /// No description provided for @segmentSummarySectionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Segment summary'**
+  /// **'Dynamic settings'**
   String get segmentSummarySectionTitle;
 
   /// No description provided for @segmentSummarySectionDesc.
   ///
   /// In en, this message translates to:
-  /// **'Sampling, duration, AI throttle'**
+  /// **'Sampling / duration / merging / AI request interval'**
   String get segmentSummarySectionDesc;
 
   /// No description provided for @dailyReminderSectionTitle.
@@ -4727,6 +4727,1555 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Evidence'**
   String get evidenceTitle;
+
+  /// No description provided for @runtimeDiagnosticCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostic info copied'**
+  String get runtimeDiagnosticCopied;
+
+  /// No description provided for @runtimeDiagnosticCopyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to copy diagnostic info'**
+  String get runtimeDiagnosticCopyFailed;
+
+  /// No description provided for @runtimeDiagnosticNoFileToOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'No diagnostic file available to open'**
+  String get runtimeDiagnosticNoFileToOpen;
+
+  /// No description provided for @runtimeDiagnosticOpenAttempted.
+  ///
+  /// In en, this message translates to:
+  /// **'Tried to open diagnostic file'**
+  String get runtimeDiagnosticOpenAttempted;
+
+  /// No description provided for @runtimeDiagnosticOpenFallbackCopiedPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open directly; log path copied'**
+  String get runtimeDiagnosticOpenFallbackCopiedPath;
+
+  /// No description provided for @runtimeDiagnosticCopyInfoAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy info'**
+  String get runtimeDiagnosticCopyInfoAction;
+
+  /// No description provided for @runtimeDiagnosticOpenFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open this file'**
+  String get runtimeDiagnosticOpenFileAction;
+
+  /// No description provided for @runtimeDiagnosticOpenSettingsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get runtimeDiagnosticOpenSettingsAction;
+
+  /// No description provided for @importDiagnosticsReportCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostic report copied'**
+  String get importDiagnosticsReportCopied;
+
+  /// No description provided for @importDiagnosticsNoRepairableOcr.
+  ///
+  /// In en, this message translates to:
+  /// **'No OCR text needs repair; diagnostics refreshed'**
+  String get importDiagnosticsNoRepairableOcr;
+
+  /// No description provided for @importDiagnosticsOcrRepairStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Repair started in the background. Check notification progress.'**
+  String get importDiagnosticsOcrRepairStarted;
+
+  /// No description provided for @importDiagnosticsOcrRepairResumed.
+  ///
+  /// In en, this message translates to:
+  /// **'Background repair resumed. Check notification progress.'**
+  String get importDiagnosticsOcrRepairResumed;
+
+  /// No description provided for @importDiagnosticsOcrRepairStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'OCR text repair stopped'**
+  String get importDiagnosticsOcrRepairStopped;
+
+  /// No description provided for @importDiagnosticsStopRepairFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to stop repair'**
+  String get importDiagnosticsStopRepairFailed;
+
+  /// No description provided for @importDiagnosticsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import diagnostics'**
+  String get importDiagnosticsTitle;
+
+  /// No description provided for @importDiagnosticsFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostics failed'**
+  String get importDiagnosticsFailedTitle;
+
+  /// No description provided for @importDiagnosticsDurationMs.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration: {durationMs}ms'**
+  String importDiagnosticsDurationMs(Object durationMs);
+
+  /// No description provided for @importDiagnosticsBackgroundRepairTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Background repair task'**
+  String get importDiagnosticsBackgroundRepairTask;
+
+  /// No description provided for @importDiagnosticsStopRepair.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop repair'**
+  String get importDiagnosticsStopRepair;
+
+  /// No description provided for @importDiagnosticsRepairIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Repair index'**
+  String get importDiagnosticsRepairIndex;
+
+  /// No description provided for @memoryTabView.
+  ///
+  /// In en, this message translates to:
+  /// **'View memory'**
+  String get memoryTabView;
+
+  /// No description provided for @memoryTabRebuild.
+  ///
+  /// In en, this message translates to:
+  /// **'One-tap rebuild'**
+  String get memoryTabRebuild;
+
+  /// No description provided for @memorySignalStatusChip.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} {count}'**
+  String memorySignalStatusChip(Object label, Object count);
+
+  /// No description provided for @memoryForceCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Force create'**
+  String get memoryForceCreate;
+
+  /// No description provided for @actionIgnore.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignore'**
+  String get actionIgnore;
+
+  /// No description provided for @memoryGenerateSuggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate suggestions'**
+  String get memoryGenerateSuggestions;
+
+  /// No description provided for @memoryApplyAllSuggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply all'**
+  String get memoryApplyAllSuggestions;
+
+  /// No description provided for @memoryApplyThisSuggestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply this'**
+  String get memoryApplyThisSuggestion;
+
+  /// No description provided for @memoryDontApplySuggestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not apply'**
+  String get memoryDontApplySuggestion;
+
+  /// No description provided for @memoryCopyError.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy error'**
+  String get memoryCopyError;
+
+  /// No description provided for @actionDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get actionDescription;
+
+  /// No description provided for @memoryRebuildAction.
+  ///
+  /// In en, this message translates to:
+  /// **'One-tap rebuild'**
+  String get memoryRebuildAction;
+
+  /// No description provided for @actionStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get actionStop;
+
+  /// No description provided for @memoryUriInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter URI (e.g. core://my_user)'**
+  String get memoryUriInputHint;
+
+  /// No description provided for @memorySearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search memory content/path…'**
+  String get memorySearchHint;
+
+  /// No description provided for @memoryRoot.
+  ///
+  /// In en, this message translates to:
+  /// **'Root'**
+  String get memoryRoot;
+
+  /// No description provided for @memoryParent.
+  ///
+  /// In en, this message translates to:
+  /// **'Parent'**
+  String get memoryParent;
+
+  /// No description provided for @memoryBoot.
+  ///
+  /// In en, this message translates to:
+  /// **'Boot'**
+  String get memoryBoot;
+
+  /// No description provided for @memoryRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent'**
+  String get memoryRecent;
+
+  /// No description provided for @memoryIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Index'**
+  String get memoryIndex;
+
+  /// No description provided for @providerAddAtLeastOneEnabledApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Please add at least one enabled API Key.'**
+  String get providerAddAtLeastOneEnabledApiKey;
+
+  /// No description provided for @providerSaveBeforeBatchTest.
+  ///
+  /// In en, this message translates to:
+  /// **'Please save the provider before running batch test.'**
+  String get providerSaveBeforeBatchTest;
+
+  /// No description provided for @providerKeepOneEnabledApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Please keep at least one enabled and non-empty API Key.'**
+  String get providerKeepOneEnabledApiKey;
+
+  /// No description provided for @providerBatchTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch test failed. Please try again later.'**
+  String get providerBatchTestFailed;
+
+  /// No description provided for @providerBatchTestResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch test results'**
+  String get providerBatchTestResultTitle;
+
+  /// No description provided for @actionClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get actionClose;
+
+  /// No description provided for @providerOnlyOneApiKeyCanEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Only one API Key can be edited at a time'**
+  String get providerOnlyOneApiKeyCanEdit;
+
+  /// No description provided for @providerAddApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Add API Key'**
+  String get providerAddApiKey;
+
+  /// No description provided for @providerEditApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit API Key'**
+  String get providerEditApiKey;
+
+  /// No description provided for @providerFetchModelsAndBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch models and balance'**
+  String get providerFetchModelsAndBalance;
+
+  /// No description provided for @actionSaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get actionSaving;
+
+  /// No description provided for @providerFetchModelsFailedManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to fetch models. You can add them manually.'**
+  String get providerFetchModelsFailedManual;
+
+  /// No description provided for @providerDeletedApiKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {count} API Keys'**
+  String providerDeletedApiKeys(Object count);
+
+  /// No description provided for @providerAddKeyButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Key'**
+  String get providerAddKeyButton;
+
+  /// No description provided for @providerBatchTestButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch test'**
+  String get providerBatchTestButton;
+
+  /// No description provided for @providerDeleteAllKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all'**
+  String get providerDeleteAllKeys;
+
+  /// No description provided for @providerNoApiKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'No API Keys.'**
+  String get providerNoApiKeys;
+
+  /// No description provided for @balanceEndpointNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not query'**
+  String get balanceEndpointNone;
+
+  /// No description provided for @balanceEndpointNewApi.
+  ///
+  /// In en, this message translates to:
+  /// **'new-api (/dashboard/billing)'**
+  String get balanceEndpointNewApi;
+
+  /// No description provided for @balanceEndpointSub2api.
+  ///
+  /// In en, this message translates to:
+  /// **'sub2api (/v1/usage)'**
+  String get balanceEndpointSub2api;
+
+  /// No description provided for @segmentEntryLogHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Long-press to select text, or tap Copy to copy everything.'**
+  String get segmentEntryLogHint;
+
+  /// No description provided for @segmentEntryLogCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic entry log copied'**
+  String get segmentEntryLogCopied;
+
+  /// No description provided for @copyLogAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy log'**
+  String get copyLogAction;
+
+  /// No description provided for @segmentDynamicConcurrencySaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save day concurrency'**
+  String get segmentDynamicConcurrencySaveFailed;
+
+  /// No description provided for @dynamicAutoRepairEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto repair enabled'**
+  String get dynamicAutoRepairEnabled;
+
+  /// No description provided for @dynamicAutoRepairPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto repair paused'**
+  String get dynamicAutoRepairPaused;
+
+  /// No description provided for @dynamicAutoRepairToggleFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to toggle auto repair'**
+  String get dynamicAutoRepairToggleFailed;
+
+  /// No description provided for @dynamicRebuildStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start rebuild'**
+  String get dynamicRebuildStart;
+
+  /// No description provided for @dynamicRebuildContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue rebuild'**
+  String get dynamicRebuildContinue;
+
+  /// No description provided for @savedToPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to: {path}'**
+  String savedToPath(Object path);
+
+  /// No description provided for @dynamicRebuildNoSegments.
+  ///
+  /// In en, this message translates to:
+  /// **'No dynamics to rebuild'**
+  String get dynamicRebuildNoSegments;
+
+  /// No description provided for @dynamicRebuildSwitchedModelContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Switched to model {model} and continued rebuild'**
+  String dynamicRebuildSwitchedModelContinue(Object model);
+
+  /// No description provided for @dynamicRebuildStartedInBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild started in the background. Check notification progress.'**
+  String get dynamicRebuildStartedInBackground;
+
+  /// No description provided for @dynamicRebuildTaskResumed.
+  ///
+  /// In en, this message translates to:
+  /// **'Background rebuild task resumed'**
+  String get dynamicRebuildTaskResumed;
+
+  /// No description provided for @dynamicRebuildStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic rebuild stopped'**
+  String get dynamicRebuildStopped;
+
+  /// No description provided for @dynamicRebuildStopFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to stop dynamic rebuild'**
+  String get dynamicRebuildStopFailed;
+
+  /// No description provided for @dynamicRebuildBlockedRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Full rebuild is running. Single-item regeneration is temporarily disabled.'**
+  String get dynamicRebuildBlockedRetry;
+
+  /// No description provided for @dynamicRebuildBlockedForceMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Full rebuild is running. Manual force merge is temporarily disabled.'**
+  String get dynamicRebuildBlockedForceMerge;
+
+  /// No description provided for @rawResponseRetentionDaysTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set retention days'**
+  String get rawResponseRetentionDaysTitle;
+
+  /// No description provided for @rawResponseRetentionDaysLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention days'**
+  String get rawResponseRetentionDaysLabel;
+
+  /// No description provided for @rawResponseRetentionDaysHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a number > 0'**
+  String get rawResponseRetentionDaysHint;
+
+  /// No description provided for @rawResponseCleanupSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw response cleanup settings saved.'**
+  String get rawResponseCleanupSaved;
+
+  /// No description provided for @chatContextTitlePrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation Context ('**
+  String get chatContextTitlePrefix;
+
+  /// No description provided for @chatContextTitleMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory'**
+  String get chatContextTitleMemory;
+
+  /// No description provided for @chatContextTitleSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **')'**
+  String get chatContextTitleSuffix;
+
+  /// No description provided for @rawResponseRetentionUpdatedDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention updated to {days} days.'**
+  String rawResponseRetentionUpdatedDays(Object days);
+
+  /// No description provided for @homeMorningTipsUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning tips updated'**
+  String get homeMorningTipsUpdated;
+
+  /// No description provided for @homeMorningTipsGenerateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to generate morning tips'**
+  String get homeMorningTipsGenerateFailed;
+
+  /// No description provided for @eventCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Create failed: {error}'**
+  String eventCreateFailed(Object error);
+
+  /// No description provided for @eventSwitchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch failed: {error}'**
+  String eventSwitchFailed(Object error);
+
+  /// No description provided for @eventSessionSwitched.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation switched'**
+  String get eventSessionSwitched;
+
+  /// No description provided for @eventSessionDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation deleted'**
+  String get eventSessionDeleted;
+
+  /// No description provided for @exclusionExcludedAppsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded apps'**
+  String get exclusionExcludedAppsTitle;
+
+  /// No description provided for @exclusionSelfAppBullet.
+  ///
+  /// In en, this message translates to:
+  /// **'· This app (avoid self-loop)'**
+  String get exclusionSelfAppBullet;
+
+  /// No description provided for @exclusionImeAppsBullet.
+  ///
+  /// In en, this message translates to:
+  /// **'· Input method (keyboard) apps:'**
+  String get exclusionImeAppsBullet;
+
+  /// No description provided for @exclusionAutoFilteredBullet.
+  ///
+  /// In en, this message translates to:
+  /// **'  - (automatically filtered)'**
+  String get exclusionAutoFilteredBullet;
+
+  /// No description provided for @exclusionUnknownIme.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown input method'**
+  String get exclusionUnknownIme;
+
+  /// No description provided for @exclusionImeAppBullet.
+  ///
+  /// In en, this message translates to:
+  /// **'  - {name}'**
+  String exclusionImeAppBullet(Object name);
+
+  /// No description provided for @imageError.
+  ///
+  /// In en, this message translates to:
+  /// **'Image Error'**
+  String get imageError;
+
+  /// No description provided for @logDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Log detail'**
+  String get logDetailTitle;
+
+  /// No description provided for @logLevelAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get logLevelAll;
+
+  /// No description provided for @logLevelDebugVerbose.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug/Verbose'**
+  String get logLevelDebugVerbose;
+
+  /// No description provided for @logLevelInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Info'**
+  String get logLevelInfo;
+
+  /// No description provided for @logLevelWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning'**
+  String get logLevelWarning;
+
+  /// No description provided for @logLevelErrorSevere.
+  ///
+  /// In en, this message translates to:
+  /// **'Error/Severe'**
+  String get logLevelErrorSevere;
+
+  /// No description provided for @logSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search title/content/exception/stack'**
+  String get logSearchHint;
+
+  /// No description provided for @onboardingPermissionLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load permission status: {error}'**
+  String onboardingPermissionLoadFailed(Object error);
+
+  /// No description provided for @permissionGuideSettingsOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'App settings opened. Please follow the guide.'**
+  String get permissionGuideSettingsOpened;
+
+  /// No description provided for @permissionGuideOpenSettingsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open settings page: {error}'**
+  String permissionGuideOpenSettingsFailed(Object error);
+
+  /// No description provided for @permissionGuideBatteryOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Battery optimization settings opened'**
+  String get permissionGuideBatteryOpened;
+
+  /// No description provided for @permissionGuideOpenBatteryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open battery optimization settings: {error}'**
+  String permissionGuideOpenBatteryFailed(Object error);
+
+  /// No description provided for @permissionGuideAutostartOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Autostart settings opened'**
+  String get permissionGuideAutostartOpened;
+
+  /// No description provided for @permissionGuideOpenAutostartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open autostart settings: {error}'**
+  String permissionGuideOpenAutostartFailed(Object error);
+
+  /// No description provided for @permissionGuideCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission setup marked as complete'**
+  String get permissionGuideCompleted;
+
+  /// No description provided for @permissionGuideCompleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to mark permission setup: {error}'**
+  String permissionGuideCompleteFailed(Object error);
+
+  /// No description provided for @permissionGuideTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission setup guide'**
+  String get permissionGuideTitle;
+
+  /// No description provided for @permissionGuideOpenAppSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open app settings'**
+  String get permissionGuideOpenAppSettings;
+
+  /// No description provided for @permissionGuideOpenBatterySettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open battery optimization settings'**
+  String get permissionGuideOpenBatterySettings;
+
+  /// No description provided for @permissionGuideOpenAutostartSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open autostart settings'**
+  String get permissionGuideOpenAutostartSettings;
+
+  /// No description provided for @permissionGuideAllDone.
+  ///
+  /// In en, this message translates to:
+  /// **'I have completed all settings'**
+  String get permissionGuideAllDone;
+
+  /// No description provided for @galleryDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting...'**
+  String get galleryDeleting;
+
+  /// No description provided for @galleryCleaningCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleaning cache...'**
+  String get galleryCleaningCache;
+
+  /// No description provided for @favoriteRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from favorites'**
+  String get favoriteRemoved;
+
+  /// No description provided for @favoriteAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to favorites'**
+  String get favoriteAdded;
+
+  /// No description provided for @operationFailedWithError.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation failed: {error}'**
+  String operationFailedWithError(Object error);
+
+  /// No description provided for @searchSemantic.
+  ///
+  /// In en, this message translates to:
+  /// **'Semantic search'**
+  String get searchSemantic;
+
+  /// No description provided for @searchDynamic.
+  ///
+  /// In en, this message translates to:
+  /// **'Search dynamics'**
+  String get searchDynamic;
+
+  /// No description provided for @searchMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Search more'**
+  String get searchMore;
+
+  /// No description provided for @openDailySummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Open daily summary'**
+  String get openDailySummary;
+
+  /// No description provided for @openWeeklySummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Open weekly summary'**
+  String get openWeeklySummary;
+
+  /// No description provided for @noAvailableTags.
+  ///
+  /// In en, this message translates to:
+  /// **'No available tags'**
+  String get noAvailableTags;
+
+  /// No description provided for @clearFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filter'**
+  String get clearFilter;
+
+  /// No description provided for @forceMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge'**
+  String get forceMerge;
+
+  /// No description provided for @forceMergeNoPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'No previous event to merge'**
+  String get forceMergeNoPrevious;
+
+  /// No description provided for @forceMergeQueuedFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to queue force merge'**
+  String get forceMergeQueuedFailed;
+
+  /// No description provided for @forceMergeQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge queued'**
+  String get forceMergeQueued;
+
+  /// No description provided for @forceMergeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge failed'**
+  String get forceMergeFailed;
+
+  /// No description provided for @mergeCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge completed'**
+  String get mergeCompleted;
+
+  /// No description provided for @numberInputRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a number.'**
+  String get numberInputRequired;
+
+  /// No description provided for @valueSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved: {value}'**
+  String valueSaved(Object value);
+
+  /// No description provided for @openChannelSettingsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Open channel settings failed: {error}'**
+  String openChannelSettingsFailed(Object error);
+
+  /// No description provided for @openAppNotificationSettingsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Open app notification settings failed: {error}'**
+  String openAppNotificationSettingsFailed(Object error);
+
+  /// No description provided for @evidencePrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'[evidence: '**
+  String get evidencePrefix;
+
+  /// No description provided for @actionMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Menu'**
+  String get actionMenu;
+
+  /// No description provided for @actionShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get actionShare;
+
+  /// No description provided for @actionResetToDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default'**
+  String get actionResetToDefault;
+
+  /// No description provided for @homeMorningTipNumberedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{index}. {title}'**
+  String homeMorningTipNumberedTitle(Object index, Object title);
+
+  /// No description provided for @homeMorningTipsRawTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning tips RAW'**
+  String get homeMorningTipsRawTitle;
+
+  /// No description provided for @labelWithColon.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}: '**
+  String labelWithColon(Object label);
+
+  /// No description provided for @warningBullet.
+  ///
+  /// In en, this message translates to:
+  /// **'• {warning}'**
+  String warningBullet(Object warning);
+
+  /// No description provided for @resetToDefaultValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default: {value}'**
+  String resetToDefaultValue(Object value);
+
+  /// No description provided for @logPanelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Log panel'**
+  String get logPanelTitle;
+
+  /// No description provided for @logCopiedToClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied to clipboard'**
+  String get logCopiedToClipboard;
+
+  /// No description provided for @logShareText.
+  ///
+  /// In en, this message translates to:
+  /// **'ScreenMemo logs'**
+  String get logShareText;
+
+  /// No description provided for @logShareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Share failed'**
+  String get logShareFailed;
+
+  /// No description provided for @logCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs cleared'**
+  String get logCleared;
+
+  /// No description provided for @logClearFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to clear logs'**
+  String get logClearFailed;
+
+  /// No description provided for @logNoLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'No logs yet'**
+  String get logNoLogs;
+
+  /// No description provided for @logNoMatchingLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching logs'**
+  String get logNoMatchingLogs;
+
+  /// No description provided for @logFilterTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter'**
+  String get logFilterTooltip;
+
+  /// No description provided for @logSortNewestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest first'**
+  String get logSortNewestFirst;
+
+  /// No description provided for @logSortOldestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest first'**
+  String get logSortOldestFirst;
+
+  /// No description provided for @logLevelCritical.
+  ///
+  /// In en, this message translates to:
+  /// **'Critical'**
+  String get logLevelCritical;
+
+  /// No description provided for @logLevelError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get logLevelError;
+
+  /// No description provided for @logLevelVerbose.
+  ///
+  /// In en, this message translates to:
+  /// **'Verbose'**
+  String get logLevelVerbose;
+
+  /// No description provided for @logLevelDebug.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug'**
+  String get logLevelDebug;
+
+  /// No description provided for @eventNewConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'New conversation'**
+  String get eventNewConversation;
+
+  /// No description provided for @forceMergeConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge with the previous event, overwrite the current event summary, and delete the previous event. This cannot be undone. Continue?'**
+  String get forceMergeConfirmMessage;
+
+  /// No description provided for @forceMergeRequestedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge requested (queued)'**
+  String get forceMergeRequestedReason;
+
+  /// No description provided for @mergeStatusMerging.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merging…'**
+  String get mergeStatusMerging;
+
+  /// No description provided for @mergeStatusMerged.
+  ///
+  /// In en, this message translates to:
+  /// **'Merged'**
+  String get mergeStatusMerged;
+
+  /// No description provided for @mergeStatusForceRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Force merge requested'**
+  String get mergeStatusForceRequested;
+
+  /// No description provided for @mergeStatusNotMerged.
+  ///
+  /// In en, this message translates to:
+  /// **'Not merged'**
+  String get mergeStatusNotMerged;
+
+  /// No description provided for @mergeStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get mergeStatusPending;
+
+  /// No description provided for @semanticSearchNotStartedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Semantic search not started'**
+  String get semanticSearchNotStartedTitle;
+
+  /// No description provided for @semanticSearchNotStartedDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'This searches AI descriptions, keywords, and tags for images. To avoid lag while typing, start the search manually.'**
+  String get semanticSearchNotStartedDesc;
+
+  /// No description provided for @segmentSearchNotStartedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic search not started'**
+  String get segmentSearchNotStartedTitle;
+
+  /// No description provided for @segmentSearchNotStartedDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'To avoid lag while typing, start the search manually.'**
+  String get segmentSearchNotStartedDesc;
+
+  /// No description provided for @foundImagesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Found {count} images'**
+  String foundImagesCount(Object count);
+
+  /// No description provided for @tagsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get tagsLabel;
+
+  /// No description provided for @tagCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} tags'**
+  String tagCount(Object count);
+
+  /// No description provided for @tagFilterTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag filters'**
+  String get tagFilterTitle;
+
+  /// No description provided for @selectedAllLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get selectedAllLabel;
+
+  /// No description provided for @selectedTagsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected'**
+  String selectedTagsCount(Object count);
+
+  /// No description provided for @selectedTypesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected'**
+  String selectedTypesCount(Object count);
+
+  /// No description provided for @confirmSelectionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'OK ({selection})'**
+  String confirmSelectionLabel(Object selection);
+
+  /// No description provided for @noContentParenthesized.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty)'**
+  String get noContentParenthesized;
+
+  /// No description provided for @typeFilterTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Type filters'**
+  String get typeFilterTitle;
+
+  /// No description provided for @rawResponseCleanupEnableTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Raw Response Cleanup'**
+  String get rawResponseCleanupEnableTitle;
+
+  /// No description provided for @rawResponseCleanupEnableMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This will automatically clear raw_response older than {days} days. Summaries and structured_json are not affected.'**
+  String rawResponseCleanupEnableMessage(Object days);
+
+  /// No description provided for @rawResponseCleanupEnableAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable & Clean Now'**
+  String get rawResponseCleanupEnableAction;
+
+  /// No description provided for @segmentsJsonAutoRetryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Times (0-5)'**
+  String get segmentsJsonAutoRetryHint;
+
+  /// No description provided for @rawResponseCleanupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto Clean Raw Responses'**
+  String get rawResponseCleanupTitle;
+
+  /// No description provided for @rawResponseCleanupKeepLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get rawResponseCleanupKeepLabel;
+
+  /// No description provided for @rawResponseCleanupRetentionDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} days'**
+  String rawResponseCleanupRetentionDays(Object days);
+
+  /// No description provided for @rawResponseCleanupDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Only clears old raw_response; summaries and structured_json stay untouched'**
+  String get rawResponseCleanupDesc;
+
+  /// No description provided for @mergeStatusMergingReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging, please wait…'**
+  String get mergeStatusMergingReason;
+
+  /// No description provided for @permissionGuideLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading permission setup guide...'**
+  String get permissionGuideLoading;
+
+  /// No description provided for @permissionGuideUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to get permission setup guide'**
+  String get permissionGuideUnavailable;
+
+  /// No description provided for @permissionGuideUnknownDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown device'**
+  String get permissionGuideUnknownDevice;
+
+  /// No description provided for @permissionGuideLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load permission setup guide: {error}'**
+  String permissionGuideLoadFailed(Object error);
+
+  /// No description provided for @deviceInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Device info'**
+  String get deviceInfoTitle;
+
+  /// No description provided for @setupGuideTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup guide'**
+  String get setupGuideTitle;
+
+  /// No description provided for @permissionConfiguredStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured'**
+  String get permissionConfiguredStatus;
+
+  /// No description provided for @permissionNeedsConfigurationStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs configuration'**
+  String get permissionNeedsConfigurationStatus;
+
+  /// No description provided for @backgroundPermissionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Background run permission'**
+  String get backgroundPermissionTitle;
+
+  /// No description provided for @actualBatteryOptimizationStatusTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Actual battery optimization status'**
+  String get actualBatteryOptimizationStatusTitle;
+
+  /// No description provided for @keyDialogProviderNotSavedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Please save the provider before adding API keys.'**
+  String get keyDialogProviderNotSavedHint;
+
+  /// No description provided for @keyDialogNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Key name'**
+  String get keyDialogNameLabel;
+
+  /// No description provided for @keyDialogApiKeyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key'**
+  String get keyDialogApiKeyLabel;
+
+  /// No description provided for @keyDialogApiKeyLabelMulti.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key (one per line)'**
+  String get keyDialogApiKeyLabelMulti;
+
+  /// No description provided for @keyDialogApiKeyHintMulti.
+  ///
+  /// In en, this message translates to:
+  /// **'One API Key per line. Fetch scans every key.'**
+  String get keyDialogApiKeyHintMulti;
+
+  /// No description provided for @keyDialogPriorityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority (100 = dynamic allocation)'**
+  String get keyDialogPriorityLabel;
+
+  /// No description provided for @keyDialogModelsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported models (one per line)'**
+  String get keyDialogModelsLabel;
+
+  /// No description provided for @keyDialogPhaseFetchModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch models'**
+  String get keyDialogPhaseFetchModels;
+
+  /// No description provided for @keyDialogPhaseFetchBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch balance'**
+  String get keyDialogPhaseFetchBalance;
+
+  /// No description provided for @keyDialogPhaseScanKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan keys'**
+  String get keyDialogPhaseScanKeys;
+
+  /// No description provided for @keyDialogPhaseSaveKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Save keys'**
+  String get keyDialogPhaseSaveKeys;
+
+  /// No description provided for @keyDialogPhaseSaveKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Save key'**
+  String get keyDialogPhaseSaveKey;
+
+  /// No description provided for @keyDialogPhaseSaveBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Save balance'**
+  String get keyDialogPhaseSaveBalance;
+
+  /// No description provided for @keyDialogPhaseFetchComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch complete'**
+  String get keyDialogPhaseFetchComplete;
+
+  /// No description provided for @keyDialogPhaseSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed'**
+  String get keyDialogPhaseSaveFailed;
+
+  /// No description provided for @keyDialogFallbackKeyName.
+  ///
+  /// In en, this message translates to:
+  /// **'Current key'**
+  String get keyDialogFallbackKeyName;
+
+  /// No description provided for @keyDialogPreparingScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to scan {count} API keys...'**
+  String keyDialogPreparingScan(int count);
+
+  /// No description provided for @keyDialogFetchingModelsFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching models for {label}...'**
+  String keyDialogFetchingModelsFor(String label);
+
+  /// No description provided for @keyDialogFetchingBalanceFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching balance for {label}...'**
+  String keyDialogFetchingBalanceFor(String label);
+
+  /// No description provided for @keyDialogModelFetchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} model fetch failed: {error}'**
+  String keyDialogModelFetchFailed(String label, String error);
+
+  /// No description provided for @keyDialogBalanceFetchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} balance fetch failed: {error}'**
+  String keyDialogBalanceFetchFailed(String label, String error);
+
+  /// No description provided for @keyDialogModelsCountText.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} models'**
+  String keyDialogModelsCountText(int count);
+
+  /// No description provided for @keyDialogModelFetchSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'model fetch failed, skipped'**
+  String get keyDialogModelFetchSkipped;
+
+  /// No description provided for @keyDialogBalanceSuffixSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **', balance: {value}'**
+  String keyDialogBalanceSuffixSuccess(String value);
+
+  /// No description provided for @keyDialogBalanceSuffixFailed.
+  ///
+  /// In en, this message translates to:
+  /// **', balance failed'**
+  String get keyDialogBalanceSuffixFailed;
+
+  /// No description provided for @keyDialogScanLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}: {modelMessage}{balanceMessage}'**
+  String keyDialogScanLine(
+    String label,
+    String modelMessage,
+    String balanceMessage,
+  );
+
+  /// No description provided for @keyDialogModelFetchSummarySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Model fetch complete: {ok}/{total} keys succeeded, {merged} models merged{balanceHint}{failedHint}'**
+  String keyDialogModelFetchSummarySuccess(
+    int ok,
+    int total,
+    int merged,
+    String balanceHint,
+    String failedHint,
+  );
+
+  /// No description provided for @keyDialogModelFetchSummaryNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No key returned models. The current manual model list is unchanged.'**
+  String get keyDialogModelFetchSummaryNone;
+
+  /// No description provided for @keyDialogPreparingSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to save...'**
+  String get keyDialogPreparingSave;
+
+  /// No description provided for @keyDialogSavingItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving {label}...'**
+  String keyDialogSavingItem(String label);
+
+  /// No description provided for @keyDialogSavingBalanceItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving balance for {label}...'**
+  String keyDialogSavingBalanceItem(String label);
+
+  /// No description provided for @keyDialogImportedKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {count} API keys{balanceHint}{skippedHint}'**
+  String keyDialogImportedKeys(
+    int count,
+    String balanceHint,
+    String skippedHint,
+  );
+
+  /// No description provided for @keyDialogApiKeySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key saved{balanceHint}'**
+  String keyDialogApiKeySaved(String balanceHint);
+
+  /// No description provided for @keyDialogNoNewKey.
+  ///
+  /// In en, this message translates to:
+  /// **'No new key: all entered API keys already exist.'**
+  String get keyDialogNoNewKey;
+
+  /// No description provided for @keyDialogSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save API Key: {error}'**
+  String keyDialogSaveFailed(String error);
+
+  /// No description provided for @keyDialogBalanceHintFraction.
+  ///
+  /// In en, this message translates to:
+  /// **', balance {ok}/{total}'**
+  String keyDialogBalanceHintFraction(int ok, int total);
+
+  /// No description provided for @keyDialogSkippedDuplicates.
+  ///
+  /// In en, this message translates to:
+  /// **', skipped {count} duplicate keys'**
+  String keyDialogSkippedDuplicates(int count);
+
+  /// No description provided for @keyDialogFailedItemsHint.
+  ///
+  /// In en, this message translates to:
+  /// **', {count} failed items'**
+  String keyDialogFailedItemsHint(int count);
+
+  /// No description provided for @keyDialogFinalSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Models {modelOk}/{modelTotal}, balances {balanceOk}/{balanceTotal}'**
+  String keyDialogFinalSummary(
+    int modelOk,
+    int modelTotal,
+    int balanceOk,
+    int balanceTotal,
+  );
+
+  /// No description provided for @segmentSampleIntervalExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'How often a screenshot is sampled within a single segment when generating a summary. Smaller values capture more detail but use more tokens; larger values are cheaper but may miss short-lived events.'**
+  String get segmentSampleIntervalExplain;
+
+  /// No description provided for @segmentDurationExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum duration of a single dynamic segment. After this length, a new segment is started even if the activity continues. Shorter segments produce more granular summaries; longer ones provide broader context.'**
+  String get segmentDurationExplain;
+
+  /// No description provided for @dynamicMergeMaxSpanExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Upper bound on the time span across which adjacent dynamic segments may be merged into one summary. Set to 0 to disable the limit.'**
+  String get dynamicMergeMaxSpanExplain;
+
+  /// No description provided for @dynamicMergeMaxGapExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum allowed gap between two adjacent dynamic segments for them to be considered mergeable. Set to 0 to disable the limit.'**
+  String get dynamicMergeMaxGapExplain;
+
+  /// No description provided for @dynamicMergeMaxImagesExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum number of screenshots fed into a merged summary in one go. Higher values give the model more context but increase cost and latency. Set to 0 for no limit.'**
+  String get dynamicMergeMaxImagesExplain;
+
+  /// No description provided for @aiRequestIntervalExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimum interval between two AI requests sent by the app. Increase this if your provider rate-limits you, or to reduce overall consumption.'**
+  String get aiRequestIntervalExplain;
+
+  /// No description provided for @segmentsJsonAutoRetryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto retry count'**
+  String get segmentsJsonAutoRetryTitle;
+
+  /// No description provided for @segmentsJsonAutoRetryDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When the AI response does not match the expected format, automatically retry the request this many times (0 = off, default 1). Current: {count}'**
+  String segmentsJsonAutoRetryDesc(int count);
+
+  /// No description provided for @segmentsJsonAutoRetryExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI sometimes returns content that cannot be parsed or does not match the required structure. When this happens, the app will automatically resend the request up to this many times. Higher values improve success rate but cost more time and tokens.'**
+  String get segmentsJsonAutoRetryExplain;
 }
 
 class _AppLocalizationsDelegate

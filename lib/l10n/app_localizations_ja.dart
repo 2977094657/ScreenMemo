@@ -401,10 +401,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get screenshotSectionDesc => '間隔/品質/期限削除';
 
   @override
-  String get segmentSummarySectionTitle => 'セグメントの概要';
+  String get segmentSummarySectionTitle => 'ダイナミック設定';
 
   @override
-  String get segmentSummarySectionDesc => 'サンプリング/長さ/AI間隔';
+  String get segmentSummarySectionDesc => 'サンプリング / 区間長 / マージ / AI リクエスト間隔';
 
   @override
   String get dailyReminderSectionTitle => '毎日の概要リマインダー';
@@ -2591,4 +2591,904 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get evidenceTitle => '証拠';
+
+  @override
+  String get runtimeDiagnosticCopied => '診断情報をコピーしました';
+
+  @override
+  String get runtimeDiagnosticCopyFailed => '診断情報のコピーに失敗しました';
+
+  @override
+  String get runtimeDiagnosticNoFileToOpen => '開ける診断ファイルがありません';
+
+  @override
+  String get runtimeDiagnosticOpenAttempted => '診断ファイルを開こうとしました';
+
+  @override
+  String get runtimeDiagnosticOpenFallbackCopiedPath => '直接開けないため、ログパスをコピーしました';
+
+  @override
+  String get runtimeDiagnosticCopyInfoAction => '情報をコピー';
+
+  @override
+  String get runtimeDiagnosticOpenFileAction => 'このファイルを開く';
+
+  @override
+  String get runtimeDiagnosticOpenSettingsAction => '設定を開く';
+
+  @override
+  String get importDiagnosticsReportCopied => '診断レポートをコピーしました';
+
+  @override
+  String get importDiagnosticsNoRepairableOcr =>
+      '修復が必要な OCR テキストはありません。診断を更新しました';
+
+  @override
+  String get importDiagnosticsOcrRepairStarted =>
+      'バックグラウンドで修復を開始しました。通知で進捗を確認できます。';
+
+  @override
+  String get importDiagnosticsOcrRepairResumed =>
+      'バックグラウンド修復を再開しました。通知で進捗を確認できます。';
+
+  @override
+  String get importDiagnosticsOcrRepairStopped => 'OCR テキスト修復を停止しました';
+
+  @override
+  String get importDiagnosticsStopRepairFailed => '修復の停止に失敗しました';
+
+  @override
+  String get importDiagnosticsTitle => 'インポート診断';
+
+  @override
+  String get importDiagnosticsFailedTitle => '診断に失敗しました';
+
+  @override
+  String importDiagnosticsDurationMs(Object durationMs) {
+    return '所要時間：${durationMs}ms';
+  }
+
+  @override
+  String get importDiagnosticsBackgroundRepairTask => 'バックグラウンド修復タスク';
+
+  @override
+  String get importDiagnosticsStopRepair => '修復を停止';
+
+  @override
+  String get importDiagnosticsRepairIndex => 'インデックスを修復';
+
+  @override
+  String get memoryTabView => 'メモリを見る';
+
+  @override
+  String get memoryTabRebuild => 'ワンタップ再構築';
+
+  @override
+  String memorySignalStatusChip(Object label, Object count) {
+    return '$label $count';
+  }
+
+  @override
+  String get memoryForceCreate => '強制新規作成';
+
+  @override
+  String get actionIgnore => '無視';
+
+  @override
+  String get memoryGenerateSuggestions => '提案を生成';
+
+  @override
+  String get memoryApplyAllSuggestions => 'すべて適用';
+
+  @override
+  String get memoryApplyThisSuggestion => 'これを適用';
+
+  @override
+  String get memoryDontApplySuggestion => '適用しない';
+
+  @override
+  String get memoryCopyError => 'エラーをコピー';
+
+  @override
+  String get actionDescription => '説明';
+
+  @override
+  String get memoryRebuildAction => 'ワンタップ再構築';
+
+  @override
+  String get actionStop => '停止';
+
+  @override
+  String get memoryUriInputHint => 'URI を入力（例：core://my_user）';
+
+  @override
+  String get memorySearchHint => 'メモリ内容/パスを検索…';
+
+  @override
+  String get memoryRoot => 'ルート';
+
+  @override
+  String get memoryParent => '上位';
+
+  @override
+  String get memoryBoot => 'boot';
+
+  @override
+  String get memoryRecent => 'recent';
+
+  @override
+  String get memoryIndex => 'index';
+
+  @override
+  String get providerAddAtLeastOneEnabledApiKey =>
+      '有効な API Key を少なくとも 1 つ追加してください。';
+
+  @override
+  String get providerSaveBeforeBatchTest => '一括テストの前にプロバイダーを保存してください。';
+
+  @override
+  String get providerKeepOneEnabledApiKey =>
+      '有効で空ではない API Key を少なくとも 1 つ残してください。';
+
+  @override
+  String get providerBatchTestFailed => '一括テストに失敗しました。後でもう一度お試しください。';
+
+  @override
+  String get providerBatchTestResultTitle => '一括テスト結果';
+
+  @override
+  String get actionClose => '閉じる';
+
+  @override
+  String get providerOnlyOneApiKeyCanEdit => '一度に編集できる API Key は 1 つだけです';
+
+  @override
+  String get providerAddApiKey => 'API Key を追加';
+
+  @override
+  String get providerEditApiKey => 'API Key を編集';
+
+  @override
+  String get providerFetchModelsAndBalance => 'モデルと残高を取得';
+
+  @override
+  String get actionSaving => '保存中';
+
+  @override
+  String get providerFetchModelsFailedManual => 'モデルの取得に失敗しました。手動で追加できます。';
+
+  @override
+  String providerDeletedApiKeys(Object count) {
+    return '$count 個の API Key を削除しました';
+  }
+
+  @override
+  String get providerAddKeyButton => 'Key を追加';
+
+  @override
+  String get providerBatchTestButton => '一括テスト';
+
+  @override
+  String get providerDeleteAllKeys => 'すべて削除';
+
+  @override
+  String get providerNoApiKeys => 'API Key はありません。';
+
+  @override
+  String get balanceEndpointNone => '照会しない';
+
+  @override
+  String get balanceEndpointNewApi => 'new-api（/dashboard/billing）';
+
+  @override
+  String get balanceEndpointSub2api => 'sub2api（/v1/usage）';
+
+  @override
+  String get segmentEntryLogHint => '長押しでテキストを選択するか、コピーを押してまとめてコピーします。';
+
+  @override
+  String get segmentEntryLogCopied => '動的エントリーログをコピーしました';
+
+  @override
+  String get copyLogAction => 'ログをコピー';
+
+  @override
+  String get segmentDynamicConcurrencySaveFailed => '日別並行数の保存に失敗しました';
+
+  @override
+  String get dynamicAutoRepairEnabled => '自動補修を有効にしました';
+
+  @override
+  String get dynamicAutoRepairPaused => '自動補修を一時停止しました';
+
+  @override
+  String get dynamicAutoRepairToggleFailed => '自動補修の切り替えに失敗しました';
+
+  @override
+  String get dynamicRebuildStart => '再構築を開始';
+
+  @override
+  String get dynamicRebuildContinue => '再構築を続行';
+
+  @override
+  String savedToPath(Object path) {
+    return '保存先：$path';
+  }
+
+  @override
+  String get dynamicRebuildNoSegments => '再構築できる動的項目はありません';
+
+  @override
+  String dynamicRebuildSwitchedModelContinue(Object model) {
+    return 'モデル $model に切り替えて再構築を続行しました';
+  }
+
+  @override
+  String get dynamicRebuildStartedInBackground =>
+      'バックグラウンドで再構築を開始しました。通知で進捗を確認できます。';
+
+  @override
+  String get dynamicRebuildTaskResumed => 'バックグラウンド再構築タスクを再開しました';
+
+  @override
+  String get dynamicRebuildStopped => '動的再構築を停止しました';
+
+  @override
+  String get dynamicRebuildStopFailed => '動的再構築の停止に失敗しました';
+
+  @override
+  String get dynamicRebuildBlockedRetry => '全体再構築中のため、単体の再生成は一時的に無効です。';
+
+  @override
+  String get dynamicRebuildBlockedForceMerge => '全体再構築中のため、手動の強制マージは一時的に無効です。';
+
+  @override
+  String get rawResponseRetentionDaysTitle => '保持日数を設定';
+
+  @override
+  String get rawResponseRetentionDaysLabel => '保持日数';
+
+  @override
+  String get rawResponseRetentionDaysHint => '0 より大きい数値を入力してください';
+
+  @override
+  String get rawResponseCleanupSaved => '生レスポンスのクリーンアップ設定を保存しました。';
+
+  @override
+  String get chatContextTitlePrefix => '会話コンテキスト（';
+
+  @override
+  String get chatContextTitleMemory => 'メモリ';
+
+  @override
+  String get chatContextTitleSuffix => '）';
+
+  @override
+  String rawResponseRetentionUpdatedDays(Object days) {
+    return '保持日数を $days 日に更新しました。';
+  }
+
+  @override
+  String get homeMorningTipsUpdated => '朝のヒントを更新しました';
+
+  @override
+  String get homeMorningTipsGenerateFailed => '朝のヒント生成に失敗しました';
+
+  @override
+  String eventCreateFailed(Object error) {
+    return '作成に失敗しました: $error';
+  }
+
+  @override
+  String eventSwitchFailed(Object error) {
+    return '切り替えに失敗しました: $error';
+  }
+
+  @override
+  String get eventSessionSwitched => '会話を切り替えました';
+
+  @override
+  String get eventSessionDeleted => '会話を削除しました';
+
+  @override
+  String get exclusionExcludedAppsTitle => '除外済みアプリ';
+
+  @override
+  String get exclusionSelfAppBullet => '· このアプリ（自己ループ回避）';
+
+  @override
+  String get exclusionImeAppsBullet => '· 入力方式（キーボード）アプリ:';
+
+  @override
+  String get exclusionAutoFilteredBullet => '  - （自動フィルタ済み）';
+
+  @override
+  String get exclusionUnknownIme => '不明な入力方式';
+
+  @override
+  String exclusionImeAppBullet(Object name) {
+    return '  - $name';
+  }
+
+  @override
+  String get imageError => '画像エラー';
+
+  @override
+  String get logDetailTitle => 'ログ詳細';
+
+  @override
+  String get logLevelAll => 'すべて';
+
+  @override
+  String get logLevelDebugVerbose => 'デバッグ/詳細';
+
+  @override
+  String get logLevelInfo => '情報';
+
+  @override
+  String get logLevelWarning => '警告';
+
+  @override
+  String get logLevelErrorSevere => 'エラー/重大';
+
+  @override
+  String get logSearchHint => 'タイトル/内容/例外/スタックを検索';
+
+  @override
+  String onboardingPermissionLoadFailed(Object error) {
+    return '権限状態の読み込みに失敗しました: $error';
+  }
+
+  @override
+  String get permissionGuideSettingsOpened => 'アプリ設定を開きました。ガイドに従って設定してください';
+
+  @override
+  String permissionGuideOpenSettingsFailed(Object error) {
+    return '設定ページを開けませんでした: $error';
+  }
+
+  @override
+  String get permissionGuideBatteryOpened => 'バッテリー最適化設定を開きました';
+
+  @override
+  String permissionGuideOpenBatteryFailed(Object error) {
+    return 'バッテリー最適化設定を開けませんでした: $error';
+  }
+
+  @override
+  String get permissionGuideAutostartOpened => '自動起動設定を開きました';
+
+  @override
+  String permissionGuideOpenAutostartFailed(Object error) {
+    return '自動起動設定を開けませんでした: $error';
+  }
+
+  @override
+  String get permissionGuideCompleted => '権限設定を完了としてマークしました';
+
+  @override
+  String permissionGuideCompleteFailed(Object error) {
+    return '権限設定の完了マークに失敗しました: $error';
+  }
+
+  @override
+  String get permissionGuideTitle => '権限設定ガイド';
+
+  @override
+  String get permissionGuideOpenAppSettings => 'アプリ設定を開く';
+
+  @override
+  String get permissionGuideOpenBatterySettings => 'バッテリー最適化設定を開く';
+
+  @override
+  String get permissionGuideOpenAutostartSettings => '自動起動設定を開く';
+
+  @override
+  String get permissionGuideAllDone => 'すべての設定を完了しました';
+
+  @override
+  String get galleryDeleting => '削除中...';
+
+  @override
+  String get galleryCleaningCache => 'キャッシュを整理中...';
+
+  @override
+  String get favoriteRemoved => 'お気に入りから削除しました';
+
+  @override
+  String get favoriteAdded => 'お気に入りに追加しました';
+
+  @override
+  String operationFailedWithError(Object error) {
+    return '操作に失敗しました: $error';
+  }
+
+  @override
+  String get searchSemantic => 'セマンティック検索';
+
+  @override
+  String get searchDynamic => '動的検索';
+
+  @override
+  String get searchMore => 'さらに検索';
+
+  @override
+  String get openDailySummary => '日次サマリーを開く';
+
+  @override
+  String get openWeeklySummary => '週次サマリーを開く';
+
+  @override
+  String get noAvailableTags => '利用可能なタグはありません';
+
+  @override
+  String get clearFilter => 'フィルターをクリア';
+
+  @override
+  String get forceMerge => '強制マージ';
+
+  @override
+  String get forceMergeNoPrevious => 'マージできる前のイベントがありません';
+
+  @override
+  String get forceMergeQueuedFailed => '強制マージのキュー投入に失敗しました';
+
+  @override
+  String get forceMergeQueued => '強制マージをキューに追加しました';
+
+  @override
+  String get forceMergeFailed => '強制マージに失敗しました';
+
+  @override
+  String get mergeCompleted => 'マージ完了';
+
+  @override
+  String get numberInputRequired => '数値を入力してください';
+
+  @override
+  String valueSaved(Object value) {
+    return '保存しました: $value';
+  }
+
+  @override
+  String openChannelSettingsFailed(Object error) {
+    return 'チャンネル設定を開けませんでした: $error';
+  }
+
+  @override
+  String openAppNotificationSettingsFailed(Object error) {
+    return 'アプリ通知設定を開けませんでした: $error';
+  }
+
+  @override
+  String get evidencePrefix => '[証拠: ';
+
+  @override
+  String get actionMenu => 'メニュー';
+
+  @override
+  String get actionShare => '共有';
+
+  @override
+  String get actionResetToDefault => 'デフォルトに戻す';
+
+  @override
+  String homeMorningTipNumberedTitle(Object index, Object title) {
+    return '$index. $title';
+  }
+
+  @override
+  String get homeMorningTipsRawTitle => '朝のヒント RAW';
+
+  @override
+  String labelWithColon(Object label) {
+    return '$label: ';
+  }
+
+  @override
+  String warningBullet(Object warning) {
+    return '• $warning';
+  }
+
+  @override
+  String resetToDefaultValue(Object value) {
+    return 'デフォルトに戻しました: $value';
+  }
+
+  @override
+  String get logPanelTitle => 'ログパネル';
+
+  @override
+  String get logCopiedToClipboard => 'クリップボードにコピーしました';
+
+  @override
+  String get logShareText => 'ScreenMemo ログ';
+
+  @override
+  String get logShareFailed => '共有に失敗しました';
+
+  @override
+  String get logCleared => 'ログをクリアしました';
+
+  @override
+  String get logClearFailed => 'ログのクリアに失敗しました';
+
+  @override
+  String get logNoLogs => 'ログはまだありません';
+
+  @override
+  String get logNoMatchingLogs => '一致するログはありません';
+
+  @override
+  String get logFilterTooltip => 'フィルター';
+
+  @override
+  String get logSortNewestFirst => '新しい順';
+
+  @override
+  String get logSortOldestFirst => '古い順';
+
+  @override
+  String get logLevelCritical => '重大';
+
+  @override
+  String get logLevelError => 'エラー';
+
+  @override
+  String get logLevelVerbose => '詳細';
+
+  @override
+  String get logLevelDebug => 'デバッグ';
+
+  @override
+  String get eventNewConversation => '新しい会話';
+
+  @override
+  String get forceMergeConfirmMessage =>
+      '前のイベントと強制マージし、現在のイベント要約を上書きして前のイベントを削除します。この操作は元に戻せません。続行しますか？';
+
+  @override
+  String get forceMergeRequestedReason => '強制マージをリクエストしました（キュー内）';
+
+  @override
+  String get mergeStatusMerging => '強制マージ中…';
+
+  @override
+  String get mergeStatusMerged => 'マージ済み';
+
+  @override
+  String get mergeStatusForceRequested => '強制マージをリクエスト済み';
+
+  @override
+  String get mergeStatusNotMerged => '未マージ';
+
+  @override
+  String get mergeStatusPending => '判定待ち';
+
+  @override
+  String get semanticSearchNotStartedTitle => 'セマンティック検索は未開始です';
+
+  @override
+  String get semanticSearchNotStartedDesc =>
+      '画像の AI 説明、キーワード、タグを検索します。入力中の遅延を避けるため、手動で検索を開始してください。';
+
+  @override
+  String get segmentSearchNotStartedTitle => '動的検索は未開始です';
+
+  @override
+  String get segmentSearchNotStartedDesc => '入力中の遅延を避けるため、手動で検索を開始してください。';
+
+  @override
+  String foundImagesCount(Object count) {
+    return '$count 件の画像が見つかりました';
+  }
+
+  @override
+  String get tagsLabel => 'タグ';
+
+  @override
+  String tagCount(Object count) {
+    return '$count 個のタグ';
+  }
+
+  @override
+  String get tagFilterTitle => 'タグフィルター';
+
+  @override
+  String get selectedAllLabel => 'すべて';
+
+  @override
+  String selectedTagsCount(Object count) {
+    return '$count 個選択済み';
+  }
+
+  @override
+  String selectedTypesCount(Object count) {
+    return '$count 種類選択済み';
+  }
+
+  @override
+  String confirmSelectionLabel(Object selection) {
+    return 'OK（$selection）';
+  }
+
+  @override
+  String get noContentParenthesized => '（空）';
+
+  @override
+  String get typeFilterTitle => '種類フィルター';
+
+  @override
+  String get rawResponseCleanupEnableTitle => '原始応答の自動クリーンアップを有効化';
+
+  @override
+  String rawResponseCleanupEnableMessage(Object days) {
+    return '$days 日より古い raw_response を自動的に削除します。サマリーと structured_json には影響しません。';
+  }
+
+  @override
+  String get rawResponseCleanupEnableAction => '有効化して今すぐクリーンアップ';
+
+  @override
+  String get segmentsJsonAutoRetryHint => '回数（0-5）';
+
+  @override
+  String get rawResponseCleanupTitle => '原始応答の自動クリーンアップ';
+
+  @override
+  String get rawResponseCleanupKeepLabel => '保持';
+
+  @override
+  String rawResponseCleanupRetentionDays(Object days) {
+    return '$days 日';
+  }
+
+  @override
+  String get rawResponseCleanupDesc =>
+      '古い raw_response のみ削除し、サマリーと structured_json は保持します';
+
+  @override
+  String get mergeStatusMergingReason => 'マージ中です。しばらくお待ちください…';
+
+  @override
+  String get permissionGuideLoading => '権限設定ガイドを読み込み中...';
+
+  @override
+  String get permissionGuideUnavailable => '権限設定ガイドを取得できません';
+
+  @override
+  String get permissionGuideUnknownDevice => '不明なデバイス';
+
+  @override
+  String permissionGuideLoadFailed(Object error) {
+    return '権限設定ガイドの読み込みに失敗しました: $error';
+  }
+
+  @override
+  String get deviceInfoTitle => 'デバイス情報';
+
+  @override
+  String get setupGuideTitle => '設定ガイド';
+
+  @override
+  String get permissionConfiguredStatus => '設定済み';
+
+  @override
+  String get permissionNeedsConfigurationStatus => '設定が必要';
+
+  @override
+  String get backgroundPermissionTitle => 'バックグラウンド実行権限';
+
+  @override
+  String get actualBatteryOptimizationStatusTitle => '実際のバッテリー最適化状態';
+
+  @override
+  String get keyDialogProviderNotSavedHint => 'API キーを追加する前にプロバイダーを保存してください。';
+
+  @override
+  String get keyDialogNameLabel => 'キー名';
+
+  @override
+  String get keyDialogApiKeyLabel => 'API キー';
+
+  @override
+  String get keyDialogApiKeyLabelMulti => 'API キー（1 行に 1 つ）';
+
+  @override
+  String get keyDialogApiKeyHintMulti =>
+      '1 行に 1 つの API キーを入力。取得ボタンですべてスキャンされます。';
+
+  @override
+  String get keyDialogPriorityLabel => '優先度（100 = 動的割り当て）';
+
+  @override
+  String get keyDialogModelsLabel => '対応モデル（1 行に 1 つ）';
+
+  @override
+  String get keyDialogPhaseFetchModels => 'モデル取得';
+
+  @override
+  String get keyDialogPhaseFetchBalance => '残高取得';
+
+  @override
+  String get keyDialogPhaseScanKeys => 'キーをスキャン';
+
+  @override
+  String get keyDialogPhaseSaveKeys => 'キーを保存';
+
+  @override
+  String get keyDialogPhaseSaveKey => 'キーを保存';
+
+  @override
+  String get keyDialogPhaseSaveBalance => '残高を保存';
+
+  @override
+  String get keyDialogPhaseFetchComplete => '取得完了';
+
+  @override
+  String get keyDialogPhaseSaveFailed => '保存失敗';
+
+  @override
+  String get keyDialogFallbackKeyName => '現在のキー';
+
+  @override
+  String keyDialogPreparingScan(int count) {
+    return '$count 個の API キーをスキャン準備中…';
+  }
+
+  @override
+  String keyDialogFetchingModelsFor(String label) {
+    return '$label のモデルを取得中…';
+  }
+
+  @override
+  String keyDialogFetchingBalanceFor(String label) {
+    return '$label の残高を取得中…';
+  }
+
+  @override
+  String keyDialogModelFetchFailed(String label, String error) {
+    return '$label のモデル取得に失敗: $error';
+  }
+
+  @override
+  String keyDialogBalanceFetchFailed(String label, String error) {
+    return '$label の残高取得に失敗: $error';
+  }
+
+  @override
+  String keyDialogModelsCountText(int count) {
+    return '$count モデル';
+  }
+
+  @override
+  String get keyDialogModelFetchSkipped => 'モデル取得失敗、スキップしました';
+
+  @override
+  String keyDialogBalanceSuffixSuccess(String value) {
+    return '、残高: $value';
+  }
+
+  @override
+  String get keyDialogBalanceSuffixFailed => '、残高取得失敗';
+
+  @override
+  String keyDialogScanLine(
+    String label,
+    String modelMessage,
+    String balanceMessage,
+  ) {
+    return '$label: $modelMessage$balanceMessage';
+  }
+
+  @override
+  String keyDialogModelFetchSummarySuccess(
+    int ok,
+    int total,
+    int merged,
+    String balanceHint,
+    String failedHint,
+  ) {
+    return 'モデル取得完了: $ok/$total キー成功、$merged モデルをマージ$balanceHint$failedHint';
+  }
+
+  @override
+  String get keyDialogModelFetchSummaryNone =>
+      'モデルを取得できませんでした。現在の手動モデル一覧は変更されていません。';
+
+  @override
+  String get keyDialogPreparingSave => '保存準備中…';
+
+  @override
+  String keyDialogSavingItem(String label) {
+    return '$label を保存中…';
+  }
+
+  @override
+  String keyDialogSavingBalanceItem(String label) {
+    return '$label の残高を保存中…';
+  }
+
+  @override
+  String keyDialogImportedKeys(
+    int count,
+    String balanceHint,
+    String skippedHint,
+  ) {
+    return '$count 個の API キーをインポートしました$balanceHint$skippedHint';
+  }
+
+  @override
+  String keyDialogApiKeySaved(String balanceHint) {
+    return 'API キーを保存しました$balanceHint';
+  }
+
+  @override
+  String get keyDialogNoNewKey => '新しいキーはありません: 入力されたすべての API キーは既に存在します。';
+
+  @override
+  String keyDialogSaveFailed(String error) {
+    return 'API キーの保存に失敗: $error';
+  }
+
+  @override
+  String keyDialogBalanceHintFraction(int ok, int total) {
+    return '、残高 $ok/$total';
+  }
+
+  @override
+  String keyDialogSkippedDuplicates(int count) {
+    return '、$count 個の重複キーをスキップ';
+  }
+
+  @override
+  String keyDialogFailedItemsHint(int count) {
+    return '、$count 件失敗';
+  }
+
+  @override
+  String keyDialogFinalSummary(
+    int modelOk,
+    int modelTotal,
+    int balanceOk,
+    int balanceTotal,
+  ) {
+    return 'モデル $modelOk/$modelTotal、残高 $balanceOk/$balanceTotal';
+  }
+
+  @override
+  String get segmentSampleIntervalExplain =>
+      '1 つのセグメントの要約を生成する際にスクリーンショットをサンプリングする間隔。値が小さいほど詳細を捉えますが、トークン消費が増えます。値が大きいほど省コストですが、短時間のイベントを見逃す可能性があります。';
+
+  @override
+  String get segmentDurationExplain =>
+      '単一のダイナミックセグメントの最大時間。これを超えると、活動が継続していても新しいセグメントを開始します。短いほど詳細な要約、長いほど広い文脈になります。';
+
+  @override
+  String get dynamicMergeMaxSpanExplain =>
+      '隣接する複数のダイナミックセグメントを 1 つの要約にマージできる最大時間範囲。0 を指定すると無制限になります。';
+
+  @override
+  String get dynamicMergeMaxGapExplain =>
+      '隣接する 2 つのダイナミックセグメント間で許容される最大の空白時間。これを超えるとマージされません。0 を指定すると無制限になります。';
+
+  @override
+  String get dynamicMergeMaxImagesExplain =>
+      'マージされた要約 1 回に渡されるスクリーンショットの最大数。多いほど文脈が豊富になりますが、コストとレイテンシも増えます。0 を指定すると無制限になります。';
+
+  @override
+  String get aiRequestIntervalExplain =>
+      'アプリが送信する AI リクエスト間の最小間隔。プロバイダーのレート制限に引っかかる場合や、全体的な使用量を抑えたい場合は値を大きくしてください。';
+
+  @override
+  String get segmentsJsonAutoRetryTitle => '自動再試行回数';
+
+  @override
+  String segmentsJsonAutoRetryDesc(int count) {
+    return 'AI の応答が必要な形式に一致しない場合に自動で再リクエストする回数（0 = オフ、既定 1）。現在: $count';
+  }
+
+  @override
+  String get segmentsJsonAutoRetryExplain =>
+      'AI は時々、解析できない、または必要な構造に一致しない内容を返します。その場合、アプリは設定された回数まで自動的に再リクエストします。値を大きくすると成功率が上がりますが、時間とトークンを多く消費します。';
 }

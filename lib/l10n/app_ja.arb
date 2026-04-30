@@ -1384,5 +1384,366 @@
   "unknownTitle": "不明",
   "unknownTime": "不明な時間",
   "empty": "空",
-  "evidenceTitle": "証拠"
+  "evidenceTitle": "証拠",
+  "runtimeDiagnosticCopied": "診断情報をコピーしました",
+  "runtimeDiagnosticCopyFailed": "診断情報のコピーに失敗しました",
+  "runtimeDiagnosticNoFileToOpen": "開ける診断ファイルがありません",
+  "runtimeDiagnosticOpenAttempted": "診断ファイルを開こうとしました",
+  "runtimeDiagnosticOpenFallbackCopiedPath": "直接開けないため、ログパスをコピーしました",
+  "runtimeDiagnosticCopyInfoAction": "情報をコピー",
+  "runtimeDiagnosticOpenFileAction": "このファイルを開く",
+  "runtimeDiagnosticOpenSettingsAction": "設定を開く",
+  "importDiagnosticsReportCopied": "診断レポートをコピーしました",
+  "importDiagnosticsNoRepairableOcr": "修復が必要な OCR テキストはありません。診断を更新しました",
+  "importDiagnosticsOcrRepairStarted": "バックグラウンドで修復を開始しました。通知で進捗を確認できます。",
+  "importDiagnosticsOcrRepairResumed": "バックグラウンド修復を再開しました。通知で進捗を確認できます。",
+  "importDiagnosticsOcrRepairStopped": "OCR テキスト修復を停止しました",
+  "importDiagnosticsStopRepairFailed": "修復の停止に失敗しました",
+  "importDiagnosticsTitle": "インポート診断",
+  "importDiagnosticsFailedTitle": "診断に失敗しました",
+  "importDiagnosticsDurationMs": "所要時間：{durationMs}ms",
+  "@importDiagnosticsDurationMs": {
+    "placeholders": {
+      "durationMs": {}
+    }
+  },
+  "importDiagnosticsBackgroundRepairTask": "バックグラウンド修復タスク",
+  "importDiagnosticsStopRepair": "修復を停止",
+  "importDiagnosticsRepairIndex": "インデックスを修復",
+  "memoryTabView": "メモリを見る",
+  "memoryTabRebuild": "ワンタップ再構築",
+  "memorySignalStatusChip": "{label} {count}",
+  "@memorySignalStatusChip": {
+    "placeholders": {
+      "label": {},
+      "count": {}
+    }
+  },
+  "memoryForceCreate": "強制新規作成",
+  "actionIgnore": "無視",
+  "memoryGenerateSuggestions": "提案を生成",
+  "memoryApplyAllSuggestions": "すべて適用",
+  "memoryApplyThisSuggestion": "これを適用",
+  "memoryDontApplySuggestion": "適用しない",
+  "memoryCopyError": "エラーをコピー",
+  "actionDescription": "説明",
+  "memoryRebuildAction": "ワンタップ再構築",
+  "actionStop": "停止",
+  "memoryUriInputHint": "URI を入力（例：core://my_user）",
+  "memorySearchHint": "メモリ内容/パスを検索…",
+  "memoryRoot": "ルート",
+  "memoryParent": "上位",
+  "memoryBoot": "boot",
+  "memoryRecent": "recent",
+  "memoryIndex": "index",
+  "providerAddAtLeastOneEnabledApiKey": "有効な API Key を少なくとも 1 つ追加してください。",
+  "providerSaveBeforeBatchTest": "一括テストの前にプロバイダーを保存してください。",
+  "providerKeepOneEnabledApiKey": "有効で空ではない API Key を少なくとも 1 つ残してください。",
+  "providerBatchTestFailed": "一括テストに失敗しました。後でもう一度お試しください。",
+  "providerBatchTestResultTitle": "一括テスト結果",
+  "actionClose": "閉じる",
+  "providerOnlyOneApiKeyCanEdit": "一度に編集できる API Key は 1 つだけです",
+  "providerAddApiKey": "API Key を追加",
+  "providerEditApiKey": "API Key を編集",
+  "providerFetchModelsAndBalance": "モデルと残高を取得",
+  "actionSaving": "保存中",
+  "providerFetchModelsFailedManual": "モデルの取得に失敗しました。手動で追加できます。",
+  "providerDeletedApiKeys": "{count} 個の API Key を削除しました",
+  "@providerDeletedApiKeys": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerAddKeyButton": "Key を追加",
+  "providerBatchTestButton": "一括テスト",
+  "providerDeleteAllKeys": "すべて削除",
+  "providerNoApiKeys": "API Key はありません。",
+  "balanceEndpointNone": "照会しない",
+  "balanceEndpointNewApi": "new-api（/dashboard/billing）",
+  "balanceEndpointSub2api": "sub2api（/v1/usage）",
+  "segmentEntryLogHint": "長押しでテキストを選択するか、コピーを押してまとめてコピーします。",
+  "segmentEntryLogCopied": "動的エントリーログをコピーしました",
+  "copyLogAction": "ログをコピー",
+  "segmentDynamicConcurrencySaveFailed": "日別並行数の保存に失敗しました",
+  "dynamicAutoRepairEnabled": "自動補修を有効にしました",
+  "dynamicAutoRepairPaused": "自動補修を一時停止しました",
+  "dynamicAutoRepairToggleFailed": "自動補修の切り替えに失敗しました",
+  "dynamicRebuildStart": "再構築を開始",
+  "dynamicRebuildContinue": "再構築を続行",
+  "savedToPath": "保存先：{path}",
+  "@savedToPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "dynamicRebuildNoSegments": "再構築できる動的項目はありません",
+  "dynamicRebuildSwitchedModelContinue": "モデル {model} に切り替えて再構築を続行しました",
+  "@dynamicRebuildSwitchedModelContinue": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "dynamicRebuildStartedInBackground": "バックグラウンドで再構築を開始しました。通知で進捗を確認できます。",
+  "dynamicRebuildTaskResumed": "バックグラウンド再構築タスクを再開しました",
+  "dynamicRebuildStopped": "動的再構築を停止しました",
+  "dynamicRebuildStopFailed": "動的再構築の停止に失敗しました",
+  "dynamicRebuildBlockedRetry": "全体再構築中のため、単体の再生成は一時的に無効です。",
+  "dynamicRebuildBlockedForceMerge": "全体再構築中のため、手動の強制マージは一時的に無効です。",
+  "rawResponseRetentionDaysTitle": "保持日数を設定",
+  "rawResponseRetentionDaysLabel": "保持日数",
+  "rawResponseRetentionDaysHint": "0 より大きい数値を入力してください",
+  "rawResponseCleanupSaved": "生レスポンスのクリーンアップ設定を保存しました。",
+  "chatContextTitlePrefix": "会話コンテキスト（",
+  "chatContextTitleMemory": "メモリ",
+  "chatContextTitleSuffix": "）",
+  "rawResponseRetentionUpdatedDays": "保持日数を {days} 日に更新しました。",
+  "@rawResponseRetentionUpdatedDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "homeMorningTipsUpdated": "朝のヒントを更新しました",
+  "homeMorningTipsGenerateFailed": "朝のヒント生成に失敗しました",
+  "eventCreateFailed": "作成に失敗しました: {error}",
+  "@eventCreateFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSwitchFailed": "切り替えに失敗しました: {error}",
+  "@eventSwitchFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "eventSessionSwitched": "会話を切り替えました",
+  "eventSessionDeleted": "会話を削除しました",
+  "exclusionExcludedAppsTitle": "除外済みアプリ",
+  "exclusionSelfAppBullet": "· このアプリ（自己ループ回避）",
+  "exclusionImeAppsBullet": "· 入力方式（キーボード）アプリ:",
+  "exclusionAutoFilteredBullet": "  - （自動フィルタ済み）",
+  "exclusionUnknownIme": "不明な入力方式",
+  "exclusionImeAppBullet": "  - {name}",
+  "@exclusionImeAppBullet": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "imageError": "画像エラー",
+  "logDetailTitle": "ログ詳細",
+  "logLevelAll": "すべて",
+  "logLevelDebugVerbose": "デバッグ/詳細",
+  "logLevelInfo": "情報",
+  "logLevelWarning": "警告",
+  "logLevelErrorSevere": "エラー/重大",
+  "logSearchHint": "タイトル/内容/例外/スタックを検索",
+  "onboardingPermissionLoadFailed": "権限状態の読み込みに失敗しました: {error}",
+  "@onboardingPermissionLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideSettingsOpened": "アプリ設定を開きました。ガイドに従って設定してください",
+  "permissionGuideOpenSettingsFailed": "設定ページを開けませんでした: {error}",
+  "@permissionGuideOpenSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideBatteryOpened": "バッテリー最適化設定を開きました",
+  "permissionGuideOpenBatteryFailed": "バッテリー最適化設定を開けませんでした: {error}",
+  "@permissionGuideOpenBatteryFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideAutostartOpened": "自動起動設定を開きました",
+  "permissionGuideOpenAutostartFailed": "自動起動設定を開けませんでした: {error}",
+  "@permissionGuideOpenAutostartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideCompleted": "権限設定を完了としてマークしました",
+  "permissionGuideCompleteFailed": "権限設定の完了マークに失敗しました: {error}",
+  "@permissionGuideCompleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionGuideTitle": "権限設定ガイド",
+  "permissionGuideOpenAppSettings": "アプリ設定を開く",
+  "permissionGuideOpenBatterySettings": "バッテリー最適化設定を開く",
+  "permissionGuideOpenAutostartSettings": "自動起動設定を開く",
+  "permissionGuideAllDone": "すべての設定を完了しました",
+  "galleryDeleting": "削除中...",
+  "galleryCleaningCache": "キャッシュを整理中...",
+  "favoriteRemoved": "お気に入りから削除しました",
+  "favoriteAdded": "お気に入りに追加しました",
+  "operationFailedWithError": "操作に失敗しました: {error}",
+  "@operationFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchSemantic": "セマンティック検索",
+  "searchDynamic": "動的検索",
+  "searchMore": "さらに検索",
+  "openDailySummary": "日次サマリーを開く",
+  "openWeeklySummary": "週次サマリーを開く",
+  "noAvailableTags": "利用可能なタグはありません",
+  "clearFilter": "フィルターをクリア",
+  "forceMerge": "強制マージ",
+  "forceMergeNoPrevious": "マージできる前のイベントがありません",
+  "forceMergeQueuedFailed": "強制マージのキュー投入に失敗しました",
+  "forceMergeQueued": "強制マージをキューに追加しました",
+  "forceMergeFailed": "強制マージに失敗しました",
+  "mergeCompleted": "マージ完了",
+  "numberInputRequired": "数値を入力してください",
+  "valueSaved": "保存しました: {value}",
+  "@valueSaved": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "openChannelSettingsFailed": "チャンネル設定を開けませんでした: {error}",
+  "@openChannelSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "openAppNotificationSettingsFailed": "アプリ通知設定を開けませんでした: {error}",
+  "@openAppNotificationSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "evidencePrefix": "[証拠: ",
+  "actionMenu": "メニュー",
+  "actionShare": "共有",
+  "actionResetToDefault": "デフォルトに戻す",
+  "homeMorningTipNumberedTitle": "{index}. {title}",
+  "@homeMorningTipNumberedTitle": {
+    "placeholders": {
+      "index": {},
+      "title": {}
+    }
+  },
+  "homeMorningTipsRawTitle": "朝のヒント RAW",
+  "labelWithColon": "{label}: ",
+  "@labelWithColon": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "warningBullet": "• {warning}",
+  "@warningBullet": {
+    "placeholders": {
+      "warning": {}
+    }
+  },
+  "resetToDefaultValue": "デフォルトに戻しました: {value}",
+  "@resetToDefaultValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "logPanelTitle": "ログパネル",
+  "logCopiedToClipboard": "クリップボードにコピーしました",
+  "logShareText": "ScreenMemo ログ",
+  "logShareFailed": "共有に失敗しました",
+  "logCleared": "ログをクリアしました",
+  "logClearFailed": "ログのクリアに失敗しました",
+  "logNoLogs": "ログはまだありません",
+  "logNoMatchingLogs": "一致するログはありません",
+  "logFilterTooltip": "フィルター",
+  "logSortNewestFirst": "新しい順",
+  "logSortOldestFirst": "古い順",
+  "logLevelCritical": "重大",
+  "logLevelError": "エラー",
+  "logLevelVerbose": "詳細",
+  "logLevelDebug": "デバッグ",
+  "eventNewConversation": "新しい会話",
+  "forceMergeConfirmMessage": "前のイベントと強制マージし、現在のイベント要約を上書きして前のイベントを削除します。この操作は元に戻せません。続行しますか？",
+  "forceMergeRequestedReason": "強制マージをリクエストしました（キュー内）",
+  "mergeStatusMerging": "強制マージ中…",
+  "mergeStatusMerged": "マージ済み",
+  "mergeStatusForceRequested": "強制マージをリクエスト済み",
+  "mergeStatusNotMerged": "未マージ",
+  "mergeStatusPending": "判定待ち",
+  "semanticSearchNotStartedTitle": "セマンティック検索は未開始です",
+  "semanticSearchNotStartedDesc": "画像の AI 説明、キーワード、タグを検索します。入力中の遅延を避けるため、手動で検索を開始してください。",
+  "segmentSearchNotStartedTitle": "動的検索は未開始です",
+  "segmentSearchNotStartedDesc": "入力中の遅延を避けるため、手動で検索を開始してください。",
+  "foundImagesCount": "{count} 件の画像が見つかりました",
+  "@foundImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagsLabel": "タグ",
+  "tagCount": "{count} 個のタグ",
+  "@tagCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "tagFilterTitle": "タグフィルター",
+  "selectedAllLabel": "すべて",
+  "selectedTagsCount": "{count} 個選択済み",
+  "@selectedTagsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "selectedTypesCount": "{count} 種類選択済み",
+  "@selectedTypesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "confirmSelectionLabel": "OK（{selection}）",
+  "@confirmSelectionLabel": {
+    "placeholders": {
+      "selection": {}
+    }
+  },
+  "noContentParenthesized": "（空）",
+  "typeFilterTitle": "種類フィルター",
+  "rawResponseCleanupEnableTitle": "原始応答の自動クリーンアップを有効化",
+  "rawResponseCleanupEnableMessage": "{days} 日より古い raw_response を自動的に削除します。サマリーと structured_json には影響しません。",
+  "@rawResponseCleanupEnableMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupEnableAction": "有効化して今すぐクリーンアップ",
+  "segmentsJsonAutoRetryTitle": "自動リトライ回数",
+  "segmentsJsonAutoRetryDesc": "動的サマリーの structured_json 解析に失敗したときの自動リトライ回数です（0=オフ、既定1）。",
+  "segmentsJsonAutoRetryHint": "回数（0-5）",
+  "rawResponseCleanupTitle": "原始応答の自動クリーンアップ",
+  "rawResponseCleanupKeepLabel": "保持",
+  "rawResponseCleanupRetentionDays": "{days} 日",
+  "@rawResponseCleanupRetentionDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "rawResponseCleanupDesc": "古い raw_response のみ削除し、サマリーと structured_json は保持します",
+  "mergeStatusMergingReason": "マージ中です。しばらくお待ちください…",
+  "permissionGuideLoading": "権限設定ガイドを読み込み中...",
+  "permissionGuideUnavailable": "権限設定ガイドを取得できません",
+  "permissionGuideUnknownDevice": "不明なデバイス",
+  "permissionGuideLoadFailed": "権限設定ガイドの読み込みに失敗しました: {error}",
+  "@permissionGuideLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "deviceInfoTitle": "デバイス情報",
+  "setupGuideTitle": "設定ガイド",
+  "permissionConfiguredStatus": "設定済み",
+  "permissionNeedsConfigurationStatus": "設定が必要",
+  "backgroundPermissionTitle": "バックグラウンド実行権限",
+  "actualBatteryOptimizationStatusTitle": "実際のバッテリー最適化状態"
 }

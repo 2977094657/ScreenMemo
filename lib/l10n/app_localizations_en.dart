@@ -115,7 +115,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectAll => 'Select all';
 
   @override
-  String get clearAll => 'Clear';
+  String get clearAll => 'Clear all';
 
   @override
   String get noAppsFound => 'No apps found';
@@ -417,10 +417,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get screenshotSectionDesc => 'Interval, quality, expiration';
 
   @override
-  String get segmentSummarySectionTitle => 'Segment summary';
+  String get segmentSummarySectionTitle => 'Dynamic settings';
 
   @override
-  String get segmentSummarySectionDesc => 'Sampling, duration, AI throttle';
+  String get segmentSummarySectionDesc =>
+      'Sampling / duration / merging / AI request interval';
 
   @override
   String get dailyReminderSectionTitle => 'Daily summary reminder';
@@ -2662,4 +2663,922 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get evidenceTitle => 'Evidence';
+
+  @override
+  String get runtimeDiagnosticCopied => 'Diagnostic info copied';
+
+  @override
+  String get runtimeDiagnosticCopyFailed => 'Failed to copy diagnostic info';
+
+  @override
+  String get runtimeDiagnosticNoFileToOpen =>
+      'No diagnostic file available to open';
+
+  @override
+  String get runtimeDiagnosticOpenAttempted => 'Tried to open diagnostic file';
+
+  @override
+  String get runtimeDiagnosticOpenFallbackCopiedPath =>
+      'Could not open directly; log path copied';
+
+  @override
+  String get runtimeDiagnosticCopyInfoAction => 'Copy info';
+
+  @override
+  String get runtimeDiagnosticOpenFileAction => 'Open this file';
+
+  @override
+  String get runtimeDiagnosticOpenSettingsAction => 'Open settings';
+
+  @override
+  String get importDiagnosticsReportCopied => 'Diagnostic report copied';
+
+  @override
+  String get importDiagnosticsNoRepairableOcr =>
+      'No OCR text needs repair; diagnostics refreshed';
+
+  @override
+  String get importDiagnosticsOcrRepairStarted =>
+      'Repair started in the background. Check notification progress.';
+
+  @override
+  String get importDiagnosticsOcrRepairResumed =>
+      'Background repair resumed. Check notification progress.';
+
+  @override
+  String get importDiagnosticsOcrRepairStopped => 'OCR text repair stopped';
+
+  @override
+  String get importDiagnosticsStopRepairFailed => 'Failed to stop repair';
+
+  @override
+  String get importDiagnosticsTitle => 'Import diagnostics';
+
+  @override
+  String get importDiagnosticsFailedTitle => 'Diagnostics failed';
+
+  @override
+  String importDiagnosticsDurationMs(Object durationMs) {
+    return 'Duration: ${durationMs}ms';
+  }
+
+  @override
+  String get importDiagnosticsBackgroundRepairTask => 'Background repair task';
+
+  @override
+  String get importDiagnosticsStopRepair => 'Stop repair';
+
+  @override
+  String get importDiagnosticsRepairIndex => 'Repair index';
+
+  @override
+  String get memoryTabView => 'View memory';
+
+  @override
+  String get memoryTabRebuild => 'One-tap rebuild';
+
+  @override
+  String memorySignalStatusChip(Object label, Object count) {
+    return '$label $count';
+  }
+
+  @override
+  String get memoryForceCreate => 'Force create';
+
+  @override
+  String get actionIgnore => 'Ignore';
+
+  @override
+  String get memoryGenerateSuggestions => 'Generate suggestions';
+
+  @override
+  String get memoryApplyAllSuggestions => 'Apply all';
+
+  @override
+  String get memoryApplyThisSuggestion => 'Apply this';
+
+  @override
+  String get memoryDontApplySuggestion => 'Do not apply';
+
+  @override
+  String get memoryCopyError => 'Copy error';
+
+  @override
+  String get actionDescription => 'Description';
+
+  @override
+  String get memoryRebuildAction => 'One-tap rebuild';
+
+  @override
+  String get actionStop => 'Stop';
+
+  @override
+  String get memoryUriInputHint => 'Enter URI (e.g. core://my_user)';
+
+  @override
+  String get memorySearchHint => 'Search memory content/path…';
+
+  @override
+  String get memoryRoot => 'Root';
+
+  @override
+  String get memoryParent => 'Parent';
+
+  @override
+  String get memoryBoot => 'Boot';
+
+  @override
+  String get memoryRecent => 'Recent';
+
+  @override
+  String get memoryIndex => 'Index';
+
+  @override
+  String get providerAddAtLeastOneEnabledApiKey =>
+      'Please add at least one enabled API Key.';
+
+  @override
+  String get providerSaveBeforeBatchTest =>
+      'Please save the provider before running batch test.';
+
+  @override
+  String get providerKeepOneEnabledApiKey =>
+      'Please keep at least one enabled and non-empty API Key.';
+
+  @override
+  String get providerBatchTestFailed =>
+      'Batch test failed. Please try again later.';
+
+  @override
+  String get providerBatchTestResultTitle => 'Batch test results';
+
+  @override
+  String get actionClose => 'Close';
+
+  @override
+  String get providerOnlyOneApiKeyCanEdit =>
+      'Only one API Key can be edited at a time';
+
+  @override
+  String get providerAddApiKey => 'Add API Key';
+
+  @override
+  String get providerEditApiKey => 'Edit API Key';
+
+  @override
+  String get providerFetchModelsAndBalance => 'Fetch models and balance';
+
+  @override
+  String get actionSaving => 'Saving';
+
+  @override
+  String get providerFetchModelsFailedManual =>
+      'Failed to fetch models. You can add them manually.';
+
+  @override
+  String providerDeletedApiKeys(Object count) {
+    return 'Deleted $count API Keys';
+  }
+
+  @override
+  String get providerAddKeyButton => 'Add Key';
+
+  @override
+  String get providerBatchTestButton => 'Batch test';
+
+  @override
+  String get providerDeleteAllKeys => 'Delete all';
+
+  @override
+  String get providerNoApiKeys => 'No API Keys.';
+
+  @override
+  String get balanceEndpointNone => 'Do not query';
+
+  @override
+  String get balanceEndpointNewApi => 'new-api (/dashboard/billing)';
+
+  @override
+  String get balanceEndpointSub2api => 'sub2api (/v1/usage)';
+
+  @override
+  String get segmentEntryLogHint =>
+      'Long-press to select text, or tap Copy to copy everything.';
+
+  @override
+  String get segmentEntryLogCopied => 'Dynamic entry log copied';
+
+  @override
+  String get copyLogAction => 'Copy log';
+
+  @override
+  String get segmentDynamicConcurrencySaveFailed =>
+      'Failed to save day concurrency';
+
+  @override
+  String get dynamicAutoRepairEnabled => 'Auto repair enabled';
+
+  @override
+  String get dynamicAutoRepairPaused => 'Auto repair paused';
+
+  @override
+  String get dynamicAutoRepairToggleFailed => 'Failed to toggle auto repair';
+
+  @override
+  String get dynamicRebuildStart => 'Start rebuild';
+
+  @override
+  String get dynamicRebuildContinue => 'Continue rebuild';
+
+  @override
+  String savedToPath(Object path) {
+    return 'Saved to: $path';
+  }
+
+  @override
+  String get dynamicRebuildNoSegments => 'No dynamics to rebuild';
+
+  @override
+  String dynamicRebuildSwitchedModelContinue(Object model) {
+    return 'Switched to model $model and continued rebuild';
+  }
+
+  @override
+  String get dynamicRebuildStartedInBackground =>
+      'Rebuild started in the background. Check notification progress.';
+
+  @override
+  String get dynamicRebuildTaskResumed => 'Background rebuild task resumed';
+
+  @override
+  String get dynamicRebuildStopped => 'Dynamic rebuild stopped';
+
+  @override
+  String get dynamicRebuildStopFailed => 'Failed to stop dynamic rebuild';
+
+  @override
+  String get dynamicRebuildBlockedRetry =>
+      'Full rebuild is running. Single-item regeneration is temporarily disabled.';
+
+  @override
+  String get dynamicRebuildBlockedForceMerge =>
+      'Full rebuild is running. Manual force merge is temporarily disabled.';
+
+  @override
+  String get rawResponseRetentionDaysTitle => 'Set retention days';
+
+  @override
+  String get rawResponseRetentionDaysLabel => 'Retention days';
+
+  @override
+  String get rawResponseRetentionDaysHint => 'Enter a number > 0';
+
+  @override
+  String get rawResponseCleanupSaved => 'Raw response cleanup settings saved.';
+
+  @override
+  String get chatContextTitlePrefix => 'Conversation Context (';
+
+  @override
+  String get chatContextTitleMemory => 'Memory';
+
+  @override
+  String get chatContextTitleSuffix => ')';
+
+  @override
+  String rawResponseRetentionUpdatedDays(Object days) {
+    return 'Retention updated to $days days.';
+  }
+
+  @override
+  String get homeMorningTipsUpdated => 'Morning tips updated';
+
+  @override
+  String get homeMorningTipsGenerateFailed => 'Failed to generate morning tips';
+
+  @override
+  String eventCreateFailed(Object error) {
+    return 'Create failed: $error';
+  }
+
+  @override
+  String eventSwitchFailed(Object error) {
+    return 'Switch failed: $error';
+  }
+
+  @override
+  String get eventSessionSwitched => 'Conversation switched';
+
+  @override
+  String get eventSessionDeleted => 'Conversation deleted';
+
+  @override
+  String get exclusionExcludedAppsTitle => 'Excluded apps';
+
+  @override
+  String get exclusionSelfAppBullet => '· This app (avoid self-loop)';
+
+  @override
+  String get exclusionImeAppsBullet => '· Input method (keyboard) apps:';
+
+  @override
+  String get exclusionAutoFilteredBullet => '  - (automatically filtered)';
+
+  @override
+  String get exclusionUnknownIme => 'Unknown input method';
+
+  @override
+  String exclusionImeAppBullet(Object name) {
+    return '  - $name';
+  }
+
+  @override
+  String get imageError => 'Image Error';
+
+  @override
+  String get logDetailTitle => 'Log detail';
+
+  @override
+  String get logLevelAll => 'All';
+
+  @override
+  String get logLevelDebugVerbose => 'Debug/Verbose';
+
+  @override
+  String get logLevelInfo => 'Info';
+
+  @override
+  String get logLevelWarning => 'Warning';
+
+  @override
+  String get logLevelErrorSevere => 'Error/Severe';
+
+  @override
+  String get logSearchHint => 'Search title/content/exception/stack';
+
+  @override
+  String onboardingPermissionLoadFailed(Object error) {
+    return 'Failed to load permission status: $error';
+  }
+
+  @override
+  String get permissionGuideSettingsOpened =>
+      'App settings opened. Please follow the guide.';
+
+  @override
+  String permissionGuideOpenSettingsFailed(Object error) {
+    return 'Failed to open settings page: $error';
+  }
+
+  @override
+  String get permissionGuideBatteryOpened =>
+      'Battery optimization settings opened';
+
+  @override
+  String permissionGuideOpenBatteryFailed(Object error) {
+    return 'Failed to open battery optimization settings: $error';
+  }
+
+  @override
+  String get permissionGuideAutostartOpened => 'Autostart settings opened';
+
+  @override
+  String permissionGuideOpenAutostartFailed(Object error) {
+    return 'Failed to open autostart settings: $error';
+  }
+
+  @override
+  String get permissionGuideCompleted => 'Permission setup marked as complete';
+
+  @override
+  String permissionGuideCompleteFailed(Object error) {
+    return 'Failed to mark permission setup: $error';
+  }
+
+  @override
+  String get permissionGuideTitle => 'Permission setup guide';
+
+  @override
+  String get permissionGuideOpenAppSettings => 'Open app settings';
+
+  @override
+  String get permissionGuideOpenBatterySettings =>
+      'Open battery optimization settings';
+
+  @override
+  String get permissionGuideOpenAutostartSettings => 'Open autostart settings';
+
+  @override
+  String get permissionGuideAllDone => 'I have completed all settings';
+
+  @override
+  String get galleryDeleting => 'Deleting...';
+
+  @override
+  String get galleryCleaningCache => 'Cleaning cache...';
+
+  @override
+  String get favoriteRemoved => 'Removed from favorites';
+
+  @override
+  String get favoriteAdded => 'Added to favorites';
+
+  @override
+  String operationFailedWithError(Object error) {
+    return 'Operation failed: $error';
+  }
+
+  @override
+  String get searchSemantic => 'Semantic search';
+
+  @override
+  String get searchDynamic => 'Search dynamics';
+
+  @override
+  String get searchMore => 'Search more';
+
+  @override
+  String get openDailySummary => 'Open daily summary';
+
+  @override
+  String get openWeeklySummary => 'Open weekly summary';
+
+  @override
+  String get noAvailableTags => 'No available tags';
+
+  @override
+  String get clearFilter => 'Clear filter';
+
+  @override
+  String get forceMerge => 'Force merge';
+
+  @override
+  String get forceMergeNoPrevious => 'No previous event to merge';
+
+  @override
+  String get forceMergeQueuedFailed => 'Failed to queue force merge';
+
+  @override
+  String get forceMergeQueued => 'Force merge queued';
+
+  @override
+  String get forceMergeFailed => 'Force merge failed';
+
+  @override
+  String get mergeCompleted => 'Merge completed';
+
+  @override
+  String get numberInputRequired => 'Please enter a number.';
+
+  @override
+  String valueSaved(Object value) {
+    return 'Saved: $value';
+  }
+
+  @override
+  String openChannelSettingsFailed(Object error) {
+    return 'Open channel settings failed: $error';
+  }
+
+  @override
+  String openAppNotificationSettingsFailed(Object error) {
+    return 'Open app notification settings failed: $error';
+  }
+
+  @override
+  String get evidencePrefix => '[evidence: ';
+
+  @override
+  String get actionMenu => 'Menu';
+
+  @override
+  String get actionShare => 'Share';
+
+  @override
+  String get actionResetToDefault => 'Reset to default';
+
+  @override
+  String homeMorningTipNumberedTitle(Object index, Object title) {
+    return '$index. $title';
+  }
+
+  @override
+  String get homeMorningTipsRawTitle => 'Morning tips RAW';
+
+  @override
+  String labelWithColon(Object label) {
+    return '$label: ';
+  }
+
+  @override
+  String warningBullet(Object warning) {
+    return '• $warning';
+  }
+
+  @override
+  String resetToDefaultValue(Object value) {
+    return 'Reset to default: $value';
+  }
+
+  @override
+  String get logPanelTitle => 'Log panel';
+
+  @override
+  String get logCopiedToClipboard => 'Copied to clipboard';
+
+  @override
+  String get logShareText => 'ScreenMemo logs';
+
+  @override
+  String get logShareFailed => 'Share failed';
+
+  @override
+  String get logCleared => 'Logs cleared';
+
+  @override
+  String get logClearFailed => 'Failed to clear logs';
+
+  @override
+  String get logNoLogs => 'No logs yet';
+
+  @override
+  String get logNoMatchingLogs => 'No matching logs';
+
+  @override
+  String get logFilterTooltip => 'Filter';
+
+  @override
+  String get logSortNewestFirst => 'Newest first';
+
+  @override
+  String get logSortOldestFirst => 'Oldest first';
+
+  @override
+  String get logLevelCritical => 'Critical';
+
+  @override
+  String get logLevelError => 'Error';
+
+  @override
+  String get logLevelVerbose => 'Verbose';
+
+  @override
+  String get logLevelDebug => 'Debug';
+
+  @override
+  String get eventNewConversation => 'New conversation';
+
+  @override
+  String get forceMergeConfirmMessage =>
+      'Force merge with the previous event, overwrite the current event summary, and delete the previous event. This cannot be undone. Continue?';
+
+  @override
+  String get forceMergeRequestedReason => 'Force merge requested (queued)';
+
+  @override
+  String get mergeStatusMerging => 'Force merging…';
+
+  @override
+  String get mergeStatusMerged => 'Merged';
+
+  @override
+  String get mergeStatusForceRequested => 'Force merge requested';
+
+  @override
+  String get mergeStatusNotMerged => 'Not merged';
+
+  @override
+  String get mergeStatusPending => 'Pending';
+
+  @override
+  String get semanticSearchNotStartedTitle => 'Semantic search not started';
+
+  @override
+  String get semanticSearchNotStartedDesc =>
+      'This searches AI descriptions, keywords, and tags for images. To avoid lag while typing, start the search manually.';
+
+  @override
+  String get segmentSearchNotStartedTitle => 'Dynamic search not started';
+
+  @override
+  String get segmentSearchNotStartedDesc =>
+      'To avoid lag while typing, start the search manually.';
+
+  @override
+  String foundImagesCount(Object count) {
+    return 'Found $count images';
+  }
+
+  @override
+  String get tagsLabel => 'Tags';
+
+  @override
+  String tagCount(Object count) {
+    return '$count tags';
+  }
+
+  @override
+  String get tagFilterTitle => 'Tag filters';
+
+  @override
+  String get selectedAllLabel => 'All';
+
+  @override
+  String selectedTagsCount(Object count) {
+    return '$count selected';
+  }
+
+  @override
+  String selectedTypesCount(Object count) {
+    return '$count selected';
+  }
+
+  @override
+  String confirmSelectionLabel(Object selection) {
+    return 'OK ($selection)';
+  }
+
+  @override
+  String get noContentParenthesized => '(empty)';
+
+  @override
+  String get typeFilterTitle => 'Type filters';
+
+  @override
+  String get rawResponseCleanupEnableTitle => 'Enable Raw Response Cleanup';
+
+  @override
+  String rawResponseCleanupEnableMessage(Object days) {
+    return 'This will automatically clear raw_response older than $days days. Summaries and structured_json are not affected.';
+  }
+
+  @override
+  String get rawResponseCleanupEnableAction => 'Enable & Clean Now';
+
+  @override
+  String get segmentsJsonAutoRetryHint => 'Times (0-5)';
+
+  @override
+  String get rawResponseCleanupTitle => 'Auto Clean Raw Responses';
+
+  @override
+  String get rawResponseCleanupKeepLabel => 'Keep';
+
+  @override
+  String rawResponseCleanupRetentionDays(Object days) {
+    return '$days days';
+  }
+
+  @override
+  String get rawResponseCleanupDesc =>
+      'Only clears old raw_response; summaries and structured_json stay untouched';
+
+  @override
+  String get mergeStatusMergingReason => 'Merging, please wait…';
+
+  @override
+  String get permissionGuideLoading => 'Loading permission setup guide...';
+
+  @override
+  String get permissionGuideUnavailable =>
+      'Unable to get permission setup guide';
+
+  @override
+  String get permissionGuideUnknownDevice => 'Unknown device';
+
+  @override
+  String permissionGuideLoadFailed(Object error) {
+    return 'Failed to load permission setup guide: $error';
+  }
+
+  @override
+  String get deviceInfoTitle => 'Device info';
+
+  @override
+  String get setupGuideTitle => 'Setup guide';
+
+  @override
+  String get permissionConfiguredStatus => 'Configured';
+
+  @override
+  String get permissionNeedsConfigurationStatus => 'Needs configuration';
+
+  @override
+  String get backgroundPermissionTitle => 'Background run permission';
+
+  @override
+  String get actualBatteryOptimizationStatusTitle =>
+      'Actual battery optimization status';
+
+  @override
+  String get keyDialogProviderNotSavedHint =>
+      'Please save the provider before adding API keys.';
+
+  @override
+  String get keyDialogNameLabel => 'Key name';
+
+  @override
+  String get keyDialogApiKeyLabel => 'API Key';
+
+  @override
+  String get keyDialogApiKeyLabelMulti => 'API Key (one per line)';
+
+  @override
+  String get keyDialogApiKeyHintMulti =>
+      'One API Key per line. Fetch scans every key.';
+
+  @override
+  String get keyDialogPriorityLabel => 'Priority (100 = dynamic allocation)';
+
+  @override
+  String get keyDialogModelsLabel => 'Supported models (one per line)';
+
+  @override
+  String get keyDialogPhaseFetchModels => 'Fetch models';
+
+  @override
+  String get keyDialogPhaseFetchBalance => 'Fetch balance';
+
+  @override
+  String get keyDialogPhaseScanKeys => 'Scan keys';
+
+  @override
+  String get keyDialogPhaseSaveKeys => 'Save keys';
+
+  @override
+  String get keyDialogPhaseSaveKey => 'Save key';
+
+  @override
+  String get keyDialogPhaseSaveBalance => 'Save balance';
+
+  @override
+  String get keyDialogPhaseFetchComplete => 'Fetch complete';
+
+  @override
+  String get keyDialogPhaseSaveFailed => 'Save failed';
+
+  @override
+  String get keyDialogFallbackKeyName => 'Current key';
+
+  @override
+  String keyDialogPreparingScan(int count) {
+    return 'Preparing to scan $count API keys...';
+  }
+
+  @override
+  String keyDialogFetchingModelsFor(String label) {
+    return 'Fetching models for $label...';
+  }
+
+  @override
+  String keyDialogFetchingBalanceFor(String label) {
+    return 'Fetching balance for $label...';
+  }
+
+  @override
+  String keyDialogModelFetchFailed(String label, String error) {
+    return '$label model fetch failed: $error';
+  }
+
+  @override
+  String keyDialogBalanceFetchFailed(String label, String error) {
+    return '$label balance fetch failed: $error';
+  }
+
+  @override
+  String keyDialogModelsCountText(int count) {
+    return '$count models';
+  }
+
+  @override
+  String get keyDialogModelFetchSkipped => 'model fetch failed, skipped';
+
+  @override
+  String keyDialogBalanceSuffixSuccess(String value) {
+    return ', balance: $value';
+  }
+
+  @override
+  String get keyDialogBalanceSuffixFailed => ', balance failed';
+
+  @override
+  String keyDialogScanLine(
+    String label,
+    String modelMessage,
+    String balanceMessage,
+  ) {
+    return '$label: $modelMessage$balanceMessage';
+  }
+
+  @override
+  String keyDialogModelFetchSummarySuccess(
+    int ok,
+    int total,
+    int merged,
+    String balanceHint,
+    String failedHint,
+  ) {
+    return 'Model fetch complete: $ok/$total keys succeeded, $merged models merged$balanceHint$failedHint';
+  }
+
+  @override
+  String get keyDialogModelFetchSummaryNone =>
+      'No key returned models. The current manual model list is unchanged.';
+
+  @override
+  String get keyDialogPreparingSave => 'Preparing to save...';
+
+  @override
+  String keyDialogSavingItem(String label) {
+    return 'Saving $label...';
+  }
+
+  @override
+  String keyDialogSavingBalanceItem(String label) {
+    return 'Saving balance for $label...';
+  }
+
+  @override
+  String keyDialogImportedKeys(
+    int count,
+    String balanceHint,
+    String skippedHint,
+  ) {
+    return 'Imported $count API keys$balanceHint$skippedHint';
+  }
+
+  @override
+  String keyDialogApiKeySaved(String balanceHint) {
+    return 'API Key saved$balanceHint';
+  }
+
+  @override
+  String get keyDialogNoNewKey =>
+      'No new key: all entered API keys already exist.';
+
+  @override
+  String keyDialogSaveFailed(String error) {
+    return 'Failed to save API Key: $error';
+  }
+
+  @override
+  String keyDialogBalanceHintFraction(int ok, int total) {
+    return ', balance $ok/$total';
+  }
+
+  @override
+  String keyDialogSkippedDuplicates(int count) {
+    return ', skipped $count duplicate keys';
+  }
+
+  @override
+  String keyDialogFailedItemsHint(int count) {
+    return ', $count failed items';
+  }
+
+  @override
+  String keyDialogFinalSummary(
+    int modelOk,
+    int modelTotal,
+    int balanceOk,
+    int balanceTotal,
+  ) {
+    return 'Models $modelOk/$modelTotal, balances $balanceOk/$balanceTotal';
+  }
+
+  @override
+  String get segmentSampleIntervalExplain =>
+      'How often a screenshot is sampled within a single segment when generating a summary. Smaller values capture more detail but use more tokens; larger values are cheaper but may miss short-lived events.';
+
+  @override
+  String get segmentDurationExplain =>
+      'Maximum duration of a single dynamic segment. After this length, a new segment is started even if the activity continues. Shorter segments produce more granular summaries; longer ones provide broader context.';
+
+  @override
+  String get dynamicMergeMaxSpanExplain =>
+      'Upper bound on the time span across which adjacent dynamic segments may be merged into one summary. Set to 0 to disable the limit.';
+
+  @override
+  String get dynamicMergeMaxGapExplain =>
+      'Maximum allowed gap between two adjacent dynamic segments for them to be considered mergeable. Set to 0 to disable the limit.';
+
+  @override
+  String get dynamicMergeMaxImagesExplain =>
+      'Maximum number of screenshots fed into a merged summary in one go. Higher values give the model more context but increase cost and latency. Set to 0 for no limit.';
+
+  @override
+  String get aiRequestIntervalExplain =>
+      'Minimum interval between two AI requests sent by the app. Increase this if your provider rate-limits you, or to reduce overall consumption.';
+
+  @override
+  String get segmentsJsonAutoRetryTitle => 'Auto retry count';
+
+  @override
+  String segmentsJsonAutoRetryDesc(int count) {
+    return 'When the AI response does not match the expected format, automatically retry the request this many times (0 = off, default 1). Current: $count';
+  }
+
+  @override
+  String get segmentsJsonAutoRetryExplain =>
+      'The AI sometimes returns content that cannot be parsed or does not match the required structure. When this happens, the app will automatically resend the request up to this many times. Higher values improve success rate but cost more time and tokens.';
 }

@@ -289,23 +289,31 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   }
 
   String? _keysBalanceSummary() {
-    final provider = _loaded;
-    if (provider == null || !provider.hasBalanceQuery || _keys.isEmpty) {
+    if (_loaded == null ||
+        !AIBalanceEndpointTypes.isQueryable(_balanceEndpointType) ||
+        _keys.isEmpty) {
       return null;
     }
-    final known = _keys.where((key) => key.balanceTotal != null).toList();
+    final known = _keys.where((key) => key.hasBalance).toList();
     if (known.isEmpty) return '总余额 —';
-    final double total = known.fold<double>(
+    final numeric = known.where((key) => key.balanceTotal != null).toList();
+    if (numeric.isEmpty) {
+      if (known.length == 1) {
+        return '余额 ${known.first.balanceDisplay ?? '已获取'}';
+      }
+      return '余额已获取 ${known.length}/${_keys.length}';
+    }
+    final double total = numeric.fold<double>(
       0,
       (sum, key) => sum + (key.balanceTotal ?? 0),
     );
-    final currencies = known
+    final currencies = numeric
         .map((key) => (key.balanceCurrency ?? '').trim())
         .where((currency) => currency.isNotEmpty)
         .toSet();
     final currency = currencies.length == 1 ? ' ${currencies.first}' : '';
-    final partial = known.length < _keys.length
-        ? '（${known.length}/${_keys.length}）'
+    final partial = numeric.length < _keys.length
+        ? '（${numeric.length}/${_keys.length}）'
         : '';
     return '总余额 ${_formatBalanceTotal(total)}$currency$partial';
   }
@@ -450,16 +458,33 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     if (_fetching) return;
     final providerId = _loaded?.id;
     if (providerId == null) {
-      UINotifier.warning(context, '请先保存提供商，再在下方添加 Key 后获取模型。');
+      UINotifier.warning(
+        context,
+        'Please save the provider before refreshing models.',
+      );
       return;
     }
-    final enabledKeys = _keys.where((key) => key.enabled).toList();
+    final AIProvider? provider = _currentProviderSnapshot();
+    if (provider == null) return;
+    final enabledKeys = _keys
+        .where(
+          (key) =>
+              key.enabled && key.id != null && key.apiKey.trim().isNotEmpty,
+        )
+        .toList(growable: false);
     if (enabledKeys.isEmpty) {
-      UINotifier.error(context, '请先在下方添加并启用至少一个 API Key。');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).providerAddAtLeastOneEnabledApiKey,
+      );
       return;
     }
     final base = _baseUrlCtrl.text.trim();
-    if (_type == AIProviderTypes.azureOpenAI && base.isEmpty) {
+    if ((_type == AIProviderTypes.azureOpenAI ||
+            _type == AIProviderTypes.claude ||
+            _type == AIProviderTypes.gemini ||
+            _type == AIProviderTypes.custom) &&
+        base.isEmpty) {
       UINotifier.error(
         context,
         AppLocalizations.of(context).baseUrlRequiredForAzureError,
@@ -468,22 +493,58 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     }
 
     setState(() => _fetching = true);
+    final List<String> fetchedModelPool = <String>[];
+    int successCount = 0;
+    int balanceSuccessCount = 0;
+    final List<String> failureHints = <String>[];
     try {
-      final targetKey = enabledKeys.first;
-      await _svc.refreshModelsForKey(
-        providerId: providerId,
-        keyId: targetKey.id!,
-      );
-      await _reloadKeys();
-      if (mounted) {
-        UINotifier.success(context, '模型列表已更新');
+      for (final key in enabledKeys) {
+        try {
+          final models = await _svc.refreshModelsForKey(
+            providerId: providerId,
+            keyId: key.id!,
+            providerOverride: provider,
+            awaitBalance: true,
+          );
+          fetchedModelPool.addAll(models);
+          successCount++;
+          final latestKey = await _svc.getProviderKey(key.id!);
+          if (latestKey?.hasBalance ?? false) balanceSuccessCount++;
+        } catch (e) {
+          failureHints.add(
+            '${key.name}: ${_clipDialogText(e.toString(), 120)}',
+          );
+        }
       }
-    } catch (e) {
-      if (mounted) {
+      await _reloadKeys();
+      if (!mounted) return;
+      if (successCount > 0) {
+        final fetchedCount = _mergeModelNames(<Iterable<String>>[
+          fetchedModelPool,
+        ]).length;
+        final balanceHint = provider.hasBalanceQuery
+            ? ', balance $balanceSuccessCount/$successCount'
+            : '';
+        final failedHint = failureHints.isNotEmpty
+            ? ', failed ${failureHints.length} keys'
+            : '';
+        UINotifier.success(
+          context,
+          'Model refresh complete: $successCount/${enabledKeys.length} keys, $fetchedCount models$balanceHint$failedHint',
+        );
+      } else {
         UINotifier.error(
           context,
-          AppLocalizations.of(context).fetchModelsFailedHint,
+          '${AppLocalizations.of(context).fetchModelsFailedHint} Failed keys: ${enabledKeys.length}',
         );
+      }
+      if (failureHints.isNotEmpty) {
+        try {
+          await FlutterLogger.nativeWarn(
+            'AI',
+            'refreshModels all-key failures provider=$providerId ${failureHints.join(' | ')}',
+          );
+        } catch (_) {}
       }
     } finally {
       if (mounted) setState(() => _fetching = false);
@@ -507,14 +568,20 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     if (_batchRunning || _saving || _fetching) return;
     final AIProvider? provider = _currentProviderSnapshot();
     if (provider == null) {
-      UINotifier.warning(context, '请先保存提供商，再执行批量测试。');
+      UINotifier.warning(
+        context,
+        AppLocalizations.of(context).providerSaveBeforeBatchTest,
+      );
       return;
     }
     final enabledKeys = _keys
         .where((key) => key.enabled && key.apiKey.trim().isNotEmpty)
         .toList(growable: false);
     if (enabledKeys.isEmpty) {
-      UINotifier.error(context, '请至少保留一个已启用且非空的 API Key。');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).providerKeepOneEnabledApiKey,
+      );
       return;
     }
     final String base = _baseUrlCtrl.text.trim();
@@ -580,7 +647,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         );
       } catch (_) {}
       if (mounted) {
-        UINotifier.error(context, '批量测试执行失败，请稍后重试。');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).providerBatchTestFailed,
+        );
       }
     } finally {
       if (mounted) {
@@ -600,7 +670,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('批量测试结果'),
+        title: Text(AppLocalizations.of(context).providerBatchTestResultTitle),
         content: SizedBox(
           width: 620,
           child: SingleChildScrollView(child: SelectableText(summary)),
@@ -608,7 +678,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('关闭'),
+            child: Text(AppLocalizations.of(context).actionClose),
           ),
         ],
       ),
@@ -783,6 +853,19 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return out;
   }
 
+  List<String> _mergeModelNames(Iterable<Iterable<String>> groups) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final group in groups) {
+      for (final raw in group) {
+        final model = raw.trim();
+        if (model.isEmpty) continue;
+        if (seen.add(model.toLowerCase())) out.add(model);
+      }
+    }
+    return out;
+  }
+
   String _keyNameForBatch({
     required String baseName,
     required int batchIndex,
@@ -803,7 +886,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   Future<void> _openKeyDialog({AIProviderKey? key}) async {
     final providerId = _loaded?.id;
     if (providerId == null) {
-      UINotifier.warning(context, '请先保存提供商，再添加更多 API Key。');
+      UINotifier.warning(
+        context,
+        'Please save the provider before adding API keys.',
+      );
       return;
     }
     final nameCtrl = TextEditingController(
@@ -816,265 +902,578 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     final modelsCtrl = TextEditingController(
       text: (key?.models ?? const <String>[]).join('\n'),
     );
-    // Key 的启停入口已移动到列表项右侧；弹窗仅负责编辑 Key 信息和模型。
     final enabled = key?.enabled ?? true;
+    final fetchedBalancesByApiKey = <String, ProviderKeyBalance>{};
     bool dialogFetching = false;
+    bool dialogSaving = false;
+    ProviderKeyBatchProgress? dialogProgress;
 
-    Future<void> fetchModelsInDialog(
-      BuildContext dialogContext,
-      void Function(void Function()) setDialogState,
-    ) async {
-      final apiKeys = _parseApiKeys(apiCtrl.text);
-      if (apiKeys.isEmpty) {
-        UINotifier.error(context, 'API Key is required');
-        return;
-      }
-      final apiKey = apiKeys.first;
-      if (apiKeys.length > 1) {
-        UINotifier.warning(
-          context,
-          'Multiple keys detected; using the first line to fetch models.',
-        );
-      }
+    AIProvider buildDialogProviderSnapshot() {
       final base = _baseUrlCtrl.text.trim();
-      if (_type == AIProviderTypes.azureOpenAI && base.isEmpty) {
+      return AIProvider(
+        id: providerId,
+        name: _nameCtrl.text.trim().isEmpty
+            ? (_loaded?.name ?? 'Provider')
+            : _nameCtrl.text.trim(),
+        type: _type,
+        baseUrl: base.isEmpty ? null : base,
+        chatPath: _chatPathCtrl.text.trim().isEmpty
+            ? null
+            : _chatPathCtrl.text.trim(),
+        modelsPath: _effectiveModelsPath(),
+        useResponseApi: _useResponseApi,
+        enabled: true,
+        isDefault: false,
+        models: const <String>[],
+        extra: _buildExtra(),
+        orderIndex: _loaded?.orderIndex ?? 0,
+        balanceEndpointType: _balanceEndpointType,
+        balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
+      );
+    }
+
+    List<String> parseDialogModels() {
+      return modelsCtrl.text
+          .split(RegExp(r'[\r\n,]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
+    String keyLabelForProgress({
+      required int index,
+      required int total,
+      required String fallbackName,
+    }) {
+      if (total <= 1) {
+        return fallbackName.trim().isEmpty
+            ? 'Current key'
+            : fallbackName.trim();
+      }
+      return _keyNameForBatch(
+        baseName: fallbackName,
+        batchIndex: index,
+        batchTotal: total,
+        existingCount: _keys.length,
+      );
+    }
+
+    bool validateBaseUrlForDialog() {
+      final base = _baseUrlCtrl.text.trim();
+      if ((_type == AIProviderTypes.azureOpenAI ||
+              _type == AIProviderTypes.claude ||
+              _type == AIProviderTypes.gemini ||
+              _type == AIProviderTypes.custom) &&
+          base.isEmpty) {
         UINotifier.error(
           context,
           AppLocalizations.of(context).baseUrlRequiredForAzureError,
         );
+        return false;
+      }
+      return true;
+    }
+
+    Future<void> fetchModelsInDialog(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      if (dialogFetching || dialogSaving) return;
+      final apiKeys = _parseApiKeys(apiCtrl.text);
+      if (apiKeys.isEmpty) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).apiKeyRequiredError,
+        );
         return;
       }
+      if (!validateBaseUrlForDialog()) return;
 
-      setDialogState(() => dialogFetching = true);
+      final provider = buildDialogProviderSnapshot();
+      final initialModels = parseDialogModels();
+      final fetchedModelPool = <String>[];
+      final failureHints = <String>[];
+      int modelSuccessCount = 0;
+      int balanceSuccessCount = 0;
+
+      setDialogState(() {
+        dialogFetching = true;
+        dialogProgress = ProviderKeyBatchProgress(
+          phaseLabel: 'Fetch models',
+          current: 0,
+          total: apiKeys.length,
+          message: 'Preparing to scan ${apiKeys.length} API keys...',
+        );
+      });
+
       try {
-        final provider = AIProvider(
-          id: providerId,
-          name: _nameCtrl.text.trim().isEmpty
-              ? (_loaded?.name ?? 'Provider')
-              : _nameCtrl.text.trim(),
-          type: _type,
-          baseUrl: base.isEmpty ? null : base,
-          chatPath: _chatPathCtrl.text.trim().isEmpty
-              ? null
-              : _chatPathCtrl.text.trim(),
-          modelsPath: _effectiveModelsPath(),
-          useResponseApi: _useResponseApi,
-          enabled: true,
-          isDefault: false,
-          models: const <String>[],
-          extra: _buildExtra(),
-          orderIndex: _loaded?.orderIndex ?? 0,
-          balanceEndpointType: _balanceEndpointType,
-          balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
-        );
-        final fetched = await _svc.fetchModels(
-          provider: provider,
-          apiKey: apiKey,
-        );
-        if (!mounted || !dialogContext.mounted) return;
-        modelsCtrl.text = fetched.join('\n');
-        // Best-effort: 若提供商配置了余额查询，顺带拉取并附加到提示中
-        String balanceHint = '';
-        if (provider.hasBalanceQuery) {
+        for (var i = 0; i < apiKeys.length; i++) {
+          final apiKey = apiKeys[i];
+          final label = keyLabelForProgress(
+            index: i,
+            total: apiKeys.length,
+            fallbackName: nameCtrl.text,
+          );
+          if (dialogContext.mounted) {
+            setDialogState(() {
+              dialogProgress = ProviderKeyBatchProgress(
+                phaseLabel: 'Fetch models',
+                current: i + 1,
+                total: apiKeys.length,
+                message: 'Fetching models for $label...',
+              );
+            });
+          }
+
+          List<String> fetched = const <String>[];
+          bool modelOk = false;
           try {
-            final balance = await _svc.fetchBalance(
+            fetched = await _svc.fetchModels(
               provider: provider,
               apiKey: apiKey,
             );
-            balanceHint = '，余额：${balance.display}';
-          } catch (_) {
-            balanceHint = '，余额：获取失败';
+            fetchedModelPool.addAll(fetched);
+            modelSuccessCount++;
+            modelOk = true;
+            final merged = _mergeModelNames(<Iterable<String>>[
+              initialModels,
+              fetchedModelPool,
+            ]);
+            if (dialogContext.mounted) {
+              setDialogState(() => modelsCtrl.text = merged.join('\n'));
+            }
+          } catch (e) {
+            final errorText = _clipDialogText(e.toString(), 120);
+            failureHints.add('$label model fetch failed: $errorText');
+            try {
+              await FlutterLogger.nativeWarn(
+                'AI',
+                'add-key dialog model fetch failed provider=$providerId keyIndex=${i + 1}/${apiKeys.length} error=$errorText',
+              );
+            } catch (_) {}
+          }
+
+          String balanceMessage = '';
+          if (provider.hasBalanceQuery) {
+            if (dialogContext.mounted) {
+              setDialogState(() {
+                dialogProgress = ProviderKeyBatchProgress(
+                  phaseLabel: 'Fetch balance',
+                  current: i + 1,
+                  total: apiKeys.length,
+                  message: 'Fetching balance for $label...',
+                );
+              });
+            }
+            try {
+              final balance = await _svc.fetchBalance(
+                provider: provider,
+                apiKey: apiKey,
+              );
+              fetchedBalancesByApiKey[apiKey] = balance;
+              balanceSuccessCount++;
+              balanceMessage = ', balance: ${balance.display}';
+            } catch (e) {
+              final errorText = _clipDialogText(e.toString(), 120);
+              balanceMessage = ', balance failed';
+              failureHints.add('$label balance fetch failed: $errorText');
+            }
+          }
+
+          if (dialogContext.mounted) {
+            final modelMessage = modelOk
+                ? '${fetched.length} models'
+                : 'model fetch failed, skipped';
+            setDialogState(() {
+              dialogProgress = ProviderKeyBatchProgress(
+                phaseLabel: 'Scan keys',
+                current: i + 1,
+                total: apiKeys.length,
+                message: '$label: $modelMessage$balanceMessage',
+              );
+            });
           }
         }
+
         if (!mounted || !dialogContext.mounted) return;
-        UINotifier.success(
-          context,
-          AppLocalizations.of(context).modelsUpdatedToast(fetched.length) +
-              balanceHint,
-        );
-      } catch (_) {
-        if (mounted) {
-          UINotifier.error(context, '获取模型失败，可以手动添加。');
+        if (modelSuccessCount > 0) {
+          final fetchedCount = _mergeModelNames(<Iterable<String>>[
+            fetchedModelPool,
+          ]).length;
+          final balanceHint = provider.hasBalanceQuery
+              ? ', balance $balanceSuccessCount/${apiKeys.length}'
+              : '';
+          final failedHint = failureHints.isNotEmpty
+              ? ', ${failureHints.length} failed items'
+              : '';
+          UINotifier.success(
+            context,
+            'Model fetch complete: $modelSuccessCount/${apiKeys.length} keys succeeded, $fetchedCount models merged$balanceHint$failedHint',
+          );
+        } else {
+          UINotifier.error(
+            context,
+            'No key returned models. The current manual model list is unchanged.',
+          );
         }
       } finally {
         if (dialogContext.mounted) {
-          setDialogState(() => dialogFetching = false);
+          setDialogState(() {
+            dialogFetching = false;
+            dialogProgress = ProviderKeyBatchProgress(
+              phaseLabel: 'Fetch complete',
+              current: apiKeys.length,
+              total: apiKeys.length,
+              message:
+                  'Models $modelSuccessCount/${apiKeys.length}, balances $balanceSuccessCount/${provider.hasBalanceQuery ? apiKeys.length : 0}',
+            );
+          });
         }
       }
     }
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(key == null ? '添加 API Key' : '编辑 API Key'),
-          content: SizedBox(
-            width: 560,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildKeyDialogTextField(
-                    controller: nameCtrl,
-                    label: 'Key 名称',
-                  ),
-                  _buildKeyDialogTextField(
-                    controller: apiCtrl,
-                    label: key == null ? 'API Key（可一行一个批量导入）' : 'API Key',
-                    hint: key == null ? '一行一个 API Key；获取模型时默认使用第一行' : null,
-                    obscure: key != null,
-                    minLines: key == null ? 3 : 1,
-                    maxLines: key == null ? 8 : 1,
-                  ),
-                  _buildKeyDialogTextField(
-                    controller: priorityCtrl,
-                    label: '优先级（默认 100 参与动态分配，其他数字固定排序）',
-                    keyboardType: TextInputType.number,
-                  ),
-                  _buildKeyDialogTextField(
-                    controller: modelsCtrl,
-                    label: '支持的模型（每行一个）',
-                    minLines: 5,
-                    maxLines: 10,
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: dialogFetching
-                        ? null
-                        : () => fetchModelsInDialog(ctx, setDialogState),
-                    icon: dialogFetching
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.cloud_download_outlined, size: 18),
-                    label: const Text('获取模型'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: dialogFetching
-                  ? null
-                  : () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: dialogFetching
-                  ? null
-                  : () => Navigator.of(ctx).pop(true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true) return;
-    if (!mounted) return;
-    final apiKeys = _parseApiKeys(apiCtrl.text);
-    if (apiKeys.isEmpty) {
-      UINotifier.error(context, 'API Key 必填');
-      return;
-    }
-    if (key != null && apiKeys.length > 1) {
-      UINotifier.error(context, '编辑单个 Key 时请只填写一个 API Key');
-      return;
-    }
-    final models = modelsCtrl.text
-        .split(RegExp(r'[\r\n,]+'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (models.isEmpty) {
-      UINotifier.error(context, '至少需要填写一个模型');
-      return;
-    }
-    final priority =
-        int.tryParse(priorityCtrl.text.trim()) ?? AIProviderKey.defaultPriority;
-    final List<int> createdKeyIds = <int>[];
-    if (key == null) {
-      final existingApiKeys = _keys.map((k) => k.apiKey.trim()).toSet();
-      final keysToCreate = apiKeys
-          .where((item) => !existingApiKeys.contains(item.trim()))
-          .toList(growable: false);
-      final skipped = apiKeys.length - keysToCreate.length;
-      if (keysToCreate.isEmpty) {
-        UINotifier.warning(context, '没有新增 Key：输入的 API Key 已存在。');
+    Future<void> saveKeyInDialog(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      if (dialogFetching || dialogSaving) return;
+      final apiKeys = _parseApiKeys(apiCtrl.text);
+      if (apiKeys.isEmpty) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).apiKeyRequiredError,
+        );
         return;
       }
-      for (var i = 0; i < keysToCreate.length; i++) {
-        final newId = await _svc.createProviderKey(
-          providerId: providerId,
-          name: _keyNameForBatch(
-            baseName: nameCtrl.text,
-            batchIndex: i,
-            batchTotal: keysToCreate.length,
-            existingCount: _keys.length,
-          ),
-          apiKey: keysToCreate[i],
-          models: models,
-          enabled: enabled,
-          priority: priority,
-          orderIndex: _keys.length + i,
+      if (key != null && apiKeys.length > 1) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).providerOnlyOneApiKeyCanEdit,
         );
-        if (newId != null) createdKeyIds.add(newId);
+        return;
       }
-      if (mounted && keysToCreate.length > 1) {
+      final models = parseDialogModels();
+      if (models.isEmpty) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).atLeastOneModelRequiredError,
+        );
+        return;
+      }
+      final providerSnapshot = _currentProviderSnapshot();
+      if (providerSnapshot == null) {
+        UINotifier.warning(
+          context,
+          'Please save the provider before adding API keys.',
+        );
+        return;
+      }
+      final priority =
+          int.tryParse(priorityCtrl.text.trim()) ??
+          AIProviderKey.defaultPriority;
+
+      final existingApiKeys = _keys.map((k) => k.apiKey.trim()).toSet();
+      final keysToCreate = key == null
+          ? apiKeys
+                .where((item) => !existingApiKeys.contains(item.trim()))
+                .toList(growable: false)
+          : const <String>[];
+      final skipped = key == null ? apiKeys.length - keysToCreate.length : 0;
+      if (key == null && keysToCreate.isEmpty) {
+        UINotifier.warning(
+          context,
+          'No new key: all entered API keys already exist.',
+        );
+        return;
+      }
+
+      final total = key == null ? keysToCreate.length : 1;
+      int savedCount = 0;
+      int balanceUpdatedCount = 0;
+      bool shouldCloseDialog = false;
+
+      setDialogState(() {
+        dialogSaving = true;
+        dialogProgress = ProviderKeyBatchProgress(
+          phaseLabel: 'Save keys',
+          current: 0,
+          total: total,
+          message: 'Preparing to save...',
+        );
+      });
+
+      try {
+        if (key == null) {
+          for (var i = 0; i < keysToCreate.length; i++) {
+            final apiKey = keysToCreate[i];
+            final keyName = _keyNameForBatch(
+              baseName: nameCtrl.text,
+              batchIndex: i,
+              batchTotal: keysToCreate.length,
+              existingCount: _keys.length,
+            );
+            if (dialogContext.mounted) {
+              setDialogState(() {
+                dialogProgress = ProviderKeyBatchProgress(
+                  phaseLabel: 'Save keys',
+                  current: i + 1,
+                  total: total,
+                  message: 'Saving $keyName...',
+                );
+              });
+            }
+            final newId = await _svc.createProviderKey(
+              providerId: providerId,
+              name: keyName,
+              apiKey: apiKey,
+              models: models,
+              enabled: enabled,
+              priority: priority,
+              orderIndex: _keys.length + i,
+            );
+            if (newId == null) continue;
+            savedCount++;
+
+            if (providerSnapshot.hasBalanceQuery) {
+              if (dialogContext.mounted) {
+                setDialogState(() {
+                  dialogProgress = ProviderKeyBatchProgress(
+                    phaseLabel: 'Save balance',
+                    current: i + 1,
+                    total: total,
+                    message: 'Saving balance for $keyName...',
+                  );
+                });
+              }
+              final cachedBalance = fetchedBalancesByApiKey[apiKey];
+              final balance = cachedBalance == null
+                  ? await _svc.refreshBalanceForKey(
+                      providerId: providerId,
+                      keyId: newId,
+                      providerOverride: providerSnapshot,
+                    )
+                  : await _svc.saveFetchedBalanceForKey(
+                      providerId: providerId,
+                      keyId: newId,
+                      balance: cachedBalance,
+                      providerOverride: providerSnapshot,
+                    );
+              if (balance != null) balanceUpdatedCount++;
+            }
+          }
+        } else {
+          if (dialogContext.mounted) {
+            setDialogState(() {
+              dialogProgress = ProviderKeyBatchProgress(
+                phaseLabel: 'Save key',
+                current: 1,
+                total: 1,
+                message:
+                    'Saving ${nameCtrl.text.trim().isEmpty ? key.name : nameCtrl.text.trim()}...',
+              );
+            });
+          }
+          await _svc.updateProviderKey(
+            id: key.id!,
+            name: nameCtrl.text.trim(),
+            apiKey: apiKeys.first,
+            models: models,
+            enabled: enabled,
+            priority: priority,
+          );
+          savedCount = 1;
+          if (providerSnapshot.hasBalanceQuery) {
+            final cachedBalance = fetchedBalancesByApiKey[apiKeys.first];
+            final balance = cachedBalance == null
+                ? await _svc.refreshBalanceForKey(
+                    providerId: providerId,
+                    keyId: key.id!,
+                    providerOverride: providerSnapshot,
+                  )
+                : await _svc.saveFetchedBalanceForKey(
+                    providerId: providerId,
+                    keyId: key.id!,
+                    balance: cachedBalance,
+                    providerOverride: providerSnapshot,
+                  );
+            if (balance != null) balanceUpdatedCount++;
+          }
+        }
+
+        await _reloadKeys();
+        if (!mounted || !dialogContext.mounted) return;
+        final balanceHint = providerSnapshot.hasBalanceQuery
+            ? ', balance $balanceUpdatedCount/$savedCount'
+            : '';
+        final skippedHint = skipped > 0
+            ? ', skipped $skipped duplicate keys'
+            : '';
         UINotifier.success(
           context,
-          '已导入 ${keysToCreate.length} 个 API Key${skipped > 0 ? '，跳过 $skipped 个重复 Key' : ''}',
+          key == null
+              ? 'Imported $savedCount API keys$balanceHint$skippedHint'
+              : 'API Key saved$balanceHint',
         );
-      } else if (mounted && skipped > 0) {
-        UINotifier.success(context, '已添加 API Key，跳过 $skipped 个重复 Key');
-      }
-    } else {
-      await _svc.updateProviderKey(
-        id: key.id!,
-        name: nameCtrl.text.trim(),
-        apiKey: apiKeys.first,
-        models: models,
-        enabled: enabled,
-        priority: priority,
-      );
-      createdKeyIds.add(key.id!);
-    }
-    // Best-effort：若当前页面已开启余额查询，保存 Key 后立即拉取余额再刷新 UI。
-    // 使用当前表单快照，避免“配置还没点保存”时 DB 中仍是 none 而跳过余额查询。
-    if (createdKeyIds.isNotEmpty) {
-      final providerSnapshot = _currentProviderSnapshot();
-      if (providerSnapshot?.hasBalanceQuery ?? false) {
-        setState(() => _fetching = true);
+        shouldCloseDialog = true;
+        Navigator.of(dialogContext).pop(true);
+      } catch (e) {
         try {
-          await Future.wait(
-            createdKeyIds.map(
-              (keyId) => _svc.refreshBalanceForKey(
-                providerId: providerId,
-                keyId: keyId,
-                providerOverride: providerSnapshot,
-              ),
-            ),
+          await FlutterLogger.nativeError(
+            'AI',
+            'save API key failed provider=$providerId key=${key?.id ?? 'new'} error=$e',
           );
-        } finally {
-          if (mounted) setState(() => _fetching = false);
+        } catch (_) {}
+        if (mounted) {
+          UINotifier.error(
+            context,
+            'Failed to save API Key: ${_clipDialogText(e.toString())}',
+          );
+        }
+        if (dialogContext.mounted) {
+          setDialogState(() {
+            dialogProgress = ProviderKeyBatchProgress(
+              phaseLabel: 'Save failed',
+              current: savedCount,
+              total: total,
+              message: _clipDialogText(e.toString(), 160),
+            );
+          });
+        }
+      } finally {
+        if (!shouldCloseDialog && dialogContext.mounted) {
+          setDialogState(() => dialogSaving = false);
         }
       }
     }
-    await _reloadKeys();
+
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final theme = Theme.of(ctx);
+          final busy = dialogFetching || dialogSaving;
+          return AlertDialog(
+            title: Text(
+              key == null
+                  ? AppLocalizations.of(context).providerAddApiKey
+                  : AppLocalizations.of(context).providerEditApiKey,
+            ),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildKeyDialogTextField(
+                      controller: nameCtrl,
+                      label: 'Key name',
+                    ),
+                    _buildKeyDialogTextField(
+                      controller: apiCtrl,
+                      label: key == null ? 'API Key (one per line)' : 'API Key',
+                      hint: key == null
+                          ? 'One API Key per line. Fetch scans every key.'
+                          : null,
+                      obscure: key != null,
+                      minLines: key == null ? 3 : 1,
+                      maxLines: key == null ? 8 : 1,
+                    ),
+                    _buildKeyDialogTextField(
+                      controller: priorityCtrl,
+                      label: 'Priority (100 = dynamic allocation)',
+                      keyboardType: TextInputType.number,
+                    ),
+                    _buildKeyDialogTextField(
+                      controller: modelsCtrl,
+                      label: 'Supported models (one per line)',
+                      minLines: 5,
+                      maxLines: 10,
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () => fetchModelsInDialog(ctx, setDialogState),
+                      icon: dialogFetching
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cloud_download_outlined, size: 18),
+                      label: Text(
+                        AppLocalizations.of(
+                          context,
+                        ).providerFetchModelsAndBalance,
+                      ),
+                    ),
+                    if (dialogProgress != null) ...[
+                      const SizedBox(height: AppTheme.spacing3),
+                      _buildProviderKeyDialogProgress(theme, dialogProgress!),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
+                child: Text(AppLocalizations.of(context).dialogCancel),
+              ),
+              ElevatedButton(
+                onPressed: busy
+                    ? null
+                    : () => saveKeyInDialog(ctx, setDialogState),
+                child: dialogSaving
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(AppLocalizations.of(context).actionSaving),
+                        ],
+                      )
+                    : Text(AppLocalizations.of(context).actionSave),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _refreshProviderKey(AIProviderKey key) async {
     final providerId = _loaded?.id;
     if (providerId == null || key.id == null) return;
+    final provider = _currentProviderSnapshot();
+    if (provider == null) return;
     setState(() => _fetching = true);
     try {
-      await _svc.refreshModelsForKey(providerId: providerId, keyId: key.id!);
+      await _svc.refreshModelsForKey(
+        providerId: providerId,
+        keyId: key.id!,
+        providerOverride: provider,
+        awaitBalance: true,
+      );
       await _reloadKeys();
-      if (mounted) UINotifier.success(context, '模型列表已更新');
+      if (mounted) {
+        UINotifier.success(
+          context,
+          provider.hasBalanceQuery ? '模型列表与余额已更新' : '模型列表已更新',
+        );
+      }
     } catch (_) {
-      if (mounted) UINotifier.error(context, '获取模型失败，可以手动添加。');
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).providerFetchModelsFailedManual,
+        );
+      }
     } finally {
       if (mounted) setState(() => _fetching = false);
     }
@@ -1109,7 +1508,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     if (!mounted) return;
     await _reloadKeys();
     if (!mounted) return;
-    UINotifier.success(context, '已删除 $deleted 个 API Key');
+    UINotifier.success(
+      context,
+      AppLocalizations.of(context).providerDeletedApiKeys(deleted),
+    );
   }
 
   String _formatKeyTime(int? millis) {
@@ -1323,7 +1725,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                         ? theme.colorScheme.error
                         : theme.colorScheme.onSurfaceVariant,
                   ),
-                  if ((_loaded?.hasBalanceQuery ?? false)) ...[
+                  if (AIBalanceEndpointTypes.isQueryable(
+                    _balanceEndpointType,
+                  )) ...[
                     _buildThinVerticalDivider(theme),
                     _buildKeyStatCell(
                       icon: Icons.account_balance_wallet_outlined,
@@ -1735,7 +2139,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                     ? null
                     : () => _openKeyDialog(),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('新增 Key'),
+                label: Text(AppLocalizations.of(context).providerAddKeyButton),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: theme.colorScheme.primary,
                   side: BorderSide(
@@ -1762,7 +2166,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome_outlined, size: 18),
-                label: const Text('批量测试'),
+                label: Text(
+                  AppLocalizations.of(context).providerBatchTestButton,
+                ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     vertical: AppTheme.spacing2,
@@ -1778,7 +2184,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                     ? null
                     : _deleteAllProviderKeys,
                 icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                label: const Text('删除全部'),
+                label: Text(AppLocalizations.of(context).providerDeleteAllKeys),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: theme.colorScheme.error,
                   side: BorderSide(
@@ -1834,7 +2240,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             style: theme.textTheme.bodySmall,
           )
         else if (_keys.isEmpty)
-          Text('暂无 API Key。', style: theme.textTheme.bodySmall)
+          Text(
+            AppLocalizations.of(context).providerNoApiKeys,
+            style: theme.textTheme.bodySmall,
+          )
         else
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2040,6 +2449,47 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     );
   }
 
+  Widget _buildProviderKeyDialogProgress(
+    ThemeData theme,
+    ProviderKeyBatchProgress progress,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.28,
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.35),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(value: progress.progressValue, minHeight: 4),
+          const SizedBox(height: AppTheme.spacing1),
+          Text(
+            '${progress.phaseLabel} ${progress.fractionLabel}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            progress.message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildKeyDialogTextField({
     required TextEditingController controller,
     required String label,
@@ -2154,15 +2604,19 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     final Color fieldBg = isDark
         ? theme.colorScheme.surface
         : theme.scaffoldBackgroundColor;
-    const items = <DropdownMenuItem<String>>[
-      DropdownMenuItem(value: AIBalanceEndpointTypes.none, child: Text('不查询')),
+    final l10n = AppLocalizations.of(context);
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(
+        value: AIBalanceEndpointTypes.none,
+        child: Text(l10n.balanceEndpointNone),
+      ),
       DropdownMenuItem(
         value: AIBalanceEndpointTypes.newApi,
-        child: Text('new-api（/dashboard/billing）'),
+        child: Text(l10n.balanceEndpointNewApi),
       ),
       DropdownMenuItem(
         value: AIBalanceEndpointTypes.sub2api,
-        child: Text('sub2api（/v1/usage）'),
+        child: Text(l10n.balanceEndpointSub2api),
       ),
     ];
     return Column(

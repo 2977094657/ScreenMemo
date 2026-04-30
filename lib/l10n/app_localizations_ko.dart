@@ -400,10 +400,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get screenshotSectionDesc => '간격/품질/만료 정리';
 
   @override
-  String get segmentSummarySectionTitle => '세그먼트 요약';
+  String get segmentSummarySectionTitle => '다이내믹 설정';
 
   @override
-  String get segmentSummarySectionDesc => '샘플링/길이/AI 간격';
+  String get segmentSummarySectionDesc => '샘플링 / 길이 / 병합 / AI 요청 간격';
 
   @override
   String get dailyReminderSectionTitle => '일일 요약 알림';
@@ -2589,4 +2589,905 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get evidenceTitle => '증거';
+
+  @override
+  String get runtimeDiagnosticCopied => '진단 정보를 복사했습니다';
+
+  @override
+  String get runtimeDiagnosticCopyFailed => '진단 정보 복사에 실패했습니다';
+
+  @override
+  String get runtimeDiagnosticNoFileToOpen => '열 수 있는 진단 파일이 없습니다';
+
+  @override
+  String get runtimeDiagnosticOpenAttempted => '진단 파일 열기를 시도했습니다';
+
+  @override
+  String get runtimeDiagnosticOpenFallbackCopiedPath =>
+      '직접 열 수 없어 로그 경로를 복사했습니다';
+
+  @override
+  String get runtimeDiagnosticCopyInfoAction => '정보 복사';
+
+  @override
+  String get runtimeDiagnosticOpenFileAction => '이 파일 열기';
+
+  @override
+  String get runtimeDiagnosticOpenSettingsAction => '설정 열기';
+
+  @override
+  String get importDiagnosticsReportCopied => '진단 보고서를 복사했습니다';
+
+  @override
+  String get importDiagnosticsNoRepairableOcr => '수리할 OCR 텍스트가 없어 진단을 새로고침했습니다';
+
+  @override
+  String get importDiagnosticsOcrRepairStarted =>
+      '백그라운드에서 수리를 시작했습니다. 알림에서 진행 상황을 확인하세요.';
+
+  @override
+  String get importDiagnosticsOcrRepairResumed =>
+      '백그라운드 수리 작업을 재개했습니다. 알림에서 진행 상황을 확인하세요.';
+
+  @override
+  String get importDiagnosticsOcrRepairStopped => 'OCR 텍스트 수리가 중지되었습니다';
+
+  @override
+  String get importDiagnosticsStopRepairFailed => '수리 중지에 실패했습니다';
+
+  @override
+  String get importDiagnosticsTitle => '가져오기 진단';
+
+  @override
+  String get importDiagnosticsFailedTitle => '진단 실패';
+
+  @override
+  String importDiagnosticsDurationMs(Object durationMs) {
+    return '소요 시간: ${durationMs}ms';
+  }
+
+  @override
+  String get importDiagnosticsBackgroundRepairTask => '백그라운드 수리 작업';
+
+  @override
+  String get importDiagnosticsStopRepair => '수리 중지';
+
+  @override
+  String get importDiagnosticsRepairIndex => '인덱스 수리';
+
+  @override
+  String get memoryTabView => '메모리 보기';
+
+  @override
+  String get memoryTabRebuild => '한 번에 재구축';
+
+  @override
+  String memorySignalStatusChip(Object label, Object count) {
+    return '$label $count';
+  }
+
+  @override
+  String get memoryForceCreate => '강제 새로 만들기';
+
+  @override
+  String get actionIgnore => '무시';
+
+  @override
+  String get memoryGenerateSuggestions => '제안 생성';
+
+  @override
+  String get memoryApplyAllSuggestions => '모두 적용';
+
+  @override
+  String get memoryApplyThisSuggestion => '이 항목 적용';
+
+  @override
+  String get memoryDontApplySuggestion => '적용 안 함';
+
+  @override
+  String get memoryCopyError => '오류 복사';
+
+  @override
+  String get actionDescription => '설명';
+
+  @override
+  String get memoryRebuildAction => '한 번에 재구축';
+
+  @override
+  String get actionStop => '중지';
+
+  @override
+  String get memoryUriInputHint => 'URI 입력(예: core://my_user)';
+
+  @override
+  String get memorySearchHint => '메모리 내용/경로 검색…';
+
+  @override
+  String get memoryRoot => '루트';
+
+  @override
+  String get memoryParent => '상위';
+
+  @override
+  String get memoryBoot => 'boot';
+
+  @override
+  String get memoryRecent => 'recent';
+
+  @override
+  String get memoryIndex => 'index';
+
+  @override
+  String get providerAddAtLeastOneEnabledApiKey => '활성화된 API Key를 하나 이상 추가하세요.';
+
+  @override
+  String get providerSaveBeforeBatchTest => '일괄 테스트 전에 제공업체를 먼저 저장하세요.';
+
+  @override
+  String get providerKeepOneEnabledApiKey =>
+      '활성화되어 있고 비어 있지 않은 API Key를 하나 이상 유지하세요.';
+
+  @override
+  String get providerBatchTestFailed => '일괄 테스트에 실패했습니다. 나중에 다시 시도하세요.';
+
+  @override
+  String get providerBatchTestResultTitle => '일괄 테스트 결과';
+
+  @override
+  String get actionClose => '닫기';
+
+  @override
+  String get providerOnlyOneApiKeyCanEdit => '한 번에 하나의 API Key만 편집할 수 있습니다';
+
+  @override
+  String get providerAddApiKey => 'API Key 추가';
+
+  @override
+  String get providerEditApiKey => 'API Key 편집';
+
+  @override
+  String get providerFetchModelsAndBalance => '모델과 잔액 가져오기';
+
+  @override
+  String get actionSaving => '저장 중';
+
+  @override
+  String get providerFetchModelsFailedManual =>
+      '모델을 가져오지 못했습니다. 수동으로 추가할 수 있습니다.';
+
+  @override
+  String providerDeletedApiKeys(Object count) {
+    return 'API Key $count개를 삭제했습니다';
+  }
+
+  @override
+  String get providerAddKeyButton => 'Key 추가';
+
+  @override
+  String get providerBatchTestButton => '일괄 테스트';
+
+  @override
+  String get providerDeleteAllKeys => '모두 삭제';
+
+  @override
+  String get providerNoApiKeys => 'API Key가 없습니다.';
+
+  @override
+  String get balanceEndpointNone => '조회 안 함';
+
+  @override
+  String get balanceEndpointNewApi => 'new-api（/dashboard/billing）';
+
+  @override
+  String get balanceEndpointSub2api => 'sub2api（/v1/usage）';
+
+  @override
+  String get segmentEntryLogHint => '길게 눌러 텍스트를 선택하거나 복사 버튼을 눌러 한 번에 복사하세요.';
+
+  @override
+  String get segmentEntryLogCopied => '동적 진입 로그를 복사했습니다';
+
+  @override
+  String get copyLogAction => '로그 복사';
+
+  @override
+  String get segmentDynamicConcurrencySaveFailed => '일별 동시 처리 수 저장 실패';
+
+  @override
+  String get dynamicAutoRepairEnabled => '자동 보수가 켜졌습니다';
+
+  @override
+  String get dynamicAutoRepairPaused => '자동 보수가 일시 중지되었습니다';
+
+  @override
+  String get dynamicAutoRepairToggleFailed => '자동 보수 전환 실패';
+
+  @override
+  String get dynamicRebuildStart => '재구축 시작';
+
+  @override
+  String get dynamicRebuildContinue => '재구축 계속';
+
+  @override
+  String savedToPath(Object path) {
+    return '저장 위치: $path';
+  }
+
+  @override
+  String get dynamicRebuildNoSegments => '재구축할 동적 항목이 없습니다';
+
+  @override
+  String dynamicRebuildSwitchedModelContinue(Object model) {
+    return '$model 모델로 전환하여 재구축을 계속합니다';
+  }
+
+  @override
+  String get dynamicRebuildStartedInBackground =>
+      '백그라운드에서 재구축을 시작했습니다. 알림에서 진행 상황을 확인하세요.';
+
+  @override
+  String get dynamicRebuildTaskResumed => '백그라운드 재구축 작업이 재개되었습니다';
+
+  @override
+  String get dynamicRebuildStopped => '동적 재구축이 중지되었습니다';
+
+  @override
+  String get dynamicRebuildStopFailed => '동적 재구축 중지 실패';
+
+  @override
+  String get dynamicRebuildBlockedRetry =>
+      '전체 재구축 중이라 단일 항목 재생성을 일시적으로 사용할 수 없습니다.';
+
+  @override
+  String get dynamicRebuildBlockedForceMerge =>
+      '전체 재구축 중이라 수동 강제 병합을 일시적으로 사용할 수 없습니다.';
+
+  @override
+  String get rawResponseRetentionDaysTitle => '보관 일수 설정';
+
+  @override
+  String get rawResponseRetentionDaysLabel => '보관 일수';
+
+  @override
+  String get rawResponseRetentionDaysHint => '0보다 큰 숫자를 입력하세요';
+
+  @override
+  String get rawResponseCleanupSaved => '원본 응답 정리 설정이 저장되었습니다.';
+
+  @override
+  String get chatContextTitlePrefix => '대화 컨텍스트(';
+
+  @override
+  String get chatContextTitleMemory => '메모리';
+
+  @override
+  String get chatContextTitleSuffix => ')';
+
+  @override
+  String rawResponseRetentionUpdatedDays(Object days) {
+    return '보관 기간을 $days일로 업데이트했습니다.';
+  }
+
+  @override
+  String get homeMorningTipsUpdated => '아침 힌트가 업데이트되었습니다';
+
+  @override
+  String get homeMorningTipsGenerateFailed => '아침 힌트 생성에 실패했습니다';
+
+  @override
+  String eventCreateFailed(Object error) {
+    return '생성 실패: $error';
+  }
+
+  @override
+  String eventSwitchFailed(Object error) {
+    return '전환 실패: $error';
+  }
+
+  @override
+  String get eventSessionSwitched => '대화가 전환되었습니다';
+
+  @override
+  String get eventSessionDeleted => '대화가 삭제되었습니다';
+
+  @override
+  String get exclusionExcludedAppsTitle => '제외된 앱';
+
+  @override
+  String get exclusionSelfAppBullet => '· 이 앱(자기 순환 방지)';
+
+  @override
+  String get exclusionImeAppsBullet => '· 입력기(키보드) 앱:';
+
+  @override
+  String get exclusionAutoFilteredBullet => '  - (자동 필터링됨)';
+
+  @override
+  String get exclusionUnknownIme => '알 수 없는 입력기';
+
+  @override
+  String exclusionImeAppBullet(Object name) {
+    return '  - $name';
+  }
+
+  @override
+  String get imageError => '이미지 오류';
+
+  @override
+  String get logDetailTitle => '로그 상세';
+
+  @override
+  String get logLevelAll => '전체';
+
+  @override
+  String get logLevelDebugVerbose => '디버그/상세';
+
+  @override
+  String get logLevelInfo => '정보';
+
+  @override
+  String get logLevelWarning => '경고';
+
+  @override
+  String get logLevelErrorSevere => '오류/심각';
+
+  @override
+  String get logSearchHint => '제목/내용/예외/스택 검색';
+
+  @override
+  String onboardingPermissionLoadFailed(Object error) {
+    return '권한 상태 로드 실패: $error';
+  }
+
+  @override
+  String get permissionGuideSettingsOpened => '앱 설정 페이지를 열었습니다. 안내에 따라 설정하세요';
+
+  @override
+  String permissionGuideOpenSettingsFailed(Object error) {
+    return '설정 페이지 열기 실패: $error';
+  }
+
+  @override
+  String get permissionGuideBatteryOpened => '배터리 최적화 설정 페이지를 열었습니다';
+
+  @override
+  String permissionGuideOpenBatteryFailed(Object error) {
+    return '배터리 최적화 설정 열기 실패: $error';
+  }
+
+  @override
+  String get permissionGuideAutostartOpened => '자동 시작 설정 페이지를 열었습니다';
+
+  @override
+  String permissionGuideOpenAutostartFailed(Object error) {
+    return '자동 시작 설정 열기 실패: $error';
+  }
+
+  @override
+  String get permissionGuideCompleted => '권한 설정을 완료로 표시했습니다';
+
+  @override
+  String permissionGuideCompleteFailed(Object error) {
+    return '권한 설정 완료 표시 실패: $error';
+  }
+
+  @override
+  String get permissionGuideTitle => '권한 설정 가이드';
+
+  @override
+  String get permissionGuideOpenAppSettings => '앱 설정 페이지 열기';
+
+  @override
+  String get permissionGuideOpenBatterySettings => '배터리 최적화 설정 열기';
+
+  @override
+  String get permissionGuideOpenAutostartSettings => '자동 시작 설정 열기';
+
+  @override
+  String get permissionGuideAllDone => '모든 설정을 완료했습니다';
+
+  @override
+  String get galleryDeleting => '삭제 중...';
+
+  @override
+  String get galleryCleaningCache => '캐시 정리 중...';
+
+  @override
+  String get favoriteRemoved => '즐겨찾기에서 제거했습니다';
+
+  @override
+  String get favoriteAdded => '즐겨찾기에 추가했습니다';
+
+  @override
+  String operationFailedWithError(Object error) {
+    return '작업 실패: $error';
+  }
+
+  @override
+  String get searchSemantic => '의미 검색';
+
+  @override
+  String get searchDynamic => '동적 검색';
+
+  @override
+  String get searchMore => '더 검색';
+
+  @override
+  String get openDailySummary => '일일 요약 열기';
+
+  @override
+  String get openWeeklySummary => '주간 요약 열기';
+
+  @override
+  String get noAvailableTags => '사용 가능한 태그 없음';
+
+  @override
+  String get clearFilter => '필터 지우기';
+
+  @override
+  String get forceMerge => '강제 병합';
+
+  @override
+  String get forceMergeNoPrevious => '병합할 이전 이벤트가 없습니다';
+
+  @override
+  String get forceMergeQueuedFailed => '강제 병합 대기열 추가 실패';
+
+  @override
+  String get forceMergeQueued => '강제 병합이 대기열에 추가되었습니다';
+
+  @override
+  String get forceMergeFailed => '강제 병합 실패';
+
+  @override
+  String get mergeCompleted => '병합 완료';
+
+  @override
+  String get numberInputRequired => '숫자를 입력하세요';
+
+  @override
+  String valueSaved(Object value) {
+    return '저장됨: $value';
+  }
+
+  @override
+  String openChannelSettingsFailed(Object error) {
+    return '채널 설정 열기 실패: $error';
+  }
+
+  @override
+  String openAppNotificationSettingsFailed(Object error) {
+    return '앱 알림 설정 열기 실패: $error';
+  }
+
+  @override
+  String get evidencePrefix => '[증거: ';
+
+  @override
+  String get actionMenu => '메뉴';
+
+  @override
+  String get actionShare => '공유';
+
+  @override
+  String get actionResetToDefault => '기본값으로 재설정';
+
+  @override
+  String homeMorningTipNumberedTitle(Object index, Object title) {
+    return '$index. $title';
+  }
+
+  @override
+  String get homeMorningTipsRawTitle => '아침 힌트 RAW';
+
+  @override
+  String labelWithColon(Object label) {
+    return '$label: ';
+  }
+
+  @override
+  String warningBullet(Object warning) {
+    return '• $warning';
+  }
+
+  @override
+  String resetToDefaultValue(Object value) {
+    return '기본값으로 재설정됨: $value';
+  }
+
+  @override
+  String get logPanelTitle => '로그 패널';
+
+  @override
+  String get logCopiedToClipboard => '클립보드에 복사했습니다';
+
+  @override
+  String get logShareText => 'ScreenMemo 로그';
+
+  @override
+  String get logShareFailed => '공유 실패';
+
+  @override
+  String get logCleared => '로그를 지웠습니다';
+
+  @override
+  String get logClearFailed => '로그 지우기 실패';
+
+  @override
+  String get logNoLogs => '아직 로그가 없습니다';
+
+  @override
+  String get logNoMatchingLogs => '일치하는 로그가 없습니다';
+
+  @override
+  String get logFilterTooltip => '필터';
+
+  @override
+  String get logSortNewestFirst => '최신순';
+
+  @override
+  String get logSortOldestFirst => '오래된순';
+
+  @override
+  String get logLevelCritical => '심각';
+
+  @override
+  String get logLevelError => '오류';
+
+  @override
+  String get logLevelVerbose => '상세';
+
+  @override
+  String get logLevelDebug => '디버그';
+
+  @override
+  String get eventNewConversation => '새 대화';
+
+  @override
+  String get forceMergeConfirmMessage =>
+      '이전 이벤트와 강제로 병합하고 현재 이벤트 요약을 덮어쓰며 이전 이벤트를 삭제합니다. 이 작업은 되돌릴 수 없습니다. 계속할까요?';
+
+  @override
+  String get forceMergeRequestedReason => '강제 병합 요청됨(대기열)';
+
+  @override
+  String get mergeStatusMerging => '강제 병합 중…';
+
+  @override
+  String get mergeStatusMerged => '병합됨';
+
+  @override
+  String get mergeStatusForceRequested => '강제 병합 요청됨';
+
+  @override
+  String get mergeStatusNotMerged => '병합되지 않음';
+
+  @override
+  String get mergeStatusPending => '판정 대기';
+
+  @override
+  String get semanticSearchNotStartedTitle => '의미 검색이 시작되지 않았습니다';
+
+  @override
+  String get semanticSearchNotStartedDesc =>
+      '이미지의 AI 설명, 키워드, 태그를 검색합니다. 입력 중 지연을 피하려면 수동으로 검색을 시작하세요.';
+
+  @override
+  String get segmentSearchNotStartedTitle => '동적 검색이 시작되지 않았습니다';
+
+  @override
+  String get segmentSearchNotStartedDesc => '입력 중 지연을 피하려면 수동으로 검색을 시작하세요.';
+
+  @override
+  String foundImagesCount(Object count) {
+    return '이미지 $count장을 찾았습니다';
+  }
+
+  @override
+  String get tagsLabel => '태그';
+
+  @override
+  String tagCount(Object count) {
+    return '태그 $count개';
+  }
+
+  @override
+  String get tagFilterTitle => '태그 필터';
+
+  @override
+  String get selectedAllLabel => '전체';
+
+  @override
+  String selectedTagsCount(Object count) {
+    return '$count개 선택됨';
+  }
+
+  @override
+  String selectedTypesCount(Object count) {
+    return '$count종 선택됨';
+  }
+
+  @override
+  String confirmSelectionLabel(Object selection) {
+    return '확인 ($selection)';
+  }
+
+  @override
+  String get noContentParenthesized => '(비어 있음)';
+
+  @override
+  String get typeFilterTitle => '유형 필터';
+
+  @override
+  String get rawResponseCleanupEnableTitle => '원본 응답 자동 정리 사용';
+
+  @override
+  String rawResponseCleanupEnableMessage(Object days) {
+    return '$days일보다 오래된 raw_response를 자동으로 정리합니다. 요약과 structured_json에는 영향을 주지 않습니다.';
+  }
+
+  @override
+  String get rawResponseCleanupEnableAction => '사용하고 지금 정리';
+
+  @override
+  String get segmentsJsonAutoRetryHint => '횟수(0-5)';
+
+  @override
+  String get rawResponseCleanupTitle => '원본 응답 자동 정리';
+
+  @override
+  String get rawResponseCleanupKeepLabel => '보관';
+
+  @override
+  String rawResponseCleanupRetentionDays(Object days) {
+    return '$days일';
+  }
+
+  @override
+  String get rawResponseCleanupDesc =>
+      '오래된 raw_response만 정리하며 요약과 structured_json은 유지됩니다';
+
+  @override
+  String get mergeStatusMergingReason => '병합 중입니다. 잠시만 기다려 주세요…';
+
+  @override
+  String get permissionGuideLoading => '권한 설정 가이드를 불러오는 중...';
+
+  @override
+  String get permissionGuideUnavailable => '권한 설정 가이드를 가져올 수 없습니다';
+
+  @override
+  String get permissionGuideUnknownDevice => '알 수 없는 기기';
+
+  @override
+  String permissionGuideLoadFailed(Object error) {
+    return '권한 설정 가이드 로드 실패: $error';
+  }
+
+  @override
+  String get deviceInfoTitle => '기기 정보';
+
+  @override
+  String get setupGuideTitle => '설정 가이드';
+
+  @override
+  String get permissionConfiguredStatus => '설정됨';
+
+  @override
+  String get permissionNeedsConfigurationStatus => '설정 필요';
+
+  @override
+  String get backgroundPermissionTitle => '백그라운드 실행 권한';
+
+  @override
+  String get actualBatteryOptimizationStatusTitle => '실제 배터리 최적화 상태';
+
+  @override
+  String get keyDialogProviderNotSavedHint => 'API 키를 추가하기 전에 공급자를 저장하세요.';
+
+  @override
+  String get keyDialogNameLabel => '키 이름';
+
+  @override
+  String get keyDialogApiKeyLabel => 'API 키';
+
+  @override
+  String get keyDialogApiKeyLabelMulti => 'API 키 (한 줄에 하나)';
+
+  @override
+  String get keyDialogApiKeyHintMulti => '한 줄에 하나의 API 키. 가져오기는 모든 키를 스캔합니다.';
+
+  @override
+  String get keyDialogPriorityLabel => '우선 순위 (100 = 동적 할당)';
+
+  @override
+  String get keyDialogModelsLabel => '지원 모델 (한 줄에 하나)';
+
+  @override
+  String get keyDialogPhaseFetchModels => '모델 가져오기';
+
+  @override
+  String get keyDialogPhaseFetchBalance => '잔액 가져오기';
+
+  @override
+  String get keyDialogPhaseScanKeys => '키 스캔';
+
+  @override
+  String get keyDialogPhaseSaveKeys => '키 저장';
+
+  @override
+  String get keyDialogPhaseSaveKey => '키 저장';
+
+  @override
+  String get keyDialogPhaseSaveBalance => '잔액 저장';
+
+  @override
+  String get keyDialogPhaseFetchComplete => '가져오기 완료';
+
+  @override
+  String get keyDialogPhaseSaveFailed => '저장 실패';
+
+  @override
+  String get keyDialogFallbackKeyName => '현재 키';
+
+  @override
+  String keyDialogPreparingScan(int count) {
+    return '$count개의 API 키를 스캔 준비 중…';
+  }
+
+  @override
+  String keyDialogFetchingModelsFor(String label) {
+    return '$label의 모델 가져오는 중…';
+  }
+
+  @override
+  String keyDialogFetchingBalanceFor(String label) {
+    return '$label의 잔액 가져오는 중…';
+  }
+
+  @override
+  String keyDialogModelFetchFailed(String label, String error) {
+    return '$label 모델 가져오기 실패: $error';
+  }
+
+  @override
+  String keyDialogBalanceFetchFailed(String label, String error) {
+    return '$label 잔액 가져오기 실패: $error';
+  }
+
+  @override
+  String keyDialogModelsCountText(int count) {
+    return '$count개 모델';
+  }
+
+  @override
+  String get keyDialogModelFetchSkipped => '모델 가져오기 실패, 건너뜀';
+
+  @override
+  String keyDialogBalanceSuffixSuccess(String value) {
+    return ', 잔액: $value';
+  }
+
+  @override
+  String get keyDialogBalanceSuffixFailed => ', 잔액 실패';
+
+  @override
+  String keyDialogScanLine(
+    String label,
+    String modelMessage,
+    String balanceMessage,
+  ) {
+    return '$label: $modelMessage$balanceMessage';
+  }
+
+  @override
+  String keyDialogModelFetchSummarySuccess(
+    int ok,
+    int total,
+    int merged,
+    String balanceHint,
+    String failedHint,
+  ) {
+    return '모델 가져오기 완료: $ok/$total 키 성공, $merged개 모델 병합$balanceHint$failedHint';
+  }
+
+  @override
+  String get keyDialogModelFetchSummaryNone =>
+      '어떤 키에서도 모델을 반환하지 않았습니다. 현재 수동 모델 목록은 변경되지 않습니다.';
+
+  @override
+  String get keyDialogPreparingSave => '저장 준비 중…';
+
+  @override
+  String keyDialogSavingItem(String label) {
+    return '$label 저장 중…';
+  }
+
+  @override
+  String keyDialogSavingBalanceItem(String label) {
+    return '$label의 잔액 저장 중…';
+  }
+
+  @override
+  String keyDialogImportedKeys(
+    int count,
+    String balanceHint,
+    String skippedHint,
+  ) {
+    return '$count개의 API 키를 가져왔습니다$balanceHint$skippedHint';
+  }
+
+  @override
+  String keyDialogApiKeySaved(String balanceHint) {
+    return 'API 키 저장됨$balanceHint';
+  }
+
+  @override
+  String get keyDialogNoNewKey => '새 키 없음: 입력한 API 키가 모두 이미 존재합니다.';
+
+  @override
+  String keyDialogSaveFailed(String error) {
+    return 'API 키 저장 실패: $error';
+  }
+
+  @override
+  String keyDialogBalanceHintFraction(int ok, int total) {
+    return ', 잔액 $ok/$total';
+  }
+
+  @override
+  String keyDialogSkippedDuplicates(int count) {
+    return ', 중복 키 $count개 건너뜀';
+  }
+
+  @override
+  String keyDialogFailedItemsHint(int count) {
+    return ', $count개 실패';
+  }
+
+  @override
+  String keyDialogFinalSummary(
+    int modelOk,
+    int modelTotal,
+    int balanceOk,
+    int balanceTotal,
+  ) {
+    return '모델 $modelOk/$modelTotal, 잔액 $balanceOk/$balanceTotal';
+  }
+
+  @override
+  String get segmentSampleIntervalExplain =>
+      '단일 세그먼트 요약을 생성할 때 스크린샷을 샘플링하는 간격입니다. 값이 작을수록 더 많은 세부 정보를 포착하지만 토큰 사용량이 늘어납니다. 값이 클수록 비용이 절감되지만 짧은 이벤트를 놓칠 수 있습니다.';
+
+  @override
+  String get segmentDurationExplain =>
+      '단일 다이내믹 세그먼트의 최대 길이입니다. 이 시간을 초과하면 활동이 계속되더라도 새 세그먼트를 시작합니다. 짧을수록 세부 요약, 길수록 넓은 맥락이 됩니다.';
+
+  @override
+  String get dynamicMergeMaxSpanExplain =>
+      '인접한 여러 다이내믹 세그먼트가 하나의 요약으로 병합될 수 있는 최대 시간 범위입니다. 0으로 설정하면 제한이 없습니다.';
+
+  @override
+  String get dynamicMergeMaxGapExplain =>
+      '인접한 두 다이내믹 세그먼트 사이에 허용되는 최대 공백 시간입니다. 이를 초과하면 병합되지 않습니다. 0으로 설정하면 제한이 없습니다.';
+
+  @override
+  String get dynamicMergeMaxImagesExplain =>
+      '한 번의 병합 요약에 모델로 전달되는 스크린샷의 최대 수입니다. 값이 클수록 더 많은 맥락이 제공되지만 비용과 지연 시간이 증가합니다. 0으로 설정하면 제한이 없습니다.';
+
+  @override
+  String get aiRequestIntervalExplain =>
+      '앱이 보내는 AI 요청 사이의 최소 간격입니다. 공급자가 속도 제한을 적용하거나 전체 사용량을 줄이려면 값을 늘리세요.';
+
+  @override
+  String get segmentsJsonAutoRetryTitle => '자동 재시도 횟수';
+
+  @override
+  String segmentsJsonAutoRetryDesc(int count) {
+    return 'AI 응답이 요구되는 형식과 일치하지 않을 때 자동으로 재요청하는 횟수입니다 (0 = 끔, 기본값 1). 현재: $count';
+  }
+
+  @override
+  String get segmentsJsonAutoRetryExplain =>
+      'AI는 가끔 파싱할 수 없거나 필요한 구조와 일치하지 않는 내용을 반환합니다. 그럴 때 앱은 설정된 횟수만큼 자동으로 재요청하여 성공률을 높이지만, 시간과 토큰을 더 소비합니다.';
 }
