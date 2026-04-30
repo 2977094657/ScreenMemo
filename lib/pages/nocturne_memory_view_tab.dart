@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../constants/user_settings_keys.dart';
 import '../services/nocturne_memory_service.dart';
@@ -170,8 +171,9 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
       final NocturneUri u = _mem.parseUri(uri);
       if (u.domain == 'system') return const SizedBox.shrink();
       final String domainRoot = _mem.makeUri(u.domain, '');
-      final List<String> parts =
-          u.path.trim().isEmpty ? const <String>[] : u.path.split('/');
+      final List<String> parts = u.path.trim().isEmpty
+          ? const <String>[]
+          : u.path.split('/');
 
       Widget chip(String label, VoidCallback onTap) {
         return ActionChip(
@@ -193,10 +195,12 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
           if (seg.isEmpty) continue;
           final String pathPrefix = parts.take(i + 1).join('/');
           final String target = _mem.makeUri(u.domain, pathPrefix);
-          items.add(const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(Icons.chevron_right, size: 16),
-          ));
+          items.add(
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Icon(Icons.chevron_right, size: 16),
+            ),
+          );
           items.add(
             chip(seg, () {
               _uriCtrl.text = target;
@@ -240,7 +244,7 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
                 onSubmitted: (v) => _openUri(v),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: '输入 URI（如 core://my_user）',
+                  hintText: AppLocalizations.of(context).memoryUriInputHint,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide(color: border),
@@ -251,7 +255,7 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
             const SizedBox(width: 8),
             FilledButton(
               onPressed: _loading ? null : () => _openUri(_uriCtrl.text),
-              child: const Text('打开'),
+              child: Text(AppLocalizations.of(context).actionOpen),
             ),
             const SizedBox(width: 6),
             IconButton(
@@ -259,7 +263,8 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
               onPressed: _loading
                   ? null
                   : () {
-                      final String cur = (_node?['uri'] ?? _uriCtrl.text).toString();
+                      final String cur = (_node?['uri'] ?? _uriCtrl.text)
+                          .toString();
                       final String root = _rootUriOf(cur);
                       _uriCtrl.text = root;
                       _openUri(root);
@@ -280,7 +285,7 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
                 decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: '搜索记忆内容/路径…',
+                  hintText: AppLocalizations.of(context).memorySearchHint,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -307,7 +312,9 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
     if (_results.isEmpty) {
-      return const Center(child: Text('无结果'));
+      return Center(
+        child: Text(AppLocalizations.of(context).noMatchingResults),
+      );
     }
     return ListView.separated(
       itemCount: _results.length,
@@ -339,8 +346,12 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
 
     final String uri = (node['uri'] ?? '').toString();
     final String rootUri = _rootUriOf(uri);
-    final String? content = node['content'] is String ? (node['content'] as String) : null;
-    final List childrenRaw = (node['children'] is List) ? (node['children'] as List) : const [];
+    final String? content = node['content'] is String
+        ? (node['content'] as String)
+        : null;
+    final List childrenRaw = (node['children'] is List)
+        ? (node['children'] as List)
+        : const [];
     final List<Map<String, dynamic>> children = childrenRaw
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -356,9 +367,9 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
             Expanded(
               child: Text(
                 uri,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -369,7 +380,7 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
                 _openUri(rootUri);
               },
               icon: const Icon(Icons.home_outlined, size: 16),
-              label: const Text('根'),
+              label: Text(AppLocalizations.of(context).memoryRoot),
             ),
             if (parentUri != null)
               TextButton.icon(
@@ -378,7 +389,7 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
                   _openUri(parentUri);
                 },
                 icon: const Icon(Icons.arrow_upward, size: 16),
-                label: const Text('上级'),
+                label: Text(AppLocalizations.of(context).memoryParent),
               ),
           ],
         ),
@@ -394,21 +405,21 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
                 _uriCtrl.text = 'system://boot';
                 _openUri('system://boot');
               },
-              child: const Text('boot'),
+              child: Text(AppLocalizations.of(context).memoryBoot),
             ),
             OutlinedButton(
               onPressed: () {
                 _uriCtrl.text = 'system://recent/20';
                 _openUri('system://recent/20');
               },
-              child: const Text('recent'),
+              child: Text(AppLocalizations.of(context).memoryRecent),
             ),
             OutlinedButton(
               onPressed: () {
                 _uriCtrl.text = 'system://index';
                 _openUri('system://index');
               },
-              child: const Text('index'),
+              child: Text(AppLocalizations.of(context).memoryIndex),
             ),
           ],
         ),
@@ -417,8 +428,9 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest
-                  .withOpacity(0.24),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withOpacity(0.24),
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
               border: Border.all(
                 color: Theme.of(context).colorScheme.outline.withOpacity(0.20),
@@ -443,24 +455,24 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
           Text(
             '（无内容）',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
         ],
         Text(
           '子节点（${children.length}）',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         if (children.isEmpty)
           Text(
             '（无子节点）',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           )
         else
           ...children.map((c) {
@@ -476,17 +488,13 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
               title: Text(name.isEmpty ? childUri : name),
               subtitle: snippet.trim().isEmpty
                   ? Text(childUri, maxLines: 1, overflow: TextOverflow.ellipsis)
-                  : Text(
-                      snippet,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  : Text(snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
               trailing: cc > 0
                   ? Text(
                       '$cc',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     )
                   : null,
               onTap: () {
@@ -513,14 +521,16 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.errorContainer.withOpacity(0.60),
+                color: Theme.of(
+                  context,
+                ).colorScheme.errorContainer.withOpacity(0.60),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 _prettyJson(_error!),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onErrorContainer,
-                    ),
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
               ),
             ),
           const SizedBox(height: 10),
@@ -528,8 +538,8 @@ class _NocturneMemoryViewTabState extends State<NocturneMemoryViewTab>
             child: _loading
                 ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 : (_searchCtrl.text.trim().isNotEmpty
-                    ? _buildSearchResults(context)
-                    : _buildNodeView(context)),
+                      ? _buildSearchResults(context)
+                      : _buildNodeView(context)),
           ),
         ],
       ),

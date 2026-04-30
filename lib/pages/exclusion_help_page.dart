@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/ime_exclusion_service.dart';
 import '../theme/app_theme.dart';
+import '../l10n/app_localizations.dart';
 
 class ExclusionHelpPage extends StatefulWidget {
   const ExclusionHelpPage({super.key});
@@ -35,32 +36,42 @@ class _ExclusionHelpPageState extends State<ExclusionHelpPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('已排除的应用')),
+      appBar: AppBar(title: Text(l10n.exclusionExcludedAppsTitle)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(AppTheme.spacing4),
               children: [
                 Text(
-                  '以下应用会被排除，不可选择：',
+                  l10n.excludedAppsIntro,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: AppTheme.spacing3),
-                const Text('· 本应用（避免自循环）'),
+                Text(l10n.exclusionSelfAppBullet),
                 const SizedBox(height: AppTheme.spacing3),
-                const Text('· 输入法（键盘）应用：'),
+                Text(l10n.exclusionImeAppsBullet),
                 const SizedBox(height: AppTheme.spacing2),
                 if (_imeList.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(left: AppTheme.spacing2),
-                    child: Text('  - （已自动过滤）'),
+                  Padding(
+                    padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                    child: Text(l10n.exclusionAutoFilteredBullet),
                   )
                 else ...[
                   for (final m in _imeList)
                     Padding(
-                      padding: const EdgeInsets.only(left: AppTheme.spacing2, bottom: 6),
-                      child: Text('  - ${((m['appName'] ?? '').trim().isNotEmpty) ? (m['appName'] ?? '') : '未知输入法'}'),
+                      padding: const EdgeInsets.only(
+                        left: AppTheme.spacing2,
+                        bottom: 6,
+                      ),
+                      child: Text(
+                        l10n.exclusionImeAppBullet(
+                          ((m['appName'] ?? '').trim().isNotEmpty)
+                              ? (m['appName'] ?? '')
+                              : l10n.exclusionUnknownIme,
+                        ),
+                      ),
                     ),
                 ],
               ],

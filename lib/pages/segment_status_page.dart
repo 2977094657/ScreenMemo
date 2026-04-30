@@ -1143,7 +1143,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       metaText: sessionId == null
           ? '显示当前页可用的动态进入日志'
           : '仅显示最近一次进入会话 session#$sessionId，共 ${items.length} 条',
-      hintText: '直接长按选择文本，或点复制按钮一次性复制。',
+      hintText: AppLocalizations.of(context).segmentEntryLogHint,
       body: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1154,10 +1154,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                 : () async {
                     await Clipboard.setData(ClipboardData(text: text));
                     if (!mounted) return;
-                    UINotifier.success(context, '已复制动态进入日志');
+                    UINotifier.success(
+                      context,
+                      AppLocalizations.of(context).segmentEntryLogCopied,
+                    );
                   },
             icon: const Icon(Icons.copy_all_outlined, size: 18),
-            label: const Text('复制日志'),
+            label: Text(AppLocalizations.of(context).copyLogAction),
           ),
           const SizedBox(height: AppTheme.spacing3),
           Container(
@@ -1406,7 +1409,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     } catch (_) {
       if (!mounted) return;
       setState(() => _selectedDynamicRebuildDayConcurrency = previous);
-      UINotifier.error(context, '保存并发天数失败');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).segmentDynamicConcurrencySaveFailed,
+      );
     } finally {
       if (!mounted) return;
       setState(() => _savingDynamicRebuildDayConcurrency = false);
@@ -1493,12 +1499,20 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       if (!mounted) return;
       setState(() => _dynamicAutoRepairEnabled = persisted);
       _publishDynamicRebuildUiSnapshot();
-      UINotifier.info(context, persisted ? '自动补建已开启' : '自动补建已暂停');
+      UINotifier.info(
+        context,
+        persisted
+            ? AppLocalizations.of(context).dynamicAutoRepairEnabled
+            : AppLocalizations.of(context).dynamicAutoRepairPaused,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _dynamicAutoRepairEnabled = previous);
       _publishDynamicRebuildUiSnapshot();
-      UINotifier.error(context, '切换自动补建失败');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).dynamicAutoRepairToggleFailed,
+      );
     } finally {
       if (!mounted) return;
       setState(() => _togglingDynamicAutoRepair = false);
@@ -1785,7 +1799,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
             ? null
             : _confirmStartDynamicRebuild,
         icon: const Icon(Icons.restart_alt),
-        label: const Text('开始重建'),
+        label: Text(AppLocalizations.of(context).dynamicRebuildStart),
       ),
     );
     if (status.isActive) {
@@ -1802,7 +1816,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                 ),
                 onPressed: snapshot.stopping ? null : _cancelDynamicRebuild,
                 icon: const Icon(Icons.stop_circle_outlined),
-                label: const Text('停止'),
+                label: Text(AppLocalizations.of(context).actionStop),
               ),
             ),
           ),
@@ -1823,7 +1837,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                 ),
                 onPressed: snapshot.starting ? null : _continueDynamicRebuild,
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('继续重建'),
+                label: Text(
+                  AppLocalizations.of(context).dynamicRebuildContinue,
+                ),
               ),
             ),
           ),
@@ -2558,19 +2574,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         await Clipboard.setData(ClipboardData(text: f.path));
       } catch (_) {}
       if (!mounted) return;
-      final bool isZh = Localizations.localeOf(
-        context,
-      ).languageCode.toLowerCase().startsWith('zh');
       UINotifier.success(
         context,
-        isZh ? '已保存到：${f.path}' : 'Saved to: ${f.path}',
+        AppLocalizations.of(context).savedToPath(f.path),
       );
     } catch (e) {
       if (!mounted) return;
-      final bool isZh = Localizations.localeOf(
+      UINotifier.error(
         context,
-      ).languageCode.toLowerCase().startsWith('zh');
-      UINotifier.error(context, isZh ? '保存失败：$e' : 'Save failed: $e');
+        AppLocalizations.of(context).saveFailedError(e.toString()),
+      );
     }
   }
 
@@ -2910,7 +2923,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           borderRadius: BorderRadius.circular(8),
           onTap: () => _openImageGallery(samples, i),
           showNsfwButton: true,
-          errorText: 'Image Error',
+          errorText: AppLocalizations.of(context).imageError,
         );
       },
     );
@@ -3616,20 +3629,33 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       });
       _publishDynamicRebuildUiSnapshot();
       if (status.isCompleted && status.totalSegments == 0) {
-        UINotifier.info(context, '没有可重建的动态');
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).dynamicRebuildNoSegments,
+        );
         await _refresh(triggerSegmentTick: false);
       } else if (status.isActive && resumeExisting) {
         final String model = status.aiModel.trim();
         UINotifier.info(
           context,
-          model.isNotEmpty ? '已切换到模型 $model 继续重建' : '后台重建任务已恢复',
+          model.isNotEmpty
+              ? AppLocalizations.of(
+                  context,
+                ).dynamicRebuildSwitchedModelContinue(model)
+              : AppLocalizations.of(context).dynamicRebuildTaskResumed,
         );
         await _refresh(triggerSegmentTick: false);
       } else if (status.isActive && !previous.isActive) {
-        UINotifier.info(context, '已在后台开始重建，可在通知栏查看进度');
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).dynamicRebuildStartedInBackground,
+        );
         await _refresh(triggerSegmentTick: false);
       } else if (status.isActive) {
-        UINotifier.info(context, '后台重建任务已恢复');
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).dynamicRebuildTaskResumed,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -3660,11 +3686,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       if (!mounted) return;
       setState(() => _dynamicRebuildTaskStatus = status);
       _publishDynamicRebuildUiSnapshot();
-      UINotifier.info(context, '动态重建已停止');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).dynamicRebuildStopped,
+      );
       await _refresh(triggerSegmentTick: false);
     } catch (_) {
       if (mounted) {
-        UINotifier.error(context, '停止动态重建失败');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).dynamicRebuildStopFailed,
+        );
       }
     } finally {
       if (mounted) {
@@ -4210,7 +4242,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   static const int _thumbGridCrossAxisCount = 3;
   static const double _thumbGridSpacing = 2;
   static const double _thumbVirtualGridMaxHeight = 360;
-  static const String _summaryGeneratingPlaceholder = '模型正在思考，请稍候…';
+  String get _summaryGeneratingPlaceholder =>
+      AppLocalizations.of(context).thinkingInProgress;
   static const int _autoRetryRememberCap = 2048;
   static final Set<int> _autoRetryTriggeredSegmentIds = <int>{};
 
@@ -4755,16 +4788,21 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   context,
                 ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
 
+                final l10n = AppLocalizations.of(context);
                 final String state = _forcingMerge
-                    ? '强制合并中…'
+                    ? l10n.mergeStatusMerging
                     : (merged
-                          ? '已合并'
+                          ? l10n.mergeStatusMerged
                           : (mergeForced
-                                ? (mergeAttempted ? '强制合并失败' : '已请求强制合并')
-                                : (mergeAttempted ? '未合并' : '待判定')));
+                                ? (mergeAttempted
+                                      ? l10n.forceMergeFailed
+                                      : l10n.mergeStatusForceRequested)
+                                : (mergeAttempted
+                                      ? l10n.mergeStatusNotMerged
+                                      : l10n.mergeStatusPending)));
                 final String reasonText = mergeReason.isNotEmpty
                     ? mergeReason
-                    : (_forcingMerge ? '正在合并，请稍候…' : '');
+                    : (_forcingMerge ? l10n.mergeStatusMergingReason : '');
                 final bool canForce =
                     !_forcingMerge &&
                     !merged &&
@@ -5263,7 +5301,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   onPressed: widget.dynamicRebuildActive
                       ? null
                       : () async => _forceMerge(),
-                  child: const Text('强制合并'),
+                  child: Text(AppLocalizations.of(context).forceMerge),
                 ),
             ],
           ),
@@ -5544,7 +5582,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   borderRadius: BorderRadius.circular(8),
                   onTap: () => widget.openGallery(samples, i),
                   showNsfwButton: true,
-                  errorText: 'Image Error',
+                  errorText: AppLocalizations.of(context).imageError,
                 );
               },
             ),
@@ -5617,19 +5655,16 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         await Clipboard.setData(ClipboardData(text: f.path));
       } catch (_) {}
       if (!mounted) return;
-      final bool isZh = Localizations.localeOf(
-        context,
-      ).languageCode.toLowerCase().startsWith('zh');
       UINotifier.success(
         context,
-        isZh ? '已保存到：${f.path}' : 'Saved to: ${f.path}',
+        AppLocalizations.of(context).savedToPath(f.path),
       );
     } catch (e) {
       if (!mounted) return;
-      final bool isZh = Localizations.localeOf(
+      UINotifier.error(
         context,
-      ).languageCode.toLowerCase().startsWith('zh');
-      UINotifier.error(context, isZh ? '保存失败：$e' : 'Save failed: $e');
+        AppLocalizations.of(context).saveFailedError(e.toString()),
+      );
     }
   }
 
@@ -5757,7 +5792,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0 || _retrying) return;
     if (widget.dynamicRebuildActive) {
-      UINotifier.info(context, '全量重建进行中，暂时禁止单条重新生成');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).dynamicRebuildBlockedRetry,
+      );
       return;
     }
     final previous = Map<String, dynamic>.from(_segmentData);
@@ -5825,31 +5863,36 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0 || _forcingMerge) return;
     if (widget.dynamicRebuildActive) {
-      UINotifier.info(context, '全量重建进行中，暂时禁止手动强制合并');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).dynamicRebuildBlockedForceMerge,
+      );
       return;
     }
     final int prevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
     if (prevId <= 0) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('没有可合并的上一事件')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).forceMergeNoPrevious),
+        ),
+      );
       return;
     }
 
     final bool confirmed =
         await showUIDialog<bool>(
           context: context,
-          title: '强制合并',
-          message: '将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？',
+          title: AppLocalizations.of(context).forceMerge,
+          message: AppLocalizations.of(context).forceMergeConfirmMessage,
           actions: [
             UIDialogAction<bool>(
               text: AppLocalizations.of(context).dialogCancel,
               style: UIDialogActionStyle.normal,
               result: false,
             ),
-            const UIDialogAction<bool>(
-              text: '强制合并',
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).forceMerge,
               style: UIDialogActionStyle.destructive,
               result: true,
             ),
@@ -5871,7 +5914,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       _forcingMerge = true;
       _segmentData = Map<String, dynamic>.from(_segmentData)
         ..['merge_forced'] = 1
-        ..['merge_decision_reason'] = '已请求强制合并（排队中）';
+        ..['merge_decision_reason'] = AppLocalizations.of(
+          context,
+        ).forceMergeRequestedReason;
       _lastMergeResultCreatedAt = previousCreatedAt;
     });
 
@@ -5883,21 +5928,23 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       if (!mounted) return;
       if (!ok) {
         setState(() => _forcingMerge = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('强制合并入队失败')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).forceMergeQueuedFailed),
+          ),
+        );
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('强制合并已入队')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).forceMergeQueued)),
+      );
       _startMergeWatch(id, previousCreatedAt);
     } catch (_) {
       if (!mounted) return;
       setState(() => _forcingMerge = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('强制合并失败')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).forceMergeFailed)),
+      );
     }
   }
 
@@ -6029,9 +6076,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           await widget.onRefreshRequested();
         } catch (_) {}
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('合并完成')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).mergeCompleted)),
+        );
       } catch (_) {}
     });
   }

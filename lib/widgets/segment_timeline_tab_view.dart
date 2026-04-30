@@ -410,7 +410,8 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   static const int _thumbGridCrossAxisCount = 3;
   static const double _thumbGridSpacing = 2;
   static const double _thumbVirtualGridMaxHeight = 360;
-  static const String _summaryGeneratingPlaceholder = '模型正在思考，请稍候…';
+  String get _summaryGeneratingPlaceholder =>
+      AppLocalizations.of(context).thinkingInProgress;
 
   final ScrollController _tagScrollController = ScrollController();
 
@@ -761,16 +762,21 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                     context,
                   ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
 
+                  final l10n = AppLocalizations.of(context);
                   final String state = _forcingMerge
-                      ? '强制合并中…'
+                      ? l10n.mergeStatusMerging
                       : (merged
-                            ? '已合并'
+                            ? l10n.mergeStatusMerged
                             : (mergeForced
-                                  ? (mergeAttempted ? '强制合并失败' : '已请求强制合并')
-                                  : (mergeAttempted ? '未合并' : '待判定')));
+                                  ? (mergeAttempted
+                                        ? l10n.forceMergeFailed
+                                        : l10n.mergeStatusForceRequested)
+                                  : (mergeAttempted
+                                        ? l10n.mergeStatusNotMerged
+                                        : l10n.mergeStatusPending)));
                   final String reasonText = mergeReason.isNotEmpty
                       ? mergeReason
-                      : (_forcingMerge ? '正在合并，请稍候…' : '');
+                      : (_forcingMerge ? l10n.mergeStatusMergingReason : '');
                   final bool canForce =
                       !_forcingMerge &&
                       !merged &&
@@ -1231,7 +1237,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                     visualDensity: VisualDensity.compact,
                   ),
                   onPressed: () async => _forceMerge(),
-                  child: const Text('强制合并'),
+                  child: Text(AppLocalizations.of(context).forceMerge),
                 ),
             ],
           ),
@@ -1493,7 +1499,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                   borderRadius: BorderRadius.circular(8),
                   onTap: () => widget.openGallery(samples, i),
                   showNsfwButton: true,
-                  errorText: 'Image Error',
+                  errorText: AppLocalizations.of(context).imageError,
                 );
               },
             ),
@@ -1578,25 +1584,27 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     final int prevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
     if (prevId <= 0) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('没有可合并的上一事件')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).forceMergeNoPrevious),
+        ),
+      );
       return;
     }
 
     final bool confirmed =
         await showUIDialog<bool>(
           context: context,
-          title: '强制合并',
-          message: '将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？',
+          title: AppLocalizations.of(context).forceMerge,
+          message: AppLocalizations.of(context).forceMergeConfirmMessage,
           actions: [
             UIDialogAction<bool>(
               text: AppLocalizations.of(context).dialogCancel,
               style: UIDialogActionStyle.normal,
               result: false,
             ),
-            const UIDialogAction<bool>(
-              text: '强制合并',
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).forceMerge,
               style: UIDialogActionStyle.destructive,
               result: true,
             ),
@@ -1618,7 +1626,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       _forcingMerge = true;
       _segmentData = Map<String, dynamic>.from(_segmentData)
         ..['merge_forced'] = 1
-        ..['merge_decision_reason'] = '已请求强制合并（排队中）';
+        ..['merge_decision_reason'] = AppLocalizations.of(
+          context,
+        ).forceMergeRequestedReason;
       _lastMergeResultCreatedAt = previousCreatedAt;
     });
 
@@ -1630,21 +1640,23 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       if (!mounted) return;
       if (!ok) {
         setState(() => _forcingMerge = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('强制合并入队失败')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).forceMergeQueuedFailed),
+          ),
+        );
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('强制合并已入队')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).forceMergeQueued)),
+      );
       _startMergeWatch(id, previousCreatedAt);
     } catch (_) {
       if (!mounted) return;
       setState(() => _forcingMerge = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('强制合并失败')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).forceMergeFailed)),
+      );
     }
   }
 
@@ -1696,9 +1708,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
           await widget.onRefreshRequested();
         } catch (_) {}
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('合并完成')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).mergeCompleted)),
+        );
       } catch (_) {}
     });
   }

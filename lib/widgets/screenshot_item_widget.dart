@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
+import '../l10n/app_localizations.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import 'ai_meta_sheet.dart';
@@ -550,14 +551,21 @@ class ScreenshotItemWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       ),
       alignment: Alignment.center,
-      child: const Column(
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.broken_image, size: 32, color: AppTheme.mutedForeground),
-          SizedBox(height: 4),
+          const Icon(
+            Icons.broken_image,
+            size: 32,
+            color: AppTheme.mutedForeground,
+          ),
+          const SizedBox(height: 4),
           Text(
-            'Image Error',
-            style: TextStyle(color: AppTheme.mutedForeground, fontSize: 11),
+            AppLocalizations.of(context).imageError,
+            style: const TextStyle(
+              color: AppTheme.mutedForeground,
+              fontSize: 11,
+            ),
           ),
         ],
       ),

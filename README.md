@@ -303,6 +303,8 @@ flutter build linux -t lib/main_desktop_merger.dart --release
 - 日本語
 - 한국어
 
+应用界面文案统一维护在 `lib/l10n/app_*.arb`，原生 Android 通知、权限说明与前台服务文案维护在 `android/app/src/main/res/values*/strings.xml`。新增 UI 文案时不要直接写在 Dart Widget 或 Android XML 属性中，应先补齐对应语言资源并重新运行 `flutter gen-l10n`。
+
 常用命令：
 
 ```bash

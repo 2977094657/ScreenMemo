@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">スクリーンメモ</string>
     <string name="accessibility_service_description">スクリーンメモの主要機能はこのサービスに依存しています。有効にしないとスクリーンショットを取得できません。</string>
+    <string name="fgs_special_use_subtype">アクセシビリティによるスクリーンショット取得をバックグラウンドで維持します</string>
     <string name="notification_channel_name">スクリーンショットサービス</string>
     <string name="notification_channel_description">スクリーンショットサービスの状態を表示します</string>
     <string name="fg_notif_interval_value">%1$d秒</string>

@@ -109,7 +109,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               // ignore: unawaited_futures
               FlutterLogger.nativeInfo('UI', '查看器复制链接成功');
               if (mounted) {
-                UINotifier.success(context, 'Copied');
+                UINotifier.success(
+                  context,
+                  AppLocalizations.of(context).copySuccess,
+                );
               }
             } catch (e) {
               // ignore: unawaited_futures
@@ -117,7 +120,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               // ignore: unawaited_futures
               FlutterLogger.nativeError('UI', '查看器复制链接失败：' + e.toString());
               if (mounted) {
-                UINotifier.error(context, 'Copy failed');
+                UINotifier.error(
+                  context,
+                  AppLocalizations.of(context).copyFailed,
+                );
               }
             }
           },

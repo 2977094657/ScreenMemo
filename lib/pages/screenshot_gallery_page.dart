@@ -2245,14 +2245,21 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.nativeInfo('UI', '批量删除开始 数量=${ids.length}');
         if (mounted) {
-          UINotifier.showProgress(context, message: '正在删除...', progress: null);
+          UINotifier.showProgress(
+            context,
+            message: AppLocalizations.of(context).galleryDeleting,
+            progress: null,
+          );
         }
 
         // 为表现更流畅，这里分批提交给批量删除（数据库侧已分片），我们主要更新UI进度
         final successCount = await ScreenshotService.instance
             .deleteScreenshotsBatch(_appInfo.packageName, ids);
         if (mounted) {
-          UINotifier.updateProgress(message: '正在清理缓存...', progress: 0.9);
+          UINotifier.updateProgress(
+            message: AppLocalizations.of(context).galleryCleaningCache,
+            progress: 0.9,
+          );
         }
 
         // 计算更准确的删除数量与日期Tab新计数（避免出现“删除0张”的提示）
@@ -2325,7 +2332,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           );
           UINotifier.success(
             context,
-            '已删除 ' + deletedShown.toString() + ' 张截图',
+            AppLocalizations.of(context).deletedCountToast(deletedShown),
           );
         }
       } else {
@@ -2446,15 +2453,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         });
 
         if (mounted) {
-          UINotifier.success(context, currentStatus ? '已取消收藏' : '已添加到收藏');
+          UINotifier.success(
+            context,
+            currentStatus
+                ? AppLocalizations.of(context).favoriteRemoved
+                : AppLocalizations.of(context).favoriteAdded,
+          );
         }
       } else if (mounted) {
-        UINotifier.error(context, '操作失败');
+        UINotifier.error(context, AppLocalizations.of(context).operationFailed);
       }
     } catch (e) {
       print('切换收藏状态失败: $e');
       if (mounted) {
-        UINotifier.error(context, '操作失败: $e');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).operationFailedWithError(e.toString()),
+        );
       }
     }
   }

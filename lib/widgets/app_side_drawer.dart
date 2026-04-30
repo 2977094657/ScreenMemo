@@ -61,7 +61,7 @@ class AppSideDrawer extends StatelessWidget {
                     return _buildMenuItem(
                       context: context,
                       icon: Icons.memory_outlined,
-                      title: '记忆',
+                      title: t.chatContextTitleMemory,
                       isFirst: false,
                       onTap: () {
                         Navigator.of(context).pop();
@@ -79,7 +79,7 @@ class AppSideDrawer extends StatelessWidget {
             _buildMenuItem(
               context: context,
               icon: Icons.receipt_long_outlined,
-              title: '日志面板',
+              title: t.logPanelTitle,
               isFirst: false,
               onTap: () {
                 Navigator.of(context).pop();

@@ -753,7 +753,7 @@ class _InteractivePieChartState extends State<_InteractivePieChart> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text('${_formatDouble(value)}%'),
+                  Text(_formatPercent(value)),
                 ],
               ),
             ),
@@ -1194,6 +1194,8 @@ String _formatDouble(double value) {
   if (!value.isFinite) return value.toString();
   return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2);
 }
+
+String _formatPercent(double value) => '${_formatDouble(value)}%';
 
 String _formatSize(Size? size) {
   if (size == null) return 'null';

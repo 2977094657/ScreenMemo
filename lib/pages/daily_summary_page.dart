@@ -371,12 +371,20 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         setState(() => _morningInsights = insights);
       }
       if (regenerate) {
-        UINotifier.info(context, insights != null ? '晨间提示已更新' : '晨间提示生成失败');
+        UINotifier.info(
+          context,
+          insights != null
+              ? AppLocalizations.of(context).homeMorningTipsUpdated
+              : AppLocalizations.of(context).homeMorningTipsGenerateFailed,
+        );
       }
     } catch (_) {
       if (!mounted) return;
       if (regenerate) {
-        UINotifier.error(context, '晨间提示生成失败');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).homeMorningTipsGenerateFailed,
+        );
       }
     } finally {
       if (mounted) setState(() => _morningLoading = false);
@@ -569,7 +577,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           Row(
             children: [
               Text(
-                '${l10n.homeMorningTipsTitle} RAW',
+                l10n.homeMorningTipsRawTitle,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: cs.onSurface,
@@ -633,7 +641,12 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     );
 
     final List<Widget> children = <Widget>[
-      Text('${index + 1}. ${tip.displayTitle}', style: titleStyle),
+      Text(
+        AppLocalizations.of(
+          context,
+        ).homeMorningTipNumberedTitle(index + 1, tip.displayTitle),
+        style: titleStyle,
+      ),
     ];
 
     if (tip.hasSummary) {

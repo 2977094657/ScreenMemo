@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">스크린메모</string>
     <string name="accessibility_service_description">스크린메모의 핵심 기능은 이 서비스에 의존합니다. 활성화하지 않으면 스크린샷을 캡처할 수 없습니다.</string>
+    <string name="fgs_special_use_subtype">접근성 스크린샷 서비스를 백그라운드에서 계속 실행합니다</string>
     <string name="notification_channel_name">스크린샷 서비스</string>
     <string name="notification_channel_description">스크린샷 서비스 상태를 표시합니다</string>
     <string name="fg_notif_interval_value">%1$d초</string>

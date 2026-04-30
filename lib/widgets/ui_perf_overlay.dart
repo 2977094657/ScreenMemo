@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/ui_perf_logger.dart';
 
 class UiPerfOverlay extends StatelessWidget {
@@ -19,6 +20,7 @@ class UiPerfOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final Color bg = Theme.of(
       context,
     ).colorScheme.surface.withValues(alpha: 0.92);
@@ -72,7 +74,7 @@ class UiPerfOverlay extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Copy',
+                      tooltip: l10n.actionCopy,
                       onPressed: () async {
                         final messenger = ScaffoldMessenger.maybeOf(context);
                         try {
@@ -81,9 +83,9 @@ class UiPerfOverlay extends StatelessWidget {
                           );
                           messenger?.clearSnackBars();
                           messenger?.showSnackBar(
-                            const SnackBar(
-                              content: Text('已复制'),
-                              duration: Duration(milliseconds: 900),
+                            SnackBar(
+                              content: Text(l10n.copySuccess),
+                              duration: const Duration(milliseconds: 900),
                             ),
                           );
                         } catch (_) {}
@@ -98,7 +100,7 @@ class UiPerfOverlay extends StatelessWidget {
                       icon: const Icon(Icons.copy_outlined),
                     ),
                     IconButton(
-                      tooltip: 'Clear',
+                      tooltip: l10n.actionClear,
                       onPressed: onClear,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
@@ -110,7 +112,7 @@ class UiPerfOverlay extends StatelessWidget {
                       icon: const Icon(Icons.delete_outline),
                     ),
                     IconButton(
-                      tooltip: 'Close',
+                      tooltip: l10n.actionClose,
                       onPressed: onClose,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,

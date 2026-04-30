@@ -691,7 +691,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
-            '$label: ',
+            AppLocalizations.of(context).labelWithColon(label),
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -1024,7 +1024,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$label: ', style: theme.textTheme.bodySmall),
+        Text(
+          AppLocalizations.of(context).labelWithColon(label),
+          style: theme.textTheme.bodySmall,
+        ),
         Text(
           value.toString(),
           style: theme.textTheme.bodySmall?.copyWith(

@@ -638,23 +638,23 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
     final TextStyle titleStyle =
         theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700) ??
         const TextStyle(fontSize: 16, fontWeight: FontWeight.w700);
-    final bool isZh = ChatContextSheet._isZh(context);
+    final l10n = AppLocalizations.of(context);
 
     return Text.rich(
       TextSpan(
         style: titleStyle,
         children: <InlineSpan>[
-          TextSpan(text: isZh ? '对话上下文（压缩/' : 'Conversation Context ('),
+          TextSpan(text: l10n.chatContextTitlePrefix),
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
             baseline: TextBaseline.alphabetic,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _onMemoryEntryUnlockTap,
-              child: Text(isZh ? '记忆' : 'Memory', style: titleStyle),
+              child: Text(l10n.chatContextTitleMemory, style: titleStyle),
             ),
           ),
-          TextSpan(text: isZh ? '）' : ')'),
+          TextSpan(text: l10n.chatContextTitleSuffix),
         ],
       ),
       maxLines: 2,
@@ -2465,7 +2465,10 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
       ),
-      child: Text('$label: $value', style: theme.textTheme.bodySmall),
+      child: Text(
+        '${AppLocalizations.of(context).labelWithColon(label)}$value',
+        style: theme.textTheme.bodySmall,
+      ),
     );
   }
 

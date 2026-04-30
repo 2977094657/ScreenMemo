@@ -303,6 +303,8 @@ README とアプリ UI は現在以下の 4 言語を対象にしています。
 - 日本語
 - 한국어
 
+アプリ UI の文言は `lib/l10n/app_*.arb` で管理し、Android ネイティブの通知・権限説明・フォアグラウンドサービス文言は `android/app/src/main/res/values*/strings.xml` で管理します。新しい UI 文言を Dart Widget や Android XML 属性に直接書かず、対応する各言語リソースを追加してから `flutter gen-l10n` を再実行してください。
+
 よく使うコマンド：
 
 ```bash

@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:shimmer/shimmer.dart';
 import 'dart:io';
 import 'chat_markdown_chart.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/navigation_service.dart';
@@ -668,7 +669,12 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
         perfLogger?.log('evidence.unresolved', detail: 'name=$name');
       }
       // 未匹配到文件名时，回退为可选的明文占位，避免渲染空白
-      return Text('[evidence: ' + name + ']', style: preferredStyle);
+      return Builder(
+        builder: (context) => Text(
+          '${AppLocalizations.of(context).evidencePrefix}$name]',
+          style: preferredStyle,
+        ),
+      );
     }
     final int loggerId = (perfLogger == null)
         ? 0

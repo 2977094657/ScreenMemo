@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
@@ -93,9 +94,15 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     if (report == null) return;
     try {
       await Clipboard.setData(ClipboardData(text: report.toText()));
-      if (mounted) UINotifier.success(context, '已复制诊断报告');
+      if (mounted) {
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).importDiagnosticsReportCopied,
+        );
+      }
     } catch (_) {
-      if (mounted) UINotifier.error(context, '复制失败');
+      if (mounted)
+        UINotifier.error(context, AppLocalizations.of(context).copyFailed);
     }
   }
 
@@ -170,12 +177,21 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
       _startOcrTaskPolling();
 
       if (status.isCompleted) {
-        UINotifier.success(context, '没有待修复的图片文字，诊断已刷新');
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).importDiagnosticsNoRepairableOcr,
+        );
         await _runDiagnostics();
       } else if (status.isActive && !previous.isActive) {
-        UINotifier.info(context, '已在后台开始修复，可在通知栏查看进度');
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).importDiagnosticsOcrRepairStarted,
+        );
       } else if (status.isActive) {
-        UINotifier.info(context, '后台修复任务已恢复，可在通知栏查看进度');
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).importDiagnosticsOcrRepairResumed,
+        );
       }
     } catch (e, st) {
       try {
@@ -207,7 +223,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           .cancelImportOcrRepairTask();
       if (!mounted) return;
       setState(() => _ocrTaskStatus = status);
-      UINotifier.info(context, '图片文字修复已停止');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).importDiagnosticsOcrRepairStopped,
+      );
     } catch (e, st) {
       try {
         await FlutterLogger.handle(
@@ -218,7 +237,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
         );
       } catch (_) {}
       if (mounted) {
-        UINotifier.error(context, '停止修复失败');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).importDiagnosticsStopRepairFailed,
+        );
       }
     }
   }
@@ -264,14 +286,14 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     return Scaffold(
       backgroundColor: pageBg,
       appBar: AppBar(
-        title: const Text('导入诊断'),
+        title: Text(AppLocalizations.of(context).importDiagnosticsTitle),
         centerTitle: true,
         backgroundColor: pageBg,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         actions: [
           IconButton(
-            tooltip: '复制',
+            tooltip: AppLocalizations.of(context).actionCopy,
             onPressed: _report == null ? null : _copyReport,
             icon: const Icon(Icons.copy_all_outlined),
           ),
@@ -292,7 +314,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('诊断失败', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                AppLocalizations.of(context).importDiagnosticsFailedTitle,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: AppTheme.spacing2),
               SelectableText(
                 _error!,
@@ -305,7 +330,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
               const SizedBox(height: AppTheme.spacing3),
               FilledButton.tonal(
                 onPressed: _runDiagnostics,
-                child: const Text('重试'),
+                child: Text(AppLocalizations.of(context).actionRetry),
               ),
             ],
           ),
@@ -429,7 +454,12 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
-          Text('耗时：${report.durationMs}ms', style: theme.textTheme.bodySmall),
+          Text(
+            AppLocalizations.of(
+              context,
+            ).importDiagnosticsDurationMs(report.durationMs),
+            style: theme.textTheme.bodySmall,
+          ),
           const SizedBox(height: 4),
           Text(
             '可修复索引：${report.canRepairIndex ? '是' : '否'}',
@@ -658,7 +688,12 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           Row(
             children: [
               Expanded(
-                child: Text('后台修复任务', style: theme.textTheme.titleSmall),
+                child: Text(
+                  AppLocalizations.of(
+                    context,
+                  ).importDiagnosticsBackgroundRepairTask,
+                  style: theme.textTheme.titleSmall,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -723,7 +758,9 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
               alignment: Alignment.centerLeft,
               child: OutlinedButton(
                 onPressed: _cancelOcrTask,
-                child: const Text('停止修复'),
+                child: Text(
+                  AppLocalizations.of(context).importDiagnosticsStopRepair,
+                ),
               ),
             ),
           ],
@@ -783,7 +820,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           ...report.suggestions.map(
             (s) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Text('• $s', style: theme.textTheme.bodySmall),
+              child: Text('• ' + s, style: theme.textTheme.bodySmall),
             ),
           ),
         ],
@@ -817,7 +854,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             (s) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                '• $s',
+                '• ' + s,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: isAlert ? theme.colorScheme.error : null,
                 ),
@@ -841,9 +878,12 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
         children: [
           FilledButton.tonal(
             onPressed: _runDiagnostics,
-            child: const Text('重试'),
+            child: Text(AppLocalizations.of(context).actionRetry),
           ),
-          FilledButton.tonal(onPressed: _copyReport, child: const Text('复制')),
+          FilledButton.tonal(
+            onPressed: _copyReport,
+            child: Text(AppLocalizations.of(context).actionCopy),
+          ),
           FilledButton(
             onPressed: (!report.canRepairIndex || _repairing)
                 ? null
@@ -854,7 +894,9 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('修复索引'),
+                : Text(
+                    AppLocalizations.of(context).importDiagnosticsRepairIndex,
+                  ),
           ),
           FilledButton(
             onPressed:

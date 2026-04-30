@@ -96,19 +96,26 @@ class _ProviderListPageState extends State<ProviderListPage> {
     List<AIProviderKey> keys,
   ) {
     if (!provider.hasBalanceQuery || keys.isEmpty) return null;
-    final known = keys.where((key) => key.balanceTotal != null).toList();
+    final known = keys.where((key) => key.hasBalance).toList();
     if (known.isEmpty) return '总余额 —';
-    final double total = known.fold<double>(
+    final numeric = known.where((key) => key.balanceTotal != null).toList();
+    if (numeric.isEmpty) {
+      if (known.length == 1) {
+        return '余额 ${known.first.balanceDisplay ?? '已获取'}';
+      }
+      return '余额已获取 ${known.length}/${keys.length}';
+    }
+    final double total = numeric.fold<double>(
       0,
       (sum, key) => sum + (key.balanceTotal ?? 0),
     );
-    final currencies = known
+    final currencies = numeric
         .map((key) => (key.balanceCurrency ?? '').trim())
         .where((currency) => currency.isNotEmpty)
         .toSet();
     final currency = currencies.length == 1 ? ' ${currencies.first}' : '';
-    final partial = known.length < keys.length
-        ? '（${known.length}/${keys.length}）'
+    final partial = numeric.length < keys.length
+        ? '（${numeric.length}/${keys.length}）'
         : '';
     return '总余额 ${_formatBalanceTotal(total)}$currency$partial';
   }

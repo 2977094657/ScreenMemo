@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/ui_components.dart';
 
 class PermissionGuidePage extends StatefulWidget {
@@ -11,8 +12,8 @@ class PermissionGuidePage extends StatefulWidget {
 
 class _PermissionGuidePageState extends State<PermissionGuidePage> {
   static const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
-  
-  String _guideText = '正在加载权限设置指南...';
+
+  String _guideText = '';
   String _deviceInfo = '';
   Map<String, dynamic> _permissionStatus = {};
   bool _isLoading = true;
@@ -27,17 +28,23 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
     try {
       final guideText = await platform.invokeMethod('getPermissionGuideText');
       final deviceInfo = await platform.invokeMethod('getDeviceInfo');
-      final permissionStatus = await platform.invokeMethod('getPermissionStatus');
-      
+      final permissionStatus = await platform.invokeMethod(
+        'getPermissionStatus',
+      );
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+
       setState(() {
-        _guideText = guideText ?? '无法获取权限设置指南';
-        _deviceInfo = deviceInfo ?? '未知设备';
+        _guideText = guideText ?? l10n.permissionGuideUnavailable;
+        _deviceInfo = deviceInfo ?? l10n.permissionGuideUnknownDevice;
         _permissionStatus = Map<String, dynamic>.from(permissionStatus ?? {});
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       setState(() {
-        _guideText = '加载权限设置指南失败: $e';
+        _guideText = l10n.permissionGuideLoadFailed(e.toString());
         _isLoading = false;
       });
     }
@@ -46,42 +53,75 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
   Future<void> _openAppDetailsSettings() async {
     try {
       await platform.invokeMethod('openAppDetailsSettings');
-      UINotifier.info(context, '已打开应用设置页面，请按照指南进行设置');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).permissionGuideSettingsOpened,
+      );
     } catch (e) {
-      UINotifier.error(context, '打开设置页面失败: $e');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(
+          context,
+        ).permissionGuideOpenSettingsFailed(e.toString()),
+      );
     }
   }
 
   Future<void> _openBatteryOptimizationSettings() async {
     try {
       await platform.invokeMethod('openBatteryOptimizationSettings');
-      UINotifier.info(context, '已打开电池优化设置页面');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).permissionGuideBatteryOpened,
+      );
     } catch (e) {
-      UINotifier.error(context, '打开电池优化设置失败: $e');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(
+          context,
+        ).permissionGuideOpenBatteryFailed(e.toString()),
+      );
     }
   }
 
   Future<void> _openAutoStartSettings() async {
     try {
       await platform.invokeMethod('openAutoStartSettings');
-      UINotifier.info(context, '已打开自启动设置页面');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).permissionGuideAutostartOpened,
+      );
     } catch (e) {
-      UINotifier.error(context, '打开自启动设置失败: $e');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(
+          context,
+        ).permissionGuideOpenAutostartFailed(e.toString()),
+      );
     }
   }
 
   Future<void> _markPermissionConfigured() async {
     try {
       await platform.invokeMethod('markPermissionConfigured', {'type': 'all'});
-      UINotifier.success(context, '权限设置已标记为完成');
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).permissionGuideCompleted,
+      );
       Navigator.of(context).pop();
     } catch (e) {
-      UINotifier.error(context, '标记权限设置失败: $e');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(
+          context,
+        ).permissionGuideCompleteFailed(e.toString()),
+      );
     }
   }
 
   Widget _buildPermissionStatusCard() {
     if (_permissionStatus.isEmpty) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -90,15 +130,27 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '权限状态检查',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              l10n.permissionStatusTitle,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            _buildStatusItem('电池优化白名单', _permissionStatus['battery_optimization'] ?? false),
-            _buildStatusItem('自启动权限', _permissionStatus['autostart'] ?? false),
-            _buildStatusItem('后台运行权限', _permissionStatus['background'] ?? false),
-            _buildStatusItem('实际电池优化状态', _permissionStatus['battery_whitelist_actual'] ?? false),
+            _buildStatusItem(
+              l10n.batteryOptimizationTitle,
+              _permissionStatus['battery_optimization'] ?? false,
+            ),
+            _buildStatusItem(
+              l10n.autostartPermissionTitle,
+              _permissionStatus['autostart'] ?? false,
+            ),
+            _buildStatusItem(
+              l10n.backgroundPermissionTitle,
+              _permissionStatus['background'] ?? false,
+            ),
+            _buildStatusItem(
+              l10n.actualBatteryOptimizationStatusTitle,
+              _permissionStatus['battery_whitelist_actual'] ?? false,
+            ),
           ],
         ),
       ),
@@ -106,6 +158,7 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
   }
 
   Widget _buildStatusItem(String title, bool isConfigured) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -119,7 +172,9 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
           Text(title),
           const Spacer(),
           Text(
-            isConfigured ? '已配置' : '需要配置',
+            isConfigured
+                ? l10n.permissionConfiguredStatus
+                : l10n.permissionNeedsConfigurationStatus,
             style: TextStyle(
               color: isConfigured ? Colors.green : Colors.red,
               fontWeight: FontWeight.bold,
@@ -132,9 +187,10 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('权限设置指南'),
+        title: Text(l10n.permissionGuideTitle),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
@@ -152,9 +208,12 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '设备信息',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          Text(
+                            l10n.deviceInfoTitle,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(_deviceInfo),
@@ -162,10 +221,10 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                       ),
                     ),
                   ),
-                  
+
                   // 权限状态卡片
                   _buildPermissionStatusCard(),
-                  
+
                   // 设置指南卡片
                   Card(
                     margin: const EdgeInsets.all(16),
@@ -174,20 +233,25 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '设置指南',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          Text(
+                            l10n.setupGuideTitle,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            _guideText,
+                            _guideText.isEmpty
+                                ? l10n.permissionGuideLoading
+                                : _guideText,
                             style: const TextStyle(fontSize: 14, height: 1.5),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  
+
                   // 操作按钮
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -198,7 +262,7 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                           child: ElevatedButton.icon(
                             onPressed: _openAppDetailsSettings,
                             icon: const Icon(Icons.settings),
-                            label: const Text('打开应用设置页面'),
+                            label: Text(l10n.permissionGuideOpenAppSettings),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue,
                               foregroundColor: Colors.white,
@@ -212,7 +276,9 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                           child: ElevatedButton.icon(
                             onPressed: _openBatteryOptimizationSettings,
                             icon: const Icon(Icons.battery_saver),
-                            label: const Text('打开电池优化设置'),
+                            label: Text(
+                              l10n.permissionGuideOpenBatterySettings,
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
@@ -226,7 +292,9 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                           child: ElevatedButton.icon(
                             onPressed: _openAutoStartSettings,
                             icon: const Icon(Icons.power_settings_new),
-                            label: const Text('打开自启动设置'),
+                            label: Text(
+                              l10n.permissionGuideOpenAutostartSettings,
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
@@ -240,7 +308,7 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
                           child: ElevatedButton.icon(
                             onPressed: _markPermissionConfigured,
                             icon: const Icon(Icons.check),
-                            label: const Text('我已完成所有设置'),
+                            label: Text(l10n.permissionGuideAllDone),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.purple,
                               foregroundColor: Colors.white,

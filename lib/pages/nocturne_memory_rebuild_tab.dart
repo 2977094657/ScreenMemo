@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../services/memory_entity_models.dart';
 import '../services/nocturne_memory_maintenance_service.dart';
@@ -465,10 +466,7 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                 width: 1,
               ),
             ),
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            child: Text(text, style: Theme.of(context).textTheme.bodySmall),
           ),
         );
       }
@@ -594,7 +592,12 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
             children: statuses.map((status) {
               final bool selected = status == _selectedSignalStatus;
               return ChoiceChip(
-                label: Text('${statusLabel(status)} ${statusCount(status)}'),
+                label: Text(
+                  AppLocalizations.of(context).memorySignalStatusChip(
+                    statusLabel(status),
+                    statusCount(status),
+                  ),
+                ),
                 selected: selected,
                 onSelected: (_) {
                   if (_selectedSignalStatus == status) return;
@@ -616,7 +619,12 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
           SizedBox(
             height: 360,
             child: visibleItems.isEmpty
-                ? Center(child: Text('无', style: labelStyle))
+                ? Center(
+                    child: Text(
+                      AppLocalizations.of(context).none,
+                      style: labelStyle,
+                    ),
+                  )
                 : Scrollbar(
                     thumbVisibility: true,
                     child: ListView.builder(
@@ -749,13 +757,19 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                                         item,
                                         forceCreateNew: true,
                                       ),
-                                child: const Text('强制新建'),
+                                child: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).memoryForceCreate,
+                                ),
                               ),
                               OutlinedButton(
                                 onPressed: busy
                                     ? null
                                     : () => _dismissReviewItem(item),
-                                child: const Text('忽略'),
+                                child: Text(
+                                  AppLocalizations.of(context).actionIgnore,
+                                ),
                               ),
                             ],
                           ),
@@ -826,7 +840,9 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         if (!mounted) return;
                         await _reloadDashboard();
                       },
-                child: const Text('生成建议'),
+                child: Text(
+                  AppLocalizations.of(context).memoryGenerateSuggestions,
+                ),
               ),
               const SizedBox(width: 8),
               OutlinedButton(
@@ -844,7 +860,9 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         if (!mounted) return;
                         await _reloadDashboard();
                       },
-                child: const Text('全部应用'),
+                child: Text(
+                  AppLocalizations.of(context).memoryApplyAllSuggestions,
+                ),
               ),
             ],
           ),
@@ -1012,7 +1030,9 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         if (!mounted) return;
                         await _reloadDashboard();
                       },
-                child: const Text('应用这条'),
+                child: Text(
+                  AppLocalizations.of(context).memoryApplyThisSuggestion,
+                ),
               ),
               OutlinedButton(
                 onPressed: !enabled
@@ -1022,7 +1042,9 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         if (!mounted) return;
                         await _reloadDashboard();
                       },
-                child: const Text('不应用'),
+                child: Text(
+                  AppLocalizations.of(context).memoryDontApplySuggestion,
+                ),
               ),
             ],
           ),
@@ -1102,7 +1124,7 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
             children: [
               FilledButton(
                 onPressed: _controller.continueAfterPause,
-                child: const Text('继续'),
+                child: Text(AppLocalizations.of(context).actionContinue),
               ),
               const SizedBox(width: 10),
               OutlinedButton.icon(
@@ -1132,7 +1154,7 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         }
                       },
                 icon: const Icon(Icons.content_copy, size: 18),
-                label: const Text('复制错误'),
+                label: Text(AppLocalizations.of(context).memoryCopyError),
               ),
               const SizedBox(width: 10),
               OutlinedButton(
@@ -1144,7 +1166,7 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                         '“继续”会跳过当前失败批次（本批最多10张图），继续处理本段剩余图片；若该段落已无剩余则进入下一段。\n\n若属于段落级异常，则会直接跳过该段落。',
                   );
                 },
-                child: const Text('说明'),
+                child: Text(AppLocalizations.of(context).actionDescription),
               ),
             ],
           ),
@@ -1210,7 +1232,11 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                               child: FilledButton.icon(
                                 onPressed: _controller.running ? null : _start,
                                 icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text('一键重建'),
+                                label: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).memoryRebuildAction,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1219,7 +1245,9 @@ class _NocturneMemoryRebuildTabState extends State<NocturneMemoryRebuildTab> {
                                   ? _controller.requestStop
                                   : null,
                               icon: const Icon(Icons.stop, size: 18),
-                              label: const Text('停止'),
+                              label: Text(
+                                AppLocalizations.of(context).actionStop,
+                              ),
                             ),
                           ],
                         ),

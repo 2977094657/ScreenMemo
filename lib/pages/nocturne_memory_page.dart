@@ -466,9 +466,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
           controller: _tab,
           isScrollable: false,
           height: 34,
-          tabs: const [
-            Tab(text: '查看记忆'),
-            Tab(text: '一键重建'),
+          tabs: [
+            Tab(text: AppLocalizations.of(context).memoryTabView),
+            Tab(text: AppLocalizations.of(context).memoryTabRebuild),
           ],
         ),
       ),

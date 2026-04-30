@@ -435,7 +435,7 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
               fit: BoxFit.cover,
               borderRadius: borderRadius,
               onTap: _viewScreenshot,
-              errorText: 'Image Error',
+              errorText: AppLocalizations.of(context).imageError,
               showTimelineJumpButton: true,
             ),
             Positioned(

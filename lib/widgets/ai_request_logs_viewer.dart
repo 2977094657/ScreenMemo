@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:talker/talker.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/ai_request_log.dart';
 import '../theme/app_theme.dart';
 import '../utils/ai_request_log_parser.dart';
@@ -386,15 +387,15 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
   Future<void> _copy(BuildContext context, String text) async {
     final String t = text.trimRight();
     if (t.isEmpty) return;
-    final bool zh = _isZhLocale(context);
+    final l10n = AppLocalizations.of(context);
     try {
       await Clipboard.setData(ClipboardData(text: t));
       if (context.mounted) {
-        UINotifier.success(context, zh ? '已复制' : 'Copied');
+        UINotifier.success(context, l10n.copySuccess);
       }
     } catch (_) {
       if (context.mounted) {
-        UINotifier.error(context, zh ? '复制失败' : 'Copy failed');
+        UINotifier.error(context, l10n.copyFailed);
       }
     }
   }

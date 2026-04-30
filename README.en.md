@@ -303,6 +303,8 @@ Both the app UI and the README set currently target these 4 languages:
 - Japanese
 - Korean
 
+App UI copy is maintained in `lib/l10n/app_*.arb`, while native Android notification, permission, and foreground-service copy lives in `android/app/src/main/res/values*/strings.xml`. Do not hard-code new UI copy directly in Dart widgets or Android XML attributes; add the matching locale resources first, then rerun `flutter gen-l10n`.
+
 Common commands:
 
 ```bash

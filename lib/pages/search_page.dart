@@ -2390,7 +2390,7 @@ class _SearchPageState extends State<SearchPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '语义搜索未开始',
+                l10n.semanticSearchNotStartedTitle,
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -2398,7 +2398,7 @@ class _SearchPageState extends State<SearchPage>
               ),
               const SizedBox(height: AppTheme.spacing2),
               Text(
-                '这里会搜索图片的 AI 描述/关键词/标签。为避免输入时卡顿，需要手动触发搜索。',
+                l10n.semanticSearchNotStartedDesc,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppTheme.mutedForeground,
                 ),
@@ -2410,7 +2410,7 @@ class _SearchPageState extends State<SearchPage>
                 child: ElevatedButton.icon(
                   onPressed: () => _searchSemantic(_lastQuery),
                   icon: const Icon(Icons.search, size: 18),
-                  label: const Text('搜索语义'),
+                  label: Text(l10n.searchSemantic),
                 ),
               ),
             ],
@@ -2512,7 +2512,11 @@ class _SearchPageState extends State<SearchPage>
                   children: [
                     Expanded(
                       child: Text(
-                        '找到 ${_semanticCountingTotal ? '...' : _filteredSemanticCount} 张图片',
+                        l10n.foundImagesCount(
+                          _semanticCountingTotal
+                              ? '...'
+                              : _filteredSemanticCount,
+                        ),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AppTheme.mutedForeground,
                           fontWeight: FontWeight.w500,
@@ -2562,8 +2566,8 @@ class _SearchPageState extends State<SearchPage>
                       const SizedBox(width: 4),
                       Text(
                         _semanticSelectedTags.isEmpty
-                            ? '标签'
-                            : '${_semanticSelectedTags.length}个标签',
+                            ? l10n.tagsLabel
+                            : l10n.tagCount(_semanticSelectedTags.length),
                         style: TextStyle(
                           fontSize: 12,
                           color: hasTagFilter
@@ -2600,7 +2604,7 @@ class _SearchPageState extends State<SearchPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '动态搜索未开始',
+                l10n.segmentSearchNotStartedTitle,
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -2608,7 +2612,7 @@ class _SearchPageState extends State<SearchPage>
               ),
               const SizedBox(height: AppTheme.spacing2),
               Text(
-                '为避免输入时卡顿，需要手动触发搜索。',
+                l10n.segmentSearchNotStartedDesc,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppTheme.mutedForeground,
                 ),
@@ -2620,7 +2624,7 @@ class _SearchPageState extends State<SearchPage>
                 child: ElevatedButton.icon(
                   onPressed: () => _searchSegments(_lastQuery),
                   icon: const Icon(Icons.search, size: 18),
-                  label: const Text('搜索动态'),
+                  label: Text(l10n.searchDynamic),
                 ),
               ),
             ],
@@ -2810,7 +2814,7 @@ class _SearchPageState extends State<SearchPage>
                 child: ElevatedButton.icon(
                   onPressed: () => _searchDocs(_lastQuery),
                   icon: const Icon(Icons.search, size: 18),
-                  label: const Text('搜索更多'),
+                  label: Text(AppLocalizations.of(context).searchMore),
                 ),
               ),
             ],
@@ -3278,7 +3282,7 @@ class _SearchPageState extends State<SearchPage>
                               ),
                             ),
                             IconButton(
-                              tooltip: '复制',
+                              tooltip: AppLocalizations.of(ctx).actionCopy,
                               onPressed: content.trim().isEmpty
                                   ? null
                                   : () async {
@@ -3291,7 +3295,13 @@ class _SearchPageState extends State<SearchPage>
                                       );
                                       if (!mounted) return;
                                       ScaffoldMessenger.of(ctx).showSnackBar(
-                                        const SnackBar(content: Text('已复制')),
+                                        SnackBar(
+                                          content: Text(
+                                            AppLocalizations.of(
+                                              ctx,
+                                            ).copySuccess,
+                                          ),
+                                        ),
                                       );
                                     },
                               icon: const Icon(Icons.copy_rounded),
@@ -3329,7 +3339,7 @@ class _SearchPageState extends State<SearchPage>
                           )
                         else
                           Text(
-                            '（无内容）',
+                            AppLocalizations.of(ctx).noContentParenthesized,
                             style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
                               color: AppTheme.mutedForeground,
                             ),
@@ -3355,7 +3365,9 @@ class _SearchPageState extends State<SearchPage>
                                   );
                                 },
                                 icon: const Icon(Icons.open_in_new, size: 18),
-                                label: const Text('打开每日总结'),
+                                label: Text(
+                                  AppLocalizations.of(ctx).openDailySummary,
+                                ),
                               ),
                           ],
                         ),
@@ -3374,9 +3386,9 @@ class _SearchPageState extends State<SearchPage>
   /// 显示标签筛选底部弹窗
   void _showTagFilterSheet() {
     if (_availableTags.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无可用标签')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).noAvailableTags)),
+      );
       return;
     }
 
@@ -3407,7 +3419,7 @@ class _SearchPageState extends State<SearchPage>
                       child: Row(
                         children: [
                           Text(
-                            '标签筛选',
+                            AppLocalizations.of(context).tagFilterTitle,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -3420,7 +3432,9 @@ class _SearchPageState extends State<SearchPage>
                                 });
                                 setState(() {});
                               },
-                              child: const Text('清除全部'),
+                              child: Text(
+                                AppLocalizations.of(context).clearAll,
+                              ),
                             ),
                         ],
                       ),
@@ -3520,7 +3534,15 @@ class _SearchPageState extends State<SearchPage>
                         child: ElevatedButton(
                           onPressed: () => Navigator.of(context).pop(),
                           child: Text(
-                            '确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})',
+                            AppLocalizations.of(context).confirmSelectionLabel(
+                              _selectedTags.isEmpty
+                                  ? AppLocalizations.of(
+                                      context,
+                                    ).selectedAllLabel
+                                  : AppLocalizations.of(
+                                      context,
+                                    ).selectedTagsCount(_selectedTags.length),
+                            ),
                           ),
                         ),
                       ),
@@ -3537,9 +3559,9 @@ class _SearchPageState extends State<SearchPage>
 
   void _showSemanticTagFilterSheet() {
     if (_semanticAvailableTags.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无可用标签')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).noAvailableTags)),
+      );
       return;
     }
 
@@ -3572,7 +3594,7 @@ class _SearchPageState extends State<SearchPage>
                       child: Row(
                         children: [
                           Text(
-                            '标签筛选',
+                            AppLocalizations.of(context).tagFilterTitle,
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
@@ -3588,7 +3610,9 @@ class _SearchPageState extends State<SearchPage>
                                   _applySemanticTagFilter();
                                 });
                               },
-                              child: const Text('清除'),
+                              child: Text(
+                                AppLocalizations.of(context).actionClear,
+                              ),
                             ),
                         ],
                       ),
@@ -3684,7 +3708,17 @@ class _SearchPageState extends State<SearchPage>
                         child: ElevatedButton(
                           onPressed: () => Navigator.of(context).pop(),
                           child: Text(
-                            '确定 (${_semanticSelectedTags.isEmpty ? "全部" : "已选${_semanticSelectedTags.length}个"})',
+                            AppLocalizations.of(context).confirmSelectionLabel(
+                              _semanticSelectedTags.isEmpty
+                                  ? AppLocalizations.of(
+                                      context,
+                                    ).selectedAllLabel
+                                  : AppLocalizations.of(
+                                      context,
+                                    ).selectedTagsCount(
+                                      _semanticSelectedTags.length,
+                                    ),
+                            ),
                           ),
                         ),
                       ),
@@ -3738,7 +3772,7 @@ class _SearchPageState extends State<SearchPage>
                       child: Row(
                         children: [
                           Text(
-                            '类型筛选',
+                            AppLocalizations.of(context).typeFilterTitle,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -3748,7 +3782,9 @@ class _SearchPageState extends State<SearchPage>
                               onPressed: () {
                                 setSheetState(() => temp.clear());
                               },
-                              child: const Text('清除筛选'),
+                              child: Text(
+                                AppLocalizations.of(context).clearFilter,
+                              ),
                             ),
                         ],
                       ),
@@ -3867,7 +3903,16 @@ class _SearchPageState extends State<SearchPage>
                             }
                           },
                           child: Text(
-                            '确定 (${(temp.isEmpty || temp.length == _docTabTypes.length) ? "全部" : "已选${temp.length}类"})',
+                            AppLocalizations.of(context).confirmSelectionLabel(
+                              (temp.isEmpty ||
+                                      temp.length == _docTabTypes.length)
+                                  ? AppLocalizations.of(
+                                      context,
+                                    ).selectedAllLabel
+                                  : AppLocalizations.of(
+                                      context,
+                                    ).selectedTypesCount(temp.length),
+                            ),
                           ),
                         ),
                       ),

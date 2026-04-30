@@ -323,7 +323,7 @@ class _SettingsPageState extends State<SettingsPage>
           context: context,
           barrierDismissible: false,
           title: t.recalculateAllFailedTitle,
-          content: Text('$e'),
+          content: Text(e.toString()),
           actions: [
             UIDialogAction(
               text: t.dialogOk,
@@ -408,7 +408,7 @@ class _SettingsPageState extends State<SettingsPage>
           ...report.warnings.map(
             (w) => Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
-              child: Text('• $w', style: theme.textTheme.bodySmall),
+              child: Text(t.warningBullet(w), style: theme.textTheme.bodySmall),
             ),
           ),
       ],
@@ -1031,7 +1031,7 @@ class _SettingsPageState extends State<SettingsPage>
         context: context,
         barrierDismissible: false,
         title: '导出失败',
-        content: Text('$e'),
+        content: Text(e.toString()),
         actions: const [
           UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
         ],
@@ -2283,7 +2283,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Widget _buildAiRawResponseCleanupItem(BuildContext context) {
-    final bool isZh = _isZhLocale(context);
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing4,
@@ -2305,7 +2305,7 @@ class _SettingsPageState extends State<SettingsPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isZh ? '原始响应自动清理' : 'Auto Clean Raw Responses',
+                        l10n.rawResponseCleanupTitle,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w500,
                         ),
@@ -2314,7 +2314,7 @@ class _SettingsPageState extends State<SettingsPage>
                       Row(
                         children: [
                           Text(
-                            isZh ? '保留' : 'Keep',
+                            l10n.rawResponseCleanupKeepLabel,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: Theme.of(
@@ -2326,9 +2326,9 @@ class _SettingsPageState extends State<SettingsPage>
                           GestureDetector(
                             onTap: _showAiRawResponseCleanupDaysDialog,
                             child: Text(
-                              isZh
-                                  ? '$_aiRawResponseCleanupDays 天'
-                                  : '$_aiRawResponseCleanupDays days',
+                              l10n.rawResponseCleanupRetentionDays(
+                                _aiRawResponseCleanupDays,
+                              ),
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: Theme.of(
@@ -2341,9 +2341,7 @@ class _SettingsPageState extends State<SettingsPage>
                           const SizedBox(width: AppTheme.spacing1),
                           Flexible(
                             child: Text(
-                              isZh
-                                  ? '仅清理旧 raw_response，不影响摘要与 structured_json'
-                                  : 'Only clears old raw_response; summaries and structured_json stay untouched',
+                              l10n.rawResponseCleanupDesc,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.bodySmall
@@ -2632,38 +2630,27 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   void _showSegmentsJsonAutoRetryMaxDialog() {
-    final bool isZh = (() {
-      try {
-        return Localizations.localeOf(
-          context,
-        ).languageCode.toLowerCase().startsWith('zh');
-      } catch (_) {
-        return true;
-      }
-    })();
-
     final TextEditingController controller = TextEditingController(
       text: _segmentsJsonAutoRetryMax.toString(),
     );
+    final l10n = AppLocalizations.of(context);
 
     showUIDialog<void>(
       context: context,
-      title: isZh ? '自动重试次数' : 'Auto Retry Times',
+      title: l10n.segmentsJsonAutoRetryTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            isZh
-                ? '当动态摘要 structured_json 解析失败时，自动重试次数（0=关闭，默认1）。'
-                : 'Auto retry times when segment structured_json fails to parse (0=off, default 1).',
+            l10n.segmentsJsonAutoRetryDesc,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppTheme.spacing3),
-          _numberField(controller, hint: isZh ? '次数（0-5）' : 'Times (0-5)'),
+          _numberField(controller, hint: l10n.segmentsJsonAutoRetryHint),
         ],
       ),
       actions: [
@@ -2685,12 +2672,15 @@ class _SettingsPageState extends State<SettingsPage>
                 Navigator.of(ctx).pop();
                 UINotifier.success(
                   ctx,
-                  isZh ? '已恢复默认：$v' : 'Reset to default: $v',
+                  AppLocalizations.of(ctx).resetToDefaultValue(v),
                 );
               }
             } catch (e) {
               if (ctx.mounted) {
-                UINotifier.error(ctx, isZh ? '保存失败：$e' : 'Save failed: $e');
+                UINotifier.error(
+                  ctx,
+                  AppLocalizations.of(ctx).saveFailedError(e.toString()),
+                );
               }
             }
           },
@@ -2702,7 +2692,10 @@ class _SettingsPageState extends State<SettingsPage>
           onPressed: (ctx) async {
             final parsed = int.tryParse(controller.text.trim());
             if (parsed == null) {
-              UINotifier.error(ctx, isZh ? '请输入数字' : 'Please enter a number.');
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).numberInputRequired,
+              );
               return;
             }
             final v = parsed.clamp(0, 5);
@@ -2715,11 +2708,14 @@ class _SettingsPageState extends State<SettingsPage>
               }
               if (ctx.mounted) {
                 Navigator.of(ctx).pop();
-                UINotifier.success(ctx, isZh ? '已保存：$v' : 'Saved: $v');
+                UINotifier.success(ctx, AppLocalizations.of(ctx).valueSaved(v));
               }
             } catch (e) {
               if (ctx.mounted) {
-                UINotifier.error(ctx, isZh ? '保存失败：$e' : 'Save failed: $e');
+                UINotifier.error(
+                  ctx,
+                  AppLocalizations.of(ctx).saveFailedError(e.toString()),
+                );
               }
             }
           },
@@ -2729,20 +2725,18 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   void _showAiRawResponseCleanupEnableConfirmDialog() {
-    final bool isZh = _isZhLocale(context);
+    final l10n = AppLocalizations.of(context);
     showUIDialog<void>(
       context: context,
-      title: isZh ? '开启原始响应自动清理' : 'Enable Raw Response Cleanup',
+      title: l10n.rawResponseCleanupEnableTitle,
       content: Text(
-        isZh
-            ? '将自动清理 $_aiRawResponseCleanupDays 天前的 raw_response，仅释放调试/原始响应占用，不影响摘要与 structured_json。'
-            : 'This will automatically clear raw_response older than $_aiRawResponseCleanupDays days. Summaries and structured_json are not affected.',
+        l10n.rawResponseCleanupEnableMessage(_aiRawResponseCleanupDays),
         style: Theme.of(context).textTheme.bodyMedium,
       ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: isZh ? '开启并立即清理' : 'Enable & Clean Now',
+          text: l10n.rawResponseCleanupEnableAction,
           style: UIDialogActionStyle.primary,
           onPressed: (ctx) async {
             setState(() {
@@ -2761,13 +2755,12 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   void _showAiRawResponseCleanupDaysDialog() {
-    final bool isZh = _isZhLocale(context);
     final TextEditingController controller = TextEditingController(
       text: _aiRawResponseCleanupDays.toString(),
     );
     showUIDialog<void>(
       context: context,
-      title: isZh ? '设置保留天数' : 'Set Retention Days',
+      title: AppLocalizations.of(context).rawResponseRetentionDaysTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2782,8 +2775,12 @@ class _SettingsPageState extends State<SettingsPage>
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
-                labelText: isZh ? '保留天数' : 'Retention Days',
-                hintText: isZh ? '请输入大于 0 的天数' : 'Enter a number > 0',
+                labelText: AppLocalizations.of(
+                  context,
+                ).rawResponseRetentionDaysLabel,
+                hintText: AppLocalizations.of(
+                  context,
+                ).rawResponseRetentionDaysHint,
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -2814,7 +2811,7 @@ class _SettingsPageState extends State<SettingsPage>
             if (days == null || days < 1) {
               UINotifier.error(
                 ctx,
-                isZh ? '请输入大于 0 的天数' : 'Please enter a number greater than 0.',
+                AppLocalizations.of(context).rawResponseRetentionDaysHint,
               );
               return;
             }
@@ -2826,7 +2823,9 @@ class _SettingsPageState extends State<SettingsPage>
               Navigator.of(ctx).pop();
               UINotifier.success(
                 ctx,
-                isZh ? '已更新为保留 $days 天' : 'Retention updated to $days days.',
+                AppLocalizations.of(
+                  context,
+                ).rawResponseRetentionUpdatedDays(days),
               );
             }
             if (_aiRawResponseCleanupEnabled) {
@@ -3220,7 +3219,12 @@ class _SettingsPageState extends State<SettingsPage>
       });
       return true;
     } catch (e) {
-      if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveFailedError(e.toString()),
+        );
+      }
       try {
         await FlutterLogger.nativeError('Settings', 'setSegmentSettings 失败：$e');
       } catch (_) {}
@@ -3229,7 +3233,6 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Future<void> _saveAiRawResponseCleanupSettings() async {
-    final bool isZh = _isZhLocale(context);
     try {
       final int days = _aiRawResponseCleanupDays < 1
           ? 1
@@ -3241,12 +3244,15 @@ class _SettingsPageState extends State<SettingsPage>
       if (mounted) {
         UINotifier.success(
           context,
-          isZh ? '原始响应清理设置已保存' : 'Raw response cleanup settings saved.',
+          AppLocalizations.of(context).rawResponseCleanupSaved,
         );
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, isZh ? '保存失败：$e' : 'Failed to save: $e');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveFailedError(e.toString()),
+        );
       }
     }
   }
@@ -3277,7 +3283,12 @@ class _SettingsPageState extends State<SettingsPage>
       }
       return true;
     } catch (e) {
-      if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveFailedError(e.toString()),
+        );
+      }
       return false;
     }
   }
@@ -4832,7 +4843,10 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, '保存失败: ' + e.toString() + e.toString());
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveFailedError(e.toString()),
+        );
       }
     }
   }
@@ -5615,8 +5629,12 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('openDailySummaryNotificationSettings');
     } catch (e) {
-      if (mounted)
-        UINotifier.error(context, 'Open channel settings failed: $e');
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).openChannelSettingsFailed(e.toString()),
+        );
+      }
     }
   }
 
@@ -5631,8 +5649,14 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('openAppNotificationSettings');
     } catch (e) {
-      if (mounted)
-        UINotifier.error(context, 'Open app notification settings failed: $e');
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(
+            context,
+          ).openAppNotificationSettingsFailed(e.toString()),
+        );
+      }
     }
   }
 

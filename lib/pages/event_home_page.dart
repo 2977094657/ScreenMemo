@@ -246,7 +246,10 @@ class _EventHomePageState extends State<EventHomePage> {
       await _loadConversations();
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, 'Create failed: ${e.toString()}');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).eventCreateFailed(e.toString()),
+      );
     }
   }
 
@@ -257,11 +260,17 @@ class _EventHomePageState extends State<EventHomePage> {
       setState(() {
         _activeConversationCid = cid;
       });
-      UINotifier.success(context, '已切换会话');
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).eventSessionSwitched,
+      );
       await _loadConversations();
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, 'Switch failed: ${e.toString()}');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).eventSwitchFailed(e.toString()),
+      );
     }
   }
 
@@ -624,7 +633,7 @@ class _EventHomePageState extends State<EventHomePage> {
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
-            tooltip: 'Menu',
+            tooltip: AppLocalizations.of(context).actionMenu,
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
@@ -634,7 +643,7 @@ class _EventHomePageState extends State<EventHomePage> {
           const ChatContextAppBarAction(),
           IconButton(
             icon: const Icon(Icons.add_comment_outlined),
-            tooltip: '新建会话',
+            tooltip: l10n.eventNewConversation,
             onPressed: () async {
               await _newConversation();
             },
@@ -738,7 +747,7 @@ class _EventHomePageState extends State<EventHomePage> {
                                 vertical: AppTheme.spacing2,
                               ),
                               child: Text(
-                                '对话',
+                                l10n.conversationsSectionTitle,
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(
                                       fontWeight: FontWeight.w600,
@@ -753,7 +762,7 @@ class _EventHomePageState extends State<EventHomePage> {
                                   vertical: AppTheme.spacing1,
                                 ),
                                 child: Text(
-                                  '正在加载会话…',
+                                  l10n.loadingConversations,
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               )
@@ -782,7 +791,7 @@ class _EventHomePageState extends State<EventHomePage> {
                                       ((c['title'] as String?) ?? '')
                                           .trim()
                                           .isEmpty
-                                      ? '未命名会话'
+                                      ? l10n.untitledConversationLabel
                                       : (c['title'] as String);
                                   final model = (c['model'] as String?) ?? '';
                                   final isActive =
@@ -810,7 +819,7 @@ class _EventHomePageState extends State<EventHomePage> {
                             _buildSidebarTile(
                               context: context,
                               icon: Icons.hub_outlined,
-                              title: '提供商',
+                              title: l10n.providersTitle,
                               iconWeight: FontWeight.w400,
                               textWeight: FontWeight.w400,
                               onTap: () {
@@ -956,12 +965,14 @@ class _EventHomePageState extends State<EventHomePage> {
             // 使用自定义对话框
             await showUIDialog<void>(
               context: context,
-              title: '删除会话',
-              message: '确定要删除会话"$title"吗？',
+              title: AppLocalizations.of(context).deleteConversationTitle,
+              message: AppLocalizations.of(
+                context,
+              ).confirmDeleteConversationMessage(title),
               actions: [
-                UIDialogAction(text: '取消'),
+                UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
                 UIDialogAction(
-                  text: '删除',
+                  text: AppLocalizations.of(context).actionDelete,
                   style: UIDialogActionStyle.destructive,
                   onPressed: (ctx) async {
                     try {
@@ -995,16 +1006,29 @@ class _EventHomePageState extends State<EventHomePage> {
                           setState(() {
                             _conversations = prev;
                           });
-                        if (mounted) UINotifier.error(context, '删除失败');
+                        if (mounted) {
+                          UINotifier.error(
+                            context,
+                            AppLocalizations.of(context).deleteFailed,
+                          );
+                        }
                         return;
                       }
                       await _loadConversations();
                       if (mounted) {
-                        UINotifier.success(context, '会话已删除');
+                        UINotifier.success(
+                          context,
+                          AppLocalizations.of(context).eventSessionDeleted,
+                        );
                       }
                     } catch (e) {
                       if (mounted) {
-                        UINotifier.error(context, '删除失败: ${e.toString()}');
+                        UINotifier.error(
+                          context,
+                          AppLocalizations.of(
+                            context,
+                          ).deleteFailedWithError(e.toString()),
+                        );
                       }
                     }
                   },

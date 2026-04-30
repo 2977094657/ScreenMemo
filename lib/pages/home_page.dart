@@ -1126,10 +1126,16 @@ class _HomePageState extends State<HomePage>
     try {
       await Clipboard.setData(ClipboardData(text: diagnostic.copyText));
       if (!mounted) return;
-      UINotifier.success(context, '诊断信息已复制');
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).runtimeDiagnosticCopied,
+      );
     } catch (_) {
       if (!mounted) return;
-      UINotifier.error(context, '复制诊断信息失败');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).runtimeDiagnosticCopyFailed,
+      );
     }
   }
 
@@ -1138,7 +1144,10 @@ class _HomePageState extends State<HomePage>
     final filePath = diagnostic?.filePath;
     if (diagnostic == null || filePath == null || filePath.trim().isEmpty) {
       if (!mounted) return;
-      UINotifier.error(context, '当前没有可打开的诊断文件');
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).runtimeDiagnosticNoFileToOpen,
+      );
       return;
     }
 
@@ -1147,11 +1156,17 @@ class _HomePageState extends State<HomePage>
     );
     if (!mounted) return;
     if (opened) {
-      UINotifier.info(context, '已尝试打开诊断文件');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).runtimeDiagnosticOpenAttempted,
+      );
     } else {
       await Clipboard.setData(ClipboardData(text: filePath));
       if (!mounted) return;
-      UINotifier.warning(context, '无法直接打开，已复制日志路径');
+      UINotifier.warning(
+        context,
+        AppLocalizations.of(context).runtimeDiagnosticOpenFallbackCopiedPath,
+      );
     }
   }
 
@@ -1810,7 +1825,11 @@ class _HomePageState extends State<HomePage>
                             Icons.content_copy_outlined,
                             size: 18,
                           ),
-                          label: const Text('复制信息'),
+                          label: Text(
+                            AppLocalizations.of(
+                              context,
+                            ).runtimeDiagnosticCopyInfoAction,
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: diagnostic.filePath == null
@@ -1820,13 +1839,21 @@ class _HomePageState extends State<HomePage>
                             Icons.insert_drive_file_outlined,
                             size: 18,
                           ),
-                          label: const Text('打开此文件'),
+                          label: Text(
+                            AppLocalizations.of(
+                              context,
+                            ).runtimeDiagnosticOpenFileAction,
+                          ),
                         ),
                         if (diagnostic.showSettingsAction)
                           TextButton.icon(
                             onPressed: _openSettingsFromDiagnostic,
                             icon: const Icon(Icons.settings_outlined, size: 18),
-                            label: const Text('打开设置'),
+                            label: Text(
+                              AppLocalizations.of(
+                                context,
+                              ).runtimeDiagnosticOpenSettingsAction,
+                            ),
                           ),
                       ],
                     ),
