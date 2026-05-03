@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/ai_settings_service.dart';
-import 'package:screen_memo/services/chat_context_service.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
+import 'package:screen_memo/features/ai/application/chat_context_service.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _prepareDesktopDbRoot(Directory root) async {
@@ -60,11 +60,8 @@ void main() {
         ],
       );
 
-      final List<AIMessage> replay =
-          await ChatContextService.instance.loadRawTranscriptForPrompt(
-            cid: 'raw-cid',
-            maxTokens: 0,
-          );
+      final List<AIMessage> replay = await ChatContextService.instance
+          .loadRawTranscriptForPrompt(cid: 'raw-cid', maxTokens: 0);
 
       expect(replay.length, 4);
       expect(replay[1].role, 'assistant');
@@ -82,4 +79,3 @@ void main() {
     }
   });
 }
-

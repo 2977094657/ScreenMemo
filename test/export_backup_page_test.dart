@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
-import 'package:screen_memo/pages/export_backup_page.dart';
-import 'package:screen_memo/services/backup_inventory_service.dart';
+import 'package:screen_memo/features/backup/presentation/pages/export_backup_page.dart';
+import 'package:screen_memo/features/backup/data/backup_inventory_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

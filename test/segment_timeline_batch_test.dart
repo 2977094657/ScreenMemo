@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _prepareDesktopDbRoot(Directory root) async {

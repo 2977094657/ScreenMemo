@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_memo/models/ai_request_log.dart';
-import 'package:screen_memo/utils/native_ai_request_log_parser.dart';
+import 'package:screen_memo/features/ai/application/native_ai_request_log_parser.dart';
 
 void main() {
   test('parses structured native request logs into traces', () {

@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/chat_context_service.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/features/ai/application/chat_context_service.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _prepareDesktopDbRoot(Directory root) async {
@@ -65,20 +65,15 @@ void main() {
         breakdownJson: '{"parts":{"history_tool":50}}',
       );
 
-      final List<PromptUsageEvent> events =
-          await ChatContextService.instance.listPromptUsageEvents(
-            cid: 'usage-cid',
-            limit: 10,
-          );
+      final List<PromptUsageEvent> events = await ChatContextService.instance
+          .listPromptUsageEvents(cid: 'usage-cid', limit: 10);
       expect(events.length, 2);
       expect(events.first.model, 'gpt-test');
       expect(events.first.isToolLoop, isTrue);
       expect(events.first.hasUsage, isTrue);
 
-      final PromptUsageTotals totals =
-          await ChatContextService.instance.getConversationPromptUsageTotals(
-            cid: 'usage-cid',
-          );
+      final PromptUsageTotals totals = await ChatContextService.instance
+          .getConversationPromptUsageTotals(cid: 'usage-cid');
       expect(totals.eventsCount, 2);
       expect(totals.usageBackedCount, 1);
       expect(totals.promptTokens, 300); // 100(est) + 200(usage)
@@ -94,4 +89,3 @@ void main() {
     }
   });
 }
-

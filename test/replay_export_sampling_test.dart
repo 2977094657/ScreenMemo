@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:screen_memo/models/screenshot_record.dart';
-import 'package:screen_memo/services/replay_export_service.dart';
+import 'package:screen_memo/features/timeline/application/replay_export_service.dart';
 
 ScreenshotRecord _shot(int millis) {
   return ScreenshotRecord(

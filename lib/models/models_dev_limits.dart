@@ -105,8 +105,7 @@ enum ModelsDevContextWindow {
   ctx1840000(1840000),
   ctx2000000(2000000),
   ctx3500000(3500000),
-  ctx10000000(10000000),
-  ;
+  ctx10000000(10000000);
 
   const ModelsDevContextWindow(this.tokens);
   final int tokens;
@@ -126,7 +125,8 @@ class ModelsDevModelLimits {
   static const Map<String, ModelsDevContextWindow> contextWindowByModel = {
     'ByteDance-Seed/Seed-OSS-36B-Instruct': ModelsDevContextWindow.ctx262000,
     'GLM-4.7': ModelsDevContextWindow.ctx204800,
-    'Intel/Qwen3-Coder-480B-A35B-Instruct-int4-mixed-ar': ModelsDevContextWindow.ctx106000,
+    'Intel/Qwen3-Coder-480B-A35B-Instruct-int4-mixed-ar':
+        ModelsDevContextWindow.ctx106000,
     'Kimi-K2-0905': ModelsDevContextWindow.ctx262144,
     'Kwaipilot/KAT-Dev': ModelsDevContextWindow.ctx128000,
     'LGAI-EXAONE/EXAONE-4.0.1-32B': ModelsDevContextWindow.ctx131072,
@@ -139,7 +139,8 @@ class ModelsDevModelLimits {
     'MiniMaxAI/MiniMax-M2': ModelsDevContextWindow.ctx262144,
     'MiniMaxAI/MiniMax-M2.1': ModelsDevContextWindow.ctx204800,
     'MiniMaxAI/MiniMax-M2.1-TEE': ModelsDevContextWindow.ctx196608,
-    'NousResearch/DeepHermes-3-Mistral-24B-Preview': ModelsDevContextWindow.ctx32768,
+    'NousResearch/DeepHermes-3-Mistral-24B-Preview':
+        ModelsDevContextWindow.ctx32768,
     'NousResearch/Hermes-4-14B': ModelsDevContextWindow.ctx40960,
     'NousResearch/Hermes-4-405B-FP8-TEE': ModelsDevContextWindow.ctx131072,
     'NousResearch/Hermes-4-70B': ModelsDevContextWindow.ctx131072,
@@ -180,8 +181,10 @@ class ModelsDevModelLimits {
     'Qwen/Qwen3-Coder-30B-A3B-Instruct': ModelsDevContextWindow.ctx262144,
     'Qwen/Qwen3-Coder-480B-A35B-Instruct': ModelsDevContextWindow.ctx262144,
     'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8': ModelsDevContextWindow.ctx262144,
-    'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8-TEE': ModelsDevContextWindow.ctx262144,
-    'Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo': ModelsDevContextWindow.ctx262144,
+    'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8-TEE':
+        ModelsDevContextWindow.ctx262144,
+    'Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo':
+        ModelsDevContextWindow.ctx262144,
     'Qwen/Qwen3-Embedding-4B': ModelsDevContextWindow.ctx32000,
     'Qwen/Qwen3-Embedding-8B': ModelsDevContextWindow.ctx32000,
     'Qwen/Qwen3-Next-80B-A3B-Instruct': ModelsDevContextWindow.ctx262144,
@@ -208,8 +211,10 @@ class ModelsDevModelLimits {
     'XiaomiMiMo/MiMo-V2-Flash': ModelsDevContextWindow.ctx262144,
     'ZhipuAI/GLM-4.5': ModelsDevContextWindow.ctx131072,
     'ZhipuAI/GLM-4.6': ModelsDevContextWindow.ctx202752,
-    'accounts/fireworks/models/deepseek-r1-0528': ModelsDevContextWindow.ctx160000,
-    'accounts/fireworks/models/deepseek-v3-0324': ModelsDevContextWindow.ctx160000,
+    'accounts/fireworks/models/deepseek-r1-0528':
+        ModelsDevContextWindow.ctx160000,
+    'accounts/fireworks/models/deepseek-v3-0324':
+        ModelsDevContextWindow.ctx160000,
     'accounts/fireworks/models/deepseek-v3p1': ModelsDevContextWindow.ctx163840,
     'accounts/fireworks/models/deepseek-v3p2': ModelsDevContextWindow.ctx160000,
     'accounts/fireworks/models/glm-4p5': ModelsDevContextWindow.ctx131072,
@@ -218,13 +223,17 @@ class ModelsDevModelLimits {
     'accounts/fireworks/models/glm-4p7': ModelsDevContextWindow.ctx198000,
     'accounts/fireworks/models/gpt-oss-120b': ModelsDevContextWindow.ctx131072,
     'accounts/fireworks/models/gpt-oss-20b': ModelsDevContextWindow.ctx131072,
-    'accounts/fireworks/models/kimi-k2-instruct': ModelsDevContextWindow.ctx128000,
-    'accounts/fireworks/models/kimi-k2-thinking': ModelsDevContextWindow.ctx256000,
+    'accounts/fireworks/models/kimi-k2-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'accounts/fireworks/models/kimi-k2-thinking':
+        ModelsDevContextWindow.ctx256000,
     'accounts/fireworks/models/kimi-k2p5': ModelsDevContextWindow.ctx256000,
     'accounts/fireworks/models/minimax-m2': ModelsDevContextWindow.ctx192000,
     'accounts/fireworks/models/minimax-m2p1': ModelsDevContextWindow.ctx200000,
-    'accounts/fireworks/models/qwen3-235b-a22b': ModelsDevContextWindow.ctx128000,
-    'accounts/fireworks/models/qwen3-coder-480b-a35b-instruct': ModelsDevContextWindow.ctx256000,
+    'accounts/fireworks/models/qwen3-235b-a22b':
+        ModelsDevContextWindow.ctx128000,
+    'accounts/fireworks/models/qwen3-coder-480b-a35b-instruct':
+        ModelsDevContextWindow.ctx256000,
     'ai21-labs/ai21-jamba-1.5-large': ModelsDevContextWindow.ctx256000,
     'ai21-labs/ai21-jamba-1.5-mini': ModelsDevContextWindow.ctx256000,
     'ai21.jamba-1-5-large-v1:0': ModelsDevContextWindow.ctx256000,
@@ -269,20 +278,26 @@ class ModelsDevModelLimits {
     'anthropic--claude-4.5-haiku': ModelsDevContextWindow.ctx200000,
     'anthropic--claude-4.5-opus': ModelsDevContextWindow.ctx200000,
     'anthropic--claude-4.5-sonnet': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-3-5-haiku-20241022-v1:0': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-3-5-sonnet-20240620-v1:0': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-3-5-sonnet-20241022-v2:0': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-3-7-sonnet-20250219-v1:0': ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-3-5-haiku-20241022-v1:0':
+        ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-3-5-sonnet-20240620-v1:0':
+        ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-3-5-sonnet-20241022-v2:0':
+        ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-3-7-sonnet-20250219-v1:0':
+        ModelsDevContextWindow.ctx200000,
     'anthropic.claude-3-haiku-20240307-v1:0': ModelsDevContextWindow.ctx200000,
     'anthropic.claude-3-opus-20240229-v1:0': ModelsDevContextWindow.ctx200000,
     'anthropic.claude-3-sonnet-20240229-v1:0': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-haiku-4-5-20251001-v1:0': ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-haiku-4-5-20251001-v1:0':
+        ModelsDevContextWindow.ctx200000,
     'anthropic.claude-instant-v1': ModelsDevContextWindow.ctx100000,
     'anthropic.claude-opus-4-1-20250805-v1:0': ModelsDevContextWindow.ctx200000,
     'anthropic.claude-opus-4-20250514-v1:0': ModelsDevContextWindow.ctx200000,
     'anthropic.claude-opus-4-5-20251101-v1:0': ModelsDevContextWindow.ctx200000,
     'anthropic.claude-sonnet-4-20250514-v1:0': ModelsDevContextWindow.ctx200000,
-    'anthropic.claude-sonnet-4-5-20250929-v1:0': ModelsDevContextWindow.ctx200000,
+    'anthropic.claude-sonnet-4-5-20250929-v1:0':
+        ModelsDevContextWindow.ctx200000,
     'anthropic.claude-v2': ModelsDevContextWindow.ctx100000,
     'anthropic.claude-v2:1': ModelsDevContextWindow.ctx200000,
     'anthropic/claude-3-5-haiku': ModelsDevContextWindow.ctx200000,
@@ -348,13 +363,16 @@ class ModelsDevModelLimits {
     'bytedance-seed/seedream-4.5': ModelsDevContextWindow.ctx4096,
     'bytedance/seed-1.6': ModelsDevContextWindow.ctx256000,
     'bytedance/seed-1.8': ModelsDevContextWindow.ctx256000,
-    'cerebras-llama-4-maverick-17b-128e-instruct': ModelsDevContextWindow.ctx128000,
+    'cerebras-llama-4-maverick-17b-128e-instruct':
+        ModelsDevContextWindow.ctx128000,
     'cerebras-llama-4-scout-17b-16e-instruct': ModelsDevContextWindow.ctx128000,
     'cerebras/gpt-oss-120b-cs': ModelsDevContextWindow.unknown,
     'cerebras/zai-glm-4.6-cs': ModelsDevContextWindow.ctx131000,
     'chatgpt-4o-latest': ModelsDevContextWindow.ctx128000,
-    'chutesai/Mistral-Small-3.1-24B-Instruct-2503': ModelsDevContextWindow.ctx131072,
-    'chutesai/Mistral-Small-3.2-24B-Instruct-2506': ModelsDevContextWindow.ctx131072,
+    'chutesai/Mistral-Small-3.1-24B-Instruct-2503':
+        ModelsDevContextWindow.ctx131072,
+    'chutesai/Mistral-Small-3.2-24B-Instruct-2506':
+        ModelsDevContextWindow.ctx131072,
     'claude-3-5-haiku': ModelsDevContextWindow.ctx200000,
     'claude-3-5-haiku-20241022': ModelsDevContextWindow.ctx200000,
     'claude-3-5-haiku-latest': ModelsDevContextWindow.ctx200000,
@@ -412,9 +430,12 @@ class ModelsDevModelLimits {
     'coding-glm-4.7-free': ModelsDevContextWindow.ctx204800,
     'coding-minimax-m2.1-free': ModelsDevContextWindow.ctx204800,
     'cogito-2.1:671b': ModelsDevContextWindow.ctx163840,
-    'cognitivecomputations/dolphin-mistral-24b-venice-edition:free': ModelsDevContextWindow.ctx32768,
-    'cognitivecomputations/dolphin3.0-mistral-24b': ModelsDevContextWindow.ctx32768,
-    'cognitivecomputations/dolphin3.0-r1-mistral-24b': ModelsDevContextWindow.ctx32768,
+    'cognitivecomputations/dolphin-mistral-24b-venice-edition:free':
+        ModelsDevContextWindow.ctx32768,
+    'cognitivecomputations/dolphin3.0-mistral-24b':
+        ModelsDevContextWindow.ctx32768,
+    'cognitivecomputations/dolphin3.0-r1-mistral-24b':
+        ModelsDevContextWindow.ctx32768,
     'cohere-command-a': ModelsDevContextWindow.ctx256000,
     'cohere-command-r-08-2024': ModelsDevContextWindow.ctx128000,
     'cohere-command-r-plus-08-2024': ModelsDevContextWindow.ctx128000,
@@ -443,9 +464,12 @@ class ModelsDevModelLimits {
     'deepseek-ai/DeepSeek-R1': ModelsDevContextWindow.ctx164000,
     'deepseek-ai/DeepSeek-R1-0528': ModelsDevContextWindow.ctx163840,
     'deepseek-ai/DeepSeek-R1-0528-TEE': ModelsDevContextWindow.ctx163840,
-    'deepseek-ai/DeepSeek-R1-Distill-Llama-70B': ModelsDevContextWindow.ctx131072,
-    'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B': ModelsDevContextWindow.ctx131000,
-    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B': ModelsDevContextWindow.ctx131000,
+    'deepseek-ai/DeepSeek-R1-Distill-Llama-70B':
+        ModelsDevContextWindow.ctx131072,
+    'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B':
+        ModelsDevContextWindow.ctx131000,
+    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B':
+        ModelsDevContextWindow.ctx131000,
     'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B': ModelsDevContextWindow.ctx33000,
     'deepseek-ai/DeepSeek-R1-TEE': ModelsDevContextWindow.ctx163840,
     'deepseek-ai/DeepSeek-V3': ModelsDevContextWindow.ctx164000,
@@ -460,10 +484,12 @@ class ModelsDevModelLimits {
     'deepseek-ai/DeepSeek-V3.2-Exp': ModelsDevContextWindow.ctx164000,
     'deepseek-ai/DeepSeek-V3.2-Speciale-TEE': ModelsDevContextWindow.ctx163840,
     'deepseek-ai/DeepSeek-V3.2-TEE': ModelsDevContextWindow.ctx163840,
-    'deepseek-ai/deepseek-coder-6.7b-instruct': ModelsDevContextWindow.ctx128000,
+    'deepseek-ai/deepseek-coder-6.7b-instruct':
+        ModelsDevContextWindow.ctx128000,
     'deepseek-ai/deepseek-r1': ModelsDevContextWindow.ctx128000,
     'deepseek-ai/deepseek-r1-0528': ModelsDevContextWindow.ctx128000,
-    'deepseek-ai/deepseek-r1-distill-llama-70b': ModelsDevContextWindow.ctx131072,
+    'deepseek-ai/deepseek-r1-distill-llama-70b':
+        ModelsDevContextWindow.ctx131072,
     'deepseek-ai/deepseek-v3': ModelsDevContextWindow.ctx131072,
     'deepseek-ai/deepseek-v3.1': ModelsDevContextWindow.ctx128000,
     'deepseek-ai/deepseek-v3.1-terminus': ModelsDevContextWindow.ctx128000,
@@ -586,7 +612,8 @@ class ModelsDevModelLimits {
     'gemini-flash-latest': ModelsDevContextWindow.ctx1048576,
     'gemini-flash-lite-latest': ModelsDevContextWindow.ctx1048576,
     'gemini-live-2.5-flash': ModelsDevContextWindow.ctx128000,
-    'gemini-live-2.5-flash-preview-native-audio': ModelsDevContextWindow.ctx131072,
+    'gemini-live-2.5-flash-preview-native-audio':
+        ModelsDevContextWindow.ctx131072,
     'gemma-2b-it-lora': ModelsDevContextWindow.ctx8192,
     'gemma-3-12b-it': ModelsDevContextWindow.ctx131072,
     'gemma-3-27b': ModelsDevContextWindow.ctx128000,
@@ -608,7 +635,8 @@ class ModelsDevModelLimits {
     'glm-4.7': ModelsDevContextWindow.ctx204800,
     'glm-4.7-flash': ModelsDevContextWindow.ctx200000,
     'glm-4.7-free': ModelsDevContextWindow.ctx204800,
-    'global.anthropic.claude-opus-4-5-20251101-v1:0': ModelsDevContextWindow.ctx200000,
+    'global.anthropic.claude-opus-4-5-20251101-v1:0':
+        ModelsDevContextWindow.ctx200000,
     'google-gemma-3-27b-it': ModelsDevContextWindow.ctx198000,
     'google.gemma-3-12b-it': ModelsDevContextWindow.ctx131072,
     'google.gemma-3-27b-it': ModelsDevContextWindow.ctx202752,
@@ -623,8 +651,10 @@ class ModelsDevModelLimits {
     'google/gemini-2.5-flash-image': ModelsDevContextWindow.ctx32768,
     'google/gemini-2.5-flash-image-preview': ModelsDevContextWindow.ctx32768,
     'google/gemini-2.5-flash-lite': ModelsDevContextWindow.ctx1048576,
-    'google/gemini-2.5-flash-lite-preview-09-2025': ModelsDevContextWindow.ctx1048576,
-    'google/gemini-2.5-flash-preview-09-2025': ModelsDevContextWindow.ctx1048576,
+    'google/gemini-2.5-flash-lite-preview-09-2025':
+        ModelsDevContextWindow.ctx1048576,
+    'google/gemini-2.5-flash-preview-09-2025':
+        ModelsDevContextWindow.ctx1048576,
     'google/gemini-2.5-pro': ModelsDevContextWindow.ctx1065535,
     'google/gemini-2.5-pro-preview-05-06': ModelsDevContextWindow.ctx1048576,
     'google/gemini-2.5-pro-preview-06-05': ModelsDevContextWindow.ctx1048576,
@@ -762,8 +792,10 @@ class ModelsDevModelLimits {
     'hf:meta-llama/Llama-3.1-70B-Instruct': ModelsDevContextWindow.ctx128000,
     'hf:meta-llama/Llama-3.1-8B-Instruct': ModelsDevContextWindow.ctx128000,
     'hf:meta-llama/Llama-3.3-70B-Instruct': ModelsDevContextWindow.ctx128000,
-    'hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8': ModelsDevContextWindow.ctx524000,
-    'hf:meta-llama/Llama-4-Scout-17B-16E-Instruct': ModelsDevContextWindow.ctx328000,
+    'hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8':
+        ModelsDevContextWindow.ctx524000,
+    'hf:meta-llama/Llama-4-Scout-17B-16E-Instruct':
+        ModelsDevContextWindow.ctx328000,
     'hf:moonshotai/Kimi-K2-Instruct-0905': ModelsDevContextWindow.ctx262144,
     'hf:moonshotai/Kimi-K2-Thinking': ModelsDevContextWindow.ctx262144,
     'hf:moonshotai/Kimi-K2.5': ModelsDevContextWindow.ctx262144,
@@ -866,16 +898,20 @@ class ModelsDevModelLimits {
     'meta-llama/Llama-3.2-90B-Vision-Instruct': ModelsDevContextWindow.ctx16000,
     'meta-llama/Llama-3.3-70B-Instruct': ModelsDevContextWindow.ctx131072,
     'meta-llama/Llama-3.3-70B-Instruct-Turbo': ModelsDevContextWindow.ctx131072,
-    'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8': ModelsDevContextWindow.ctx1000000,
-    'meta-llama/Llama-4-Scout-17B-16E-Instruct': ModelsDevContextWindow.ctx64000,
-    'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo': ModelsDevContextWindow.ctx128000,
+    'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8':
+        ModelsDevContextWindow.ctx1000000,
+    'meta-llama/Llama-4-Scout-17B-16E-Instruct':
+        ModelsDevContextWindow.ctx64000,
+    'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo':
+        ModelsDevContextWindow.ctx128000,
     'meta-llama/Meta-Llama-3.1-70B-Instruct': ModelsDevContextWindow.ctx128000,
     'meta-llama/Meta-Llama-3.1-8B-Instruct': ModelsDevContextWindow.ctx128000,
     'meta-llama/llama-3-70b-instruct': ModelsDevContextWindow.ctx8192,
     'meta-llama/llama-3-8b-instruct': ModelsDevContextWindow.ctx8192,
     'meta-llama/llama-3.1-405b-instruct:free': ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-3.1-8b-instruct': ModelsDevContextWindow.ctx16384,
-    'meta-llama/llama-3.2-11b-vision-instruct': ModelsDevContextWindow.ctx131072,
+    'meta-llama/llama-3.2-11b-vision-instruct':
+        ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-3.2-3b-instruct:free': ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-3.3-70b-instruct': ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-3.3-70b-instruct-base': ModelsDevContextWindow.ctx131072,
@@ -883,9 +919,12 @@ class ModelsDevModelLimits {
     'meta-llama/llama-3.3-70b-instruct:free': ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-3_1-405b-instruct': ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-4-maverick': ModelsDevContextWindow.ctx128000,
-    'meta-llama/llama-4-maverick-17b-128e-instruct': ModelsDevContextWindow.ctx131072,
-    'meta-llama/llama-4-maverick-17b-128e-instruct-fp8': ModelsDevContextWindow.ctx1048576,
-    'meta-llama/llama-4-scout-17b-16e-instruct': ModelsDevContextWindow.ctx131072,
+    'meta-llama/llama-4-maverick-17b-128e-instruct':
+        ModelsDevContextWindow.ctx131072,
+    'meta-llama/llama-4-maverick-17b-128e-instruct-fp8':
+        ModelsDevContextWindow.ctx1048576,
+    'meta-llama/llama-4-scout-17b-16e-instruct':
+        ModelsDevContextWindow.ctx131072,
     'meta-llama/llama-4-scout:free': ModelsDevContextWindow.ctx64000,
     'meta-llama/llama-guard-4-12b': ModelsDevContextWindow.ctx131072,
     'meta.llama3-1-70b-instruct-v1:0': ModelsDevContextWindow.ctx128000,
@@ -917,7 +956,8 @@ class ModelsDevModelLimits {
     'meta/llama-3.3-70b-instruct': ModelsDevContextWindow.ctx128000,
     'meta/llama-4-maverick': ModelsDevContextWindow.ctx128000,
     'meta/llama-4-maverick-17b-128e-instruct': ModelsDevContextWindow.ctx128000,
-    'meta/llama-4-maverick-17b-128e-instruct-fp8': ModelsDevContextWindow.ctx128000,
+    'meta/llama-4-maverick-17b-128e-instruct-fp8':
+        ModelsDevContextWindow.ctx128000,
     'meta/llama-4-scout': ModelsDevContextWindow.ctx128000,
     'meta/llama-4-scout-17b-16e-instruct': ModelsDevContextWindow.ctx128000,
     'meta/llama3-70b-instruct': ModelsDevContextWindow.ctx128000,
@@ -1023,7 +1063,8 @@ class ModelsDevModelLimits {
     'mistral/mixtral-8x22b-instruct': ModelsDevContextWindow.ctx64000,
     'mistral/pixtral-12b': ModelsDevContextWindow.ctx128000,
     'mistral/pixtral-large': ModelsDevContextWindow.ctx128000,
-    'mistralai/Devstral-2-123B-Instruct-2512-TEE': ModelsDevContextWindow.ctx262144,
+    'mistralai/Devstral-2-123B-Instruct-2512-TEE':
+        ModelsDevContextWindow.ctx262144,
     'mistralai/Devstral-Small-2505': ModelsDevContextWindow.ctx128000,
     'mistralai/Magistral-Small-2506': ModelsDevContextWindow.ctx128000,
     'mistralai/Mistral-Large-Instruct-2411': ModelsDevContextWindow.ctx128000,
@@ -1041,15 +1082,19 @@ class ModelsDevModelLimits {
     'mistralai/ministral-14b-instruct-2512': ModelsDevContextWindow.ctx262144,
     'mistralai/mistral-7b-instruct:free': ModelsDevContextWindow.ctx32768,
     'mistralai/mistral-large-2-instruct': ModelsDevContextWindow.ctx128000,
-    'mistralai/mistral-large-3-675b-instruct-2512': ModelsDevContextWindow.ctx262144,
+    'mistralai/mistral-large-3-675b-instruct-2512':
+        ModelsDevContextWindow.ctx262144,
     'mistralai/mistral-medium-3': ModelsDevContextWindow.ctx131072,
     'mistralai/mistral-medium-3.1': ModelsDevContextWindow.ctx262144,
     'mistralai/mistral-nemo': ModelsDevContextWindow.ctx60288,
     'mistralai/mistral-nemo:free': ModelsDevContextWindow.ctx131072,
-    'mistralai/mistral-small-3.1-24b-instruct': ModelsDevContextWindow.ctx128000,
-    'mistralai/mistral-small-3.1-24b-instruct-2503': ModelsDevContextWindow.ctx128000,
+    'mistralai/mistral-small-3.1-24b-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'mistralai/mistral-small-3.1-24b-instruct-2503':
+        ModelsDevContextWindow.ctx128000,
     'mistralai/mistral-small-3.2-24b-instruct': ModelsDevContextWindow.ctx96000,
-    'mistralai/mistral-small-3.2-24b-instruct:free': ModelsDevContextWindow.ctx96000,
+    'mistralai/mistral-small-3.2-24b-instruct:free':
+        ModelsDevContextWindow.ctx96000,
     'mixtral-8x7b-instruct-v0.1': ModelsDevContextWindow.ctx32768,
     'model-router': ModelsDevContextWindow.ctx128000,
     'moonshot-kimi-k2-instruct': ModelsDevContextWindow.ctx131072,
@@ -1080,9 +1125,11 @@ class ModelsDevModelLimits {
     'nemotron-3-nano:30b': ModelsDevContextWindow.ctx1048576,
     'neural-chat-7b-v3-1-awq': ModelsDevContextWindow.ctx4096,
     'nex-agi/DeepSeek-V3.1-Nex-N1': ModelsDevContextWindow.ctx131000,
-    'nousresearch/deephermes-3-llama-3-8b-preview': ModelsDevContextWindow.ctx131072,
+    'nousresearch/deephermes-3-llama-3-8b-preview':
+        ModelsDevContextWindow.ctx131072,
     'nousresearch/hermes-2-pro-llama-3-8b': ModelsDevContextWindow.ctx8192,
-    'nousresearch/hermes-3-llama-3.1-405b:free': ModelsDevContextWindow.ctx131072,
+    'nousresearch/hermes-3-llama-3.1-405b:free':
+        ModelsDevContextWindow.ctx131072,
     'nousresearch/hermes-4-405b': ModelsDevContextWindow.ctx131072,
     'nousresearch/hermes-4-405b:thinking': ModelsDevContextWindow.ctx128000,
     'nousresearch/hermes-4-70b': ModelsDevContextWindow.ctx131072,
@@ -1098,15 +1145,18 @@ class ModelsDevModelLimits {
     'novita/minimax-m2.1': ModelsDevContextWindow.ctx205000,
     'nvidia.nemotron-nano-12b-v2': ModelsDevContextWindow.ctx128000,
     'nvidia.nemotron-nano-9b-v2': ModelsDevContextWindow.ctx128000,
-    'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16': ModelsDevContextWindow.ctx262144,
+    'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16':
+        ModelsDevContextWindow.ctx262144,
     'nvidia/cosmos-nemotron-34b': ModelsDevContextWindow.ctx131072,
     'nvidia/llama-3.1-nemotron-51b-instruct': ModelsDevContextWindow.ctx128000,
     'nvidia/llama-3.1-nemotron-70b-instruct': ModelsDevContextWindow.ctx128000,
     'nvidia/llama-3.1-nemotron-ultra-253b-v1': ModelsDevContextWindow.ctx131072,
     'nvidia/llama-3.3-nemotron-super-49b-v1': ModelsDevContextWindow.ctx128000,
-    'nvidia/llama-3.3-nemotron-super-49b-v1.5': ModelsDevContextWindow.ctx128000,
+    'nvidia/llama-3.3-nemotron-super-49b-v1.5':
+        ModelsDevContextWindow.ctx128000,
     'nvidia/llama-3_1-nemotron-ultra-253b-v1': ModelsDevContextWindow.ctx131072,
-    'nvidia/llama-3_3-nemotron-super-49b-v1_5': ModelsDevContextWindow.ctx128000,
+    'nvidia/llama-3_3-nemotron-super-49b-v1_5':
+        ModelsDevContextWindow.ctx128000,
     'nvidia/llama-embed-nemotron-8b': ModelsDevContextWindow.ctx32768,
     'nvidia/llama3-chatqa-1.5-70b': ModelsDevContextWindow.ctx128000,
     'nvidia/nemoretriever-ocr-v1': ModelsDevContextWindow.unknown,
@@ -1457,8 +1507,10 @@ class ModelsDevModelLimits {
     'whisper-large-v3': ModelsDevContextWindow.unknown,
     'whisper-large-v3-turbo': ModelsDevContextWindow.unknown,
     'whisper-tiny-en': ModelsDevContextWindow.unknown,
-    'workers-ai/@cf/ai4bharat/indictrans2-en-indic-1B': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/aisingapore/gemma-sea-lion-v4-27b-it': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/ai4bharat/indictrans2-en-indic-1B':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/aisingapore/gemma-sea-lion-v4-27b-it':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/baai/bge-base-en-v1.5': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/baai/bge-large-en-v1.5': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/baai/bge-m3': ModelsDevContextWindow.ctx128000,
@@ -1467,34 +1519,51 @@ class ModelsDevModelLimits {
     'workers-ai/@cf/deepgram/aura-2-en': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/deepgram/aura-2-es': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/deepgram/nova-3': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/facebook/bart-large-cnn': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/google/gemma-3-12b-it': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/huggingface/distilbert-sst-2-int8': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/ibm-granite/granite-4.0-h-micro': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-2-7b-chat-fp16': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/huggingface/distilbert-sst-2-int8':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/ibm-granite/granite-4.0-h-micro':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-2-7b-chat-fp16':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/meta/llama-3-8b-instruct': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3-8b-instruct-awq': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.1-8b-instruct': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.1-8b-instruct-awq': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.2-11b-vision-instruct': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.2-1b-instruct': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.2-3b-instruct': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3-8b-instruct-awq':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.1-8b-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.1-8b-instruct-awq':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.2-11b-vision-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.2-1b-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.2-3b-instruct':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/meta/llama-guard-3-8b': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/meta/m2m100-1.2b': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/mistral/mistral-7b-instruct-v0.1': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/mistralai/mistral-small-3.1-24b-instruct': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/mistral/mistral-7b-instruct-v0.1':
+        ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/mistralai/mistral-small-3.1-24b-instruct':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/myshell-ai/melotts': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/openai/gpt-oss-120b': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/openai/gpt-oss-20b': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/pfnet/plamo-embedding-1b': ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/pipecat-ai/smart-turn-v2': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/qwen/qwen2.5-coder-32b-instruct': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/qwen/qwen2.5-coder-32b-instruct':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/qwen/qwen3-30b-a3b-fp8': ModelsDevContextWindow.ctx128000,
-    'workers-ai/@cf/qwen/qwen3-embedding-0.6b': ModelsDevContextWindow.ctx128000,
+    'workers-ai/@cf/qwen/qwen3-embedding-0.6b':
+        ModelsDevContextWindow.ctx128000,
     'workers-ai/@cf/qwen/qwq-32b': ModelsDevContextWindow.ctx128000,
     'x-ai/grok-3': ModelsDevContextWindow.ctx131072,
     'x-ai/grok-3-beta': ModelsDevContextWindow.ctx131072,

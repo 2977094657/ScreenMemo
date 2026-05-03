@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/memory_entity_models.dart';
-import 'package:screen_memo/services/nocturne_memory_roots.dart';
+import 'package:screen_memo/features/nocturne_memory/application/memory_entity_models.dart';
+import 'package:screen_memo/features/nocturne_memory/application/nocturne_memory_roots.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/nocturne_memory_service.dart';
-import 'package:screen_memo/services/nocturne_memory_signal_service.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/features/nocturne_memory/application/nocturne_memory_service.dart';
+import 'package:screen_memo/features/nocturne_memory/application/nocturne_memory_signal_service.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<Directory> _prepareDesktopDbRoot() async {

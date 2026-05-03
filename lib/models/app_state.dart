@@ -4,25 +4,25 @@ import 'package:flutter/foundation.dart';
 class AppState extends ChangeNotifier {
   static AppState? _instance;
   static AppState get instance => _instance ??= AppState._();
-  
+
   AppState._();
-  
+
   // 权限状态
   bool _accessibilityEnabled = false;
   bool _mediaProjectionGranted = false;
   bool _storagePermissionGranted = false;
   bool _notificationPermissionGranted = false;
   bool _usageStatsPermissionGranted = false;
-  
+
   // 服务状态
   bool _isServiceRunning = false;
   bool _isCapturing = false;
-  
+
   // 应用状态
   bool _isFirstLaunch = true;
   bool _isLoading = false;
   String? _errorMessage;
-  
+
   // Getters
   bool get accessibilityEnabled => _accessibilityEnabled;
   bool get mediaProjectionGranted => _mediaProjectionGranted;
@@ -34,7 +34,7 @@ class AppState extends ChangeNotifier {
   bool get isFirstLaunch => _isFirstLaunch;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  
+
   /// 检查所有权限是否已授予
   bool get allPermissionsGranted =>
       _accessibilityEnabled &&
@@ -42,7 +42,7 @@ class AppState extends ChangeNotifier {
       _storagePermissionGranted &&
       _notificationPermissionGranted &&
       _usageStatsPermissionGranted;
-  
+
   /// 获取权限完成度百分比
   double get permissionProgress {
     int granted = 0;
@@ -56,7 +56,7 @@ class AppState extends ChangeNotifier {
 
     return granted / total;
   }
-  
+
   /// 获取未授予的权限列表
   List<String> get missingPermissions {
     final missing = <String>[];
@@ -69,7 +69,7 @@ class AppState extends ChangeNotifier {
 
     return missing;
   }
-  
+
   // Setters
   void setAccessibilityEnabled(bool enabled) {
     if (_accessibilityEnabled != enabled) {
@@ -77,21 +77,21 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   void setMediaProjectionGranted(bool granted) {
     if (_mediaProjectionGranted != granted) {
       _mediaProjectionGranted = granted;
       notifyListeners();
     }
   }
-  
+
   void setStoragePermissionGranted(bool granted) {
     if (_storagePermissionGranted != granted) {
       _storagePermissionGranted = granted;
       notifyListeners();
     }
   }
-  
+
   void setNotificationPermissionGranted(bool granted) {
     if (_notificationPermissionGranted != granted) {
       _notificationPermissionGranted = granted;
@@ -105,47 +105,47 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   void setServiceRunning(bool running) {
     if (_isServiceRunning != running) {
       _isServiceRunning = running;
       notifyListeners();
     }
   }
-  
+
   void setCapturing(bool capturing) {
     if (_isCapturing != capturing) {
       _isCapturing = capturing;
       notifyListeners();
     }
   }
-  
+
   void setFirstLaunch(bool isFirst) {
     if (_isFirstLaunch != isFirst) {
       _isFirstLaunch = isFirst;
       notifyListeners();
     }
   }
-  
+
   void setLoading(bool loading) {
     if (_isLoading != loading) {
       _isLoading = loading;
       notifyListeners();
     }
   }
-  
+
   void setError(String? error) {
     if (_errorMessage != error) {
       _errorMessage = error;
       notifyListeners();
     }
   }
-  
+
   /// 清除错误信息
   void clearError() {
     setError(null);
   }
-  
+
   /// 更新所有权限状态
   void updatePermissions({
     bool? accessibility,
@@ -155,23 +155,24 @@ class AppState extends ChangeNotifier {
     bool? usageStats,
   }) {
     bool changed = false;
-    
+
     if (accessibility != null && _accessibilityEnabled != accessibility) {
       _accessibilityEnabled = accessibility;
       changed = true;
     }
-    
+
     if (mediaProjection != null && _mediaProjectionGranted != mediaProjection) {
       _mediaProjectionGranted = mediaProjection;
       changed = true;
     }
-    
+
     if (storage != null && _storagePermissionGranted != storage) {
       _storagePermissionGranted = storage;
       changed = true;
     }
-    
-    if (notification != null && _notificationPermissionGranted != notification) {
+
+    if (notification != null &&
+        _notificationPermissionGranted != notification) {
       _notificationPermissionGranted = notification;
       changed = true;
     }
@@ -185,7 +186,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   /// 重置所有状态
   void reset() {
     _accessibilityEnabled = false;

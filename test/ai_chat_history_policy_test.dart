@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/ai_chat_service.dart';
+import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
 
 void main() {
   test('chat context forces includeHistory when persistHistory is true', () {
@@ -29,4 +29,3 @@ void main() {
     expect(effective, isTrue);
   });
 }
-

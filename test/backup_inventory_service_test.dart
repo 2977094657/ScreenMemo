@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/backup_inventory_service.dart';
+import 'package:screen_memo/features/backup/data/backup_inventory_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

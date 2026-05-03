@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/chat_context_service.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/features/ai/application/chat_context_service.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _prepareDesktopDbRoot(Directory root) async {
@@ -46,8 +46,8 @@ void main() {
         model: 'gpt-test',
       );
 
-      final List<ChatContextEvent> events =
-          await ChatContextService.instance.listRecentContextEvents(
+      final List<ChatContextEvent> events = await ChatContextService.instance
+          .listRecentContextEvents(
             cid: 'test-cid',
             type: 'prompt_trim',
             limit: 50,
@@ -77,60 +77,61 @@ void main() {
     }
   });
 
-  test('listRecentContextEvents respects type filter and limit clamp', () async {
-    final Directory tmp = await Directory.systemTemp.createTemp(
-      'screen_memo_trim_event_list_',
-    );
-    try {
-      final Directory root = Directory(p.join(tmp.path, 'root'));
-      await root.create(recursive: true);
-      await _prepareDesktopDbRoot(root);
-      final db = await ScreenshotDatabase.instance.database;
-      final int now = DateTime.now().millisecondsSinceEpoch;
-
-      await db.insert('ai_context_events', <String, Object?>{
-        'conversation_id': 'test-cid',
-        'type': 'prompt_trim',
-        'payload_json': jsonEncode(<String, Object?>{
-          'stage': 'a',
-          'kind': 'history_tail',
-          'before_tokens': 100,
-          'after_tokens': 90,
-        }),
-        'created_at': now,
-      });
-      await db.insert('ai_context_events', <String, Object?>{
-        'conversation_id': 'test-cid',
-        'type': 'atomic_memory',
-        'payload_json': jsonEncode(<String, Object?>{'enabled': true}),
-        'created_at': now + 1,
-      });
-
-      final List<ChatContextEvent> onlyTrim =
-          await ChatContextService.instance.listRecentContextEvents(
-            cid: 'test-cid',
-            type: 'prompt_trim',
-            limit: 999,
-          );
-
-      expect(onlyTrim, isNotEmpty);
-      expect(onlyTrim.every((e) => e.type == 'prompt_trim'), isTrue);
-
-      final List<ChatContextEvent> allEvents =
-          await ChatContextService.instance.listRecentContextEvents(
-            cid: 'test-cid',
-            limit: 0,
-          );
-      expect(allEvents, isNotEmpty);
-      expect(allEvents.length >= 2, isTrue);
-    } finally {
+  test(
+    'listRecentContextEvents respects type filter and limit clamp',
+    () async {
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'screen_memo_trim_event_list_',
+      );
       try {
-        await ScreenshotDatabase.instance.disposeDesktop();
-      } catch (_) {}
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
-    }
-  });
-}
+        final Directory root = Directory(p.join(tmp.path, 'root'));
+        await root.create(recursive: true);
+        await _prepareDesktopDbRoot(root);
+        final db = await ScreenshotDatabase.instance.database;
+        final int now = DateTime.now().millisecondsSinceEpoch;
 
+        await db.insert('ai_context_events', <String, Object?>{
+          'conversation_id': 'test-cid',
+          'type': 'prompt_trim',
+          'payload_json': jsonEncode(<String, Object?>{
+            'stage': 'a',
+            'kind': 'history_tail',
+            'before_tokens': 100,
+            'after_tokens': 90,
+          }),
+          'created_at': now,
+        });
+        await db.insert('ai_context_events', <String, Object?>{
+          'conversation_id': 'test-cid',
+          'type': 'atomic_memory',
+          'payload_json': jsonEncode(<String, Object?>{'enabled': true}),
+          'created_at': now + 1,
+        });
+
+        final List<ChatContextEvent> onlyTrim = await ChatContextService
+            .instance
+            .listRecentContextEvents(
+              cid: 'test-cid',
+              type: 'prompt_trim',
+              limit: 999,
+            );
+
+        expect(onlyTrim, isNotEmpty);
+        expect(onlyTrim.every((e) => e.type == 'prompt_trim'), isTrue);
+
+        final List<ChatContextEvent> allEvents = await ChatContextService
+            .instance
+            .listRecentContextEvents(cid: 'test-cid', limit: 0);
+        expect(allEvents, isNotEmpty);
+        expect(allEvents.length >= 2, isTrue);
+      } finally {
+        try {
+          await ScreenshotDatabase.instance.disposeDesktop();
+        } catch (_) {}
+        if (await tmp.exists()) {
+          await tmp.delete(recursive: true);
+        }
+      }
+    },
+  );
+}

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/nocturne_memory_entity_prompts.dart';
+import 'package:screen_memo/features/nocturne_memory/application/nocturne_memory_entity_prompts.dart';
 
 void main() {
   test('visual extraction prompt enforces visual-only evidence contract', () {

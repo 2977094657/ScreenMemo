@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/ai_settings_service.dart';
-import 'package:screen_memo/services/prompt_budget.dart';
+import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
+import 'package:screen_memo/features/ai/application/prompt_budget.dart';
 
 void main() {
   test('keepTailUnderTokenBudget returns empty when maxTokens <= 0', () {
@@ -46,8 +46,10 @@ void main() {
       final AIMessage srcOldestKept = input[input.length - out.length];
       final AIMessage actualOldestKept = out.first;
       expect(actualOldestKept.role, srcOldestKept.role);
-      expect(actualOldestKept.content.length <= srcOldestKept.content.length, isTrue);
+      expect(
+        actualOldestKept.content.length <= srcOldestKept.content.length,
+        isTrue,
+      );
     }
   });
 }
-

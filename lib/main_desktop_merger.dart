@@ -4,8 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
-import 'pages/desktop_merger_page.dart';
-import 'theme/app_theme.dart';
+import 'package:screen_memo/features/desktop_merger/presentation/pages/desktop_merger_page.dart';
+import 'package:screen_memo/core/theme/app_theme.dart';
 
 /// 桌面端数据合并工具入口
 /// 用于在电脑上高效合并多个导出的 ZIP 备份文件

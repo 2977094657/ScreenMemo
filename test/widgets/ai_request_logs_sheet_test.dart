@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_memo/models/ai_request_log.dart';
-import 'package:screen_memo/widgets/ai_request_logs_sheet.dart';
-import 'package:screen_memo/widgets/ai_request_logs_viewer.dart';
+import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_request_logs_sheet.dart';
+import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_request_logs_viewer.dart';
 
 void main() {
   testWidgets('AIRequestLogsSheet is shown as bottom sheet, not AlertDialog', (

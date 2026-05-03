@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:graphic/graphic.dart';
-import 'package:screen_memo/widgets/chat_markdown_chart.dart';
-import 'package:screen_memo/widgets/markdown_math.dart';
+import 'package:screen_memo/features/ai_chat/presentation/widgets/chat_markdown_chart.dart';
+import 'package:screen_memo/features/ai_chat/presentation/widgets/markdown_math.dart';
 
 void main() {
   test('ChartSpecV1 parses all supported chart types', () {

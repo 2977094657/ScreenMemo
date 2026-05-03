@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/openai_responses_extract.dart';
+import 'package:screen_memo/features/ai/application/openai_responses_extract.dart';
 
 void main() {
   test('extractResponsesMessageOutputText concatenates output_text parts', () {
@@ -35,7 +35,9 @@ void main() {
       'arguments': '{"q":"hi"}',
     };
 
-    final ResponsesFunctionCallItem? out = extractResponsesFunctionCallItem(item);
+    final ResponsesFunctionCallItem? out = extractResponsesFunctionCallItem(
+      item,
+    );
     expect(out, isNotNull);
     expect(out!.callId, 'c1');
     expect(out.name, 'search_segments');
@@ -52,29 +54,34 @@ void main() {
       },
     };
 
-    final ResponsesFunctionCallItem? out = extractResponsesFunctionCallItem(item);
+    final ResponsesFunctionCallItem? out = extractResponsesFunctionCallItem(
+      item,
+    );
     expect(out, isNotNull);
     expect(out!.callId, 't1');
     expect(out.name, 'get_images');
     expect(out.arguments, '{"n":2}');
   });
 
-  test('extractResponsesFunctionCallItem returns null when missing id/name', () {
-    expect(
-      extractResponsesFunctionCallItem(<String, dynamic>{
-        'type': 'function_call',
-        'name': 'x',
-      }),
-      isNull,
-    );
-    expect(
-      extractResponsesFunctionCallItem(<String, dynamic>{
-        'type': 'function_call',
-        'call_id': 'c1',
-      }),
-      isNull,
-    );
-  });
+  test(
+    'extractResponsesFunctionCallItem returns null when missing id/name',
+    () {
+      expect(
+        extractResponsesFunctionCallItem(<String, dynamic>{
+          'type': 'function_call',
+          'name': 'x',
+        }),
+        isNull,
+      );
+      expect(
+        extractResponsesFunctionCallItem(<String, dynamic>{
+          'type': 'function_call',
+          'call_id': 'c1',
+        }),
+        isNull,
+      );
+    },
+  );
 
   test('extractResponsesReasoningText reads summary_text parts', () {
     final Map<String, dynamic> item = <String, dynamic>{

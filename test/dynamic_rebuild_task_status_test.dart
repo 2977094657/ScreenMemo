@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 
 void main() {
   test('DynamicRebuildTaskStatus.fromMap parses concurrent day fields', () {

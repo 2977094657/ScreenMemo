@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/ai_prompt_time_context.dart';
-import 'package:screen_memo/utils/app_ref_markdown.dart';
+import 'package:screen_memo/features/ai/application/ai_prompt_time_context.dart';
+import 'package:screen_memo/core/utils/app_ref_markdown.dart';
 
 void main() {
   test('normalizeCodeWrappedAppRefs unwraps app markers in backticks', () {

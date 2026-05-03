@@ -8,16 +8,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:screen_memo/main.dart';
-import 'package:screen_memo/services/intent_analysis_service.dart';
+import 'package:screen_memo/app/screen_memo_app.dart';
+import 'package:screen_memo/features/ai/application/intent_analysis_service.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(
-      const ScreenMemoApp(
-        initialShowOnboarding: true,
-        isFirstLaunch: true,
-      ),
+      const ScreenMemoApp(initialShowOnboarding: true, isFirstLaunch: true),
     );
     // Let post-frame callbacks / zero-duration timers settle.
     await tester.pump();
@@ -27,11 +24,15 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  test('IntentAnalysisService basic structure fallback', () async {
-    final svc = IntentAnalysisService.instance;
-    final r = await svc.analyze('测试一个不明确的查询');
-    expect(r.intentSummary.isNotEmpty, true);
-    expect(r.hasValidRange, false);
-    expect(r.sqlFill.containsKey('segments_between'), false);
-  }, timeout: const Timeout(Duration(seconds: 90)));
+  test(
+    'IntentAnalysisService basic structure fallback',
+    () async {
+      final svc = IntentAnalysisService.instance;
+      final r = await svc.analyze('测试一个不明确的查询');
+      expect(r.intentSummary.isNotEmpty, true);
+      expect(r.hasValidRange, false);
+      expect(r.sqlFill.containsKey('segments_between'), false);
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }

@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:screen_memo/services/nocturne_memory_service.dart';
-import 'package:screen_memo/services/screenshot_database.dart';
+import 'package:screen_memo/features/nocturne_memory/application/nocturne_memory_service.dart';
+import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<Directory> _prepareDesktopDbRoot() async {
@@ -57,10 +57,12 @@ void main() {
       );
       expect(alias['new_uri'], 'dynamic://agent_alias');
 
-      final List<Map<String, dynamic>> dynIndex =
-          await mem.getAllPaths(domain: 'dynamic');
-      final Set<String> dynUris =
-          dynIndex.map((e) => (e['uri'] ?? '').toString()).toSet();
+      final List<Map<String, dynamic>> dynIndex = await mem.getAllPaths(
+        domain: 'dynamic',
+      );
+      final Set<String> dynUris = dynIndex
+          .map((e) => (e['uri'] ?? '').toString())
+          .toSet();
       expect(dynUris, contains('dynamic://agent_alias'));
       expect(dynUris, contains('dynamic://agent_alias/my_user'));
 
@@ -69,16 +71,24 @@ void main() {
         oldString: 'Hello',
         newString: 'Hi',
       );
-      final Map<String, dynamic> read2 =
-          await mem.readMemory('dynamic://agent_alias');
+      final Map<String, dynamic> read2 = await mem.readMemory(
+        'dynamic://agent_alias',
+      );
       expect((read2['content'] as String?) ?? '', contains('Hi agent.'));
 
-      final Map<String, dynamic> del = await mem.deleteMemory(uri: 'core://agent');
+      final Map<String, dynamic> del = await mem.deleteMemory(
+        uri: 'core://agent',
+      );
       expect(del['deleted_paths'], 2);
 
-      await expectLater(mem.readMemory('core://agent'), throwsA(isA<StateError>()));
+      await expectLater(
+        mem.readMemory('core://agent'),
+        throwsA(isA<StateError>()),
+      );
 
-      final Map<String, dynamic> still = await mem.readMemory('dynamic://agent_alias');
+      final Map<String, dynamic> still = await mem.readMemory(
+        'dynamic://agent_alias',
+      );
       expect(still['uri'], 'dynamic://agent_alias');
       expect((still['children'] as List).length, 1);
     } finally {
