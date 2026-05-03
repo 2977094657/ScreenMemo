@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show Canvas, Size, Offset, Rect;
+import 'dart:ui' show Offset, Rect;
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -13,13 +13,14 @@ import '../widgets/ui_dialog.dart';
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
 import '../services/screenshot_service.dart';
-import '../services/path_service.dart';
-import '../widgets/ui_components.dart';
+import '../widgets/screenshot_item_widget.dart';
+import '../widgets/search_styles.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
 import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/favorite_service.dart';
-import '../widgets/screenshot_item_widget.dart';
+import '../services/path_service.dart';
+import '../widgets/ui_components.dart';
 import '../services/nsfw_preference_service.dart';
 
 /// 内部：日期Tab信息（一天为单位）
@@ -1054,43 +1055,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                       ),
                     )
                   : Container(
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Theme.of(context).colorScheme.surface
-                            : Theme.of(context).scaffoldBackgroundColor,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.grey.withOpacity(0.5),
-                          width: 1.0,
-                        ),
-                      ),
+                      height: SearchStyles.fieldHeight,
+                      decoration: SearchStyles.fieldDecoration(context),
                       alignment: Alignment.center,
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: SearchStyles.fieldBorderRadius,
                         child: TextField(
                           focusNode: _searchFocusNode,
                           controller: _searchController,
                           onChanged: _onSearchChanged,
                           onSubmitted: _performSearch,
                           textInputAction: TextInputAction.search,
-                          decoration: InputDecoration(
+                          style: SearchStyles.inputTextStyle(context),
+                          decoration: SearchStyles.inputDecoration(
+                            context: context,
                             hintText: AppLocalizations.of(
                               context,
                             ).searchPlaceholder,
-                            hintStyle: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.5),
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            isDense: true,
-                            filled: false,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
-                            ),
                             prefixIcon: (_appInfo.icon != null)
                                 ? Padding(
                                     padding: const EdgeInsets.only(
@@ -1112,12 +1093,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                               minWidth: 0,
                               minHeight: 0,
                             ),
-                            // 取消聚焦时的高亮边框
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            errorBorder: InputBorder.none,
-                            focusedErrorBorder: InputBorder.none,
                             // 去掉右侧搜索图标，仅在有文本时显示清除
                             suffixIcon:
                                 (_searchQuery.isNotEmpty ||
@@ -1327,42 +1302,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             return Stack(
               children: [
                 _buildScreenshotItem(s, index),
-                FutureBuilder<Map<String, dynamic>?>(
-                  future: _ensureBoxes(s.filePath),
-                  builder: (context, snap) {
-                    final d = snap.data;
-                    if (d == null) return const SizedBox.shrink();
-                    final int srcW = (d['width'] as int?) ?? 0;
-                    final int srcH = (d['height'] as int?) ?? 0;
-                    final List<dynamic> raw = (d['boxes'] as List?) ?? const [];
-                    if (srcW <= 0 || srcH <= 0 || raw.isEmpty)
-                      return const SizedBox.shrink();
-                    final List<Rect> rects = <Rect>[];
-                    for (final item in raw) {
-                      if (item is Map) {
-                        final m = Map<String, dynamic>.from(item);
-                        final l = (m['left'] as num?)?.toDouble() ?? 0;
-                        final t = (m['top'] as num?)?.toDouble() ?? 0;
-                        final r = (m['right'] as num?)?.toDouble() ?? 0;
-                        final b = (m['bottom'] as num?)?.toDouble() ?? 0;
-                        rects.add(Rect.fromLTRB(l, t, r, b));
-                      }
-                    }
-                    if (rects.isEmpty) return const SizedBox.shrink();
-                    return Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: true,
-                        child: CustomPaint(
-                          painter: _OcrBoxesPainter(
-                            originalWidth: srcW.toDouble(),
-                            originalHeight: srcH.toDouble(),
-                            boxes: rects,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                SearchMatchBoxesOverlay(boxesFuture: _ensureBoxes(s.filePath)),
               ],
             );
           },
@@ -2502,57 +2442,5 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       }
     } catch (_) {}
     if (mounted) setState(() {});
-  }
-}
-
-class _OcrBoxesPainter extends CustomPainter {
-  final double originalWidth;
-  final double originalHeight;
-  final List<Rect> boxes;
-
-  _OcrBoxesPainter({
-    required this.originalWidth,
-    required this.originalHeight,
-    required this.boxes,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (originalWidth <= 0 || originalHeight <= 0) return;
-    final double scale =
-        (size.width / originalWidth) > (size.height / originalHeight)
-        ? (size.width / originalWidth)
-        : (size.height / originalHeight);
-    final double drawW = originalWidth * scale;
-    final double drawH = originalHeight * scale;
-    final double offsetX = (size.width - drawW) / 2.0;
-    final double offsetY = (size.height - drawH) / 2.0;
-
-    final Paint stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..color = Colors.amberAccent.withOpacity(0.95)
-      ..strokeWidth = 2.0;
-    final Paint fill = Paint()
-      ..style = PaintingStyle.fill
-      ..color = Colors.amberAccent.withOpacity(0.18);
-
-    for (final r in boxes) {
-      final Rect mapped = Rect.fromLTRB(
-        offsetX + r.left * scale,
-        offsetY + r.top * scale,
-        offsetX + r.right * scale,
-        offsetY + r.bottom * scale,
-      ).intersect(Offset.zero & size);
-      if (mapped.isEmpty) continue;
-      canvas.drawRect(mapped, fill);
-      canvas.drawRect(mapped, stroke);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _OcrBoxesPainter oldDelegate) {
-    return oldDelegate.originalWidth != originalWidth ||
-        oldDelegate.originalHeight != originalHeight ||
-        oldDelegate.boxes != boxes;
   }
 }

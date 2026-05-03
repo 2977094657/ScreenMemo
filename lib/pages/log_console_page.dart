@@ -9,6 +9,7 @@ import 'package:talker/talker.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/flutter_logger.dart' hide LogLevel;
+import '../widgets/search_styles.dart';
 
 enum _LogLevelFilter { all, debug, info, warn, error }
 
@@ -310,25 +311,20 @@ class _LogConsolePageState extends State<LogConsolePage> {
           preferredSize: const Size.fromHeight(48),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
+            child: SearchTextField(
               controller: _searchController,
+              hintText: l10n.logSearchHint,
               textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: l10n.logSearchHint,
-                isDense: true,
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: l10n.actionClear,
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
-                border: const OutlineInputBorder(),
-              ),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: l10n.actionClear,
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                    ),
               onChanged: (_) => setState(() {}),
             ),
           ),

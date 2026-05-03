@@ -412,10 +412,6 @@ class ScreenshotItemWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xB8141413),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: AppTheme.primary.withValues(alpha: 0.28),
-            width: 1,
-          ),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,

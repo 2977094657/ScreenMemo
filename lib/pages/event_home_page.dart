@@ -13,6 +13,7 @@ import '../utils/model_icon_utils.dart';
 import '../services/ai_providers_service.dart';
 import '../services/dynamic_entry_perf_service.dart';
 import '../widgets/ui_dialog.dart';
+import '../widgets/search_styles.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
 import '../widgets/chat_context_sheet.dart';
@@ -320,23 +321,16 @@ class _EventHomePageState extends State<EventHomePage> {
                       const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: TextField(
+                        child: SearchTextField(
                           controller: queryCtrl,
+                          hintText: AppLocalizations.of(
+                            context,
+                          ).searchProviderPlaceholder,
                           autofocus: true,
                           onChanged: (_) {
                             _providerQueryText = queryCtrl.text;
                             setModalState(() {});
                           },
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(
-                              context,
-                            ).searchProviderPlaceholder,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                         ),
                       ),
                       Expanded(
@@ -474,23 +468,16 @@ class _EventHomePageState extends State<EventHomePage> {
                       const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: TextField(
+                        child: SearchTextField(
                           controller: queryCtrl,
+                          hintText: AppLocalizations.of(
+                            context,
+                          ).searchModelPlaceholder,
                           autofocus: true,
                           onChanged: (_) {
                             _modelQueryText = queryCtrl.text;
                             setModalState(() {});
                           },
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(
-                              context,
-                            ).searchModelPlaceholder,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                         ),
                       ),
                       Expanded(

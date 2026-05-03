@@ -5,6 +5,7 @@ import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
 import 'ui_dialog.dart';
 import 'selection_checkbox.dart';
+import 'search_styles.dart';
 
 /// 应用选择组件
 class AppSelectionWidget extends StatefulWidget {
@@ -211,28 +212,20 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
           child: Column(
             children: [
               // 搜索栏
-              TextField(
+              SearchTextField(
                 controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: AppLocalizations.of(context).appSearchPlaceholder,
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: () {
-                            _searchController.clear();
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: surface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacing3,
-                    vertical: AppTheme.spacing2,
-                  ),
+                hintText: AppLocalizations.of(context).appSearchPlaceholder,
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          _searchController.clear();
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing3,
+                  vertical: AppTheme.spacing2,
                 ),
               ),
 

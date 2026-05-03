@@ -13,6 +13,7 @@ import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../widgets/selection_checkbox.dart';
+import '../widgets/search_styles.dart';
 import '../services/ime_exclusion_service.dart';
 import '../widgets/app_selection_widget.dart';
 import '../services/per_app_screenshot_settings_service.dart';
@@ -2302,21 +2303,17 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSearchBar(BuildContext context) {
-    final theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final Color fillColor = isDark
-        ? theme.colorScheme.surface
-        : theme.scaffoldBackgroundColor;
+    final Color fillColor = SearchStyles.fieldFillColor(context);
     // Keep border style consistent with Screenshot Gallery search box.
-    final Color borderColor = Colors.grey.withValues(alpha: 0.5);
+    final Color borderColor = SearchStyles.fieldBorderColor(context);
     return InkWell(
-      borderRadius: const BorderRadius.all(Radius.circular(8.0)),
+      borderRadius: SearchStyles.fieldBorderRadius,
       onTap: () => Navigator.pushNamed(context, '/search'),
       child: Container(
-        height: 36,
+        height: SearchStyles.fieldHeight,
         decoration: BoxDecoration(
           color: fillColor,
-          borderRadius: const BorderRadius.all(Radius.circular(8.0)),
+          borderRadius: SearchStyles.fieldBorderRadius,
           border: Border.all(color: borderColor, width: 1.0),
         ),
         child: Row(
@@ -2324,16 +2321,13 @@ class _HomePageState extends State<HomePage>
             const SizedBox(width: 4),
             Icon(
               Icons.search,
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
+              color: SearchStyles.placeholderColor(context),
               size: 18,
             ),
             const SizedBox(width: 2),
             Text(
               AppLocalizations.of(context).searchPlaceholder,
-              style: TextStyle(
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
-                fontSize: 14,
-              ),
+              style: SearchStyles.hintTextStyle(context),
             ),
           ],
         ),

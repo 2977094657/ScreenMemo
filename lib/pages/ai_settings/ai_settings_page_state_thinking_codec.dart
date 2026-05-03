@@ -545,23 +545,16 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
                     const SizedBox(height: AppTheme.spacing3),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: TextField(
+                      child: SearchTextField(
                         controller: queryCtrl,
+                        hintText: AppLocalizations.of(
+                          context,
+                        ).searchProviderPlaceholder,
                         autofocus: true,
                         onChanged: (_) {
                           _providerQueryText = queryCtrl.text;
                           setModalState(() {});
                         },
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.search),
-                          hintText: AppLocalizations.of(
-                            context,
-                          ).searchProviderPlaceholder,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
                       ),
                     ),
                     Expanded(
@@ -773,23 +766,16 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
                     const SizedBox(height: AppTheme.spacing3),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: TextField(
+                      child: SearchTextField(
                         controller: queryCtrl,
+                        hintText: AppLocalizations.of(
+                          context,
+                        ).searchModelPlaceholder,
                         autofocus: true,
                         onChanged: (_) {
                           _modelQueryText = queryCtrl.text;
                           setModalState(() {});
                         },
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.search),
-                          hintText: AppLocalizations.of(
-                            context,
-                          ).searchModelPlaceholder,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
                       ),
                     ),
                     Expanded(

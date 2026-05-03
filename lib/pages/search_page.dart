@@ -18,6 +18,7 @@ import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../widgets/search_styles.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
@@ -309,11 +310,6 @@ class _SearchPageState extends State<SearchPage>
       data = text.replaceAllMapped(reg, (m) => '<mark>${m[0]}</mark>');
     }
 
-    final theme = Theme.of(context);
-    final Color highlightColor = theme.colorScheme.primary.withValues(
-      alpha: theme.brightness == Brightness.dark ? 0.24 : 0.18,
-    );
-
     return MarkdownBody(
       data: data,
       extensionSet: md.ExtensionSet.gitHubWeb,
@@ -322,7 +318,9 @@ class _SearchPageState extends State<SearchPage>
       styleSheet: MarkdownStyleSheet.fromTheme(
         Theme.of(context),
       ).copyWith(p: style),
-      builders: {'mark': MarkBuilder(highlightColor)},
+      builders: {
+        'mark': MarkBuilder(SearchStyles.highlightTextDecoration(context)),
+      },
       softLineBreak: true,
       onTapLink: (text, href, title) async {
         if (href == null) return;
@@ -1918,39 +1916,16 @@ class _SearchPageState extends State<SearchPage>
           children: [
             Expanded(
               child: Theme(
-                data: Theme.of(context).copyWith(
-                  highlightColor: Colors.transparent,
-                  splashColor: Colors.transparent,
-                  hoverColor: Colors.transparent,
-                  focusColor: Colors.transparent,
-                  inputDecorationTheme: const InputDecorationTheme(
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                  ),
-                ),
+                data: SearchStyles.inputTheme(context),
                 child: Container(
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Theme.of(context).colorScheme.surface
-                        : Theme.of(context).scaffoldBackgroundColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.grey.withOpacity(0.5),
-                      width: 1.0,
-                    ),
-                  ),
+                  height: SearchStyles.fieldHeight,
+                  decoration: SearchStyles.fieldDecoration(context),
                   child: Row(
                     children: [
                       const SizedBox(width: 10),
                       Icon(
                         Icons.search,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
+                        color: SearchStyles.placeholderColor(context),
                         size: 18,
                       ),
                       const SizedBox(width: 6),
@@ -1959,25 +1934,14 @@ class _SearchPageState extends State<SearchPage>
                           controller: _controller,
                           focusNode: _focusNode,
                           autofocus: true,
-                          decoration: InputDecoration(
+                          decoration: SearchStyles.inputDecoration(
+                            context: context,
                             isCollapsed: true,
                             hintText: AppLocalizations.of(
                               context,
                             ).searchPlaceholder,
-                            hintStyle: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.5),
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            enabledBorder: InputBorder.none,
                           ),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 14,
-                          ),
+                          style: SearchStyles.inputTextStyle(context),
                           textInputAction: TextInputAction.search,
                           onChanged: _onQueryChanged,
                           onSubmitted: (v) => _search(v.trim()),
@@ -2294,53 +2258,8 @@ class _SearchPageState extends State<SearchPage>
                               _boxesFutureCache.keys.first,
                             );
                           }
-                          ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
-                            future: _ensureBoxes(s.filePath),
-                            builder: (context, snapshot) {
-                              final data = snapshot.data;
-                              if (data == null) return const SizedBox.shrink();
-                              final int srcW = (data['width'] as int?) ?? 0;
-                              final int srcH = (data['height'] as int?) ?? 0;
-                              final List<dynamic> raw =
-                                  (data['boxes'] as List?) ?? const [];
-                              if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-                              final List<Rect> rects = <Rect>[];
-                              for (final item in raw) {
-                                if (item is Map) {
-                                  final m = Map<String, dynamic>.from(item);
-                                  final l =
-                                      (m['left'] as num?)?.toDouble() ?? 0;
-                                  final t = (m['top'] as num?)?.toDouble() ?? 0;
-                                  final r =
-                                      (m['right'] as num?)?.toDouble() ?? 0;
-                                  final b =
-                                      (m['bottom'] as num?)?.toDouble() ?? 0;
-                                  rects.add(Rect.fromLTRB(l, t, r, b));
-                                }
-                              }
-                              if (rects.isEmpty) return const SizedBox.shrink();
-                              final colorScheme = Theme.of(context).colorScheme;
-                              return Positioned.fill(
-                                child: IgnorePointer(
-                                  ignoring: true,
-                                  child: CustomPaint(
-                                    painter: _OcrBoxesPainter(
-                                      originalWidth: srcW.toDouble(),
-                                      originalHeight: srcH.toDouble(),
-                                      boxes: rects,
-                                      strokeColor: colorScheme.error.withValues(
-                                        alpha: 0.92,
-                                      ),
-                                      fillColor: colorScheme.error.withValues(
-                                        alpha: 0.18,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
+                          ocrOverlay = SearchMatchBoxesOverlay(
+                            boxesFuture: _ensureBoxes(s.filePath),
                           );
                         }
 
@@ -4638,9 +4557,9 @@ class _SearchPageState extends State<SearchPage>
 
 /// Markdown 自定义高亮标签渲染
 class MarkBuilder extends MarkdownElementBuilder {
-  MarkBuilder(this.highlightColor);
+  MarkBuilder(this.decoration);
 
-  final Color highlightColor;
+  final Decoration decoration;
 
   @override
   Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
@@ -4652,70 +4571,9 @@ class MarkBuilder extends MarkdownElementBuilder {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-      decoration: BoxDecoration(
-        color: highlightColor,
-        borderRadius: BorderRadius.circular(2),
-      ),
+      decoration: decoration,
       child: Text.rich(TextSpan(children: children)),
     );
-  }
-}
-
-class _OcrBoxesPainter extends CustomPainter {
-  final double originalWidth;
-  final double originalHeight;
-  final List<Rect> boxes;
-  final Color strokeColor;
-  final Color fillColor;
-
-  _OcrBoxesPainter({
-    required this.originalWidth,
-    required this.originalHeight,
-    required this.boxes,
-    required this.strokeColor,
-    required this.fillColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (originalWidth <= 0 || originalHeight <= 0) return;
-    final double scale =
-        (size.width / originalWidth) > (size.height / originalHeight)
-        ? (size.width / originalWidth)
-        : (size.height / originalHeight);
-    final double drawW = originalWidth * scale;
-    final double drawH = originalHeight * scale;
-    final double offsetX = (size.width - drawW) / 2.0;
-    final double offsetY = (size.height - drawH) / 2.0;
-
-    final Paint stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..color = strokeColor
-      ..strokeWidth = 2.0;
-    final Paint fill = Paint()
-      ..style = PaintingStyle.fill
-      ..color = fillColor;
-
-    for (final r in boxes) {
-      final Rect mapped = Rect.fromLTRB(
-        offsetX + r.left * scale,
-        offsetY + r.top * scale,
-        offsetX + r.right * scale,
-        offsetY + r.bottom * scale,
-      ).intersect(Offset.zero & size);
-      if (mapped.isEmpty) continue;
-      canvas.drawRect(mapped, fill);
-      canvas.drawRect(mapped, stroke);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _OcrBoxesPainter oldDelegate) {
-    return oldDelegate.originalWidth != originalWidth ||
-        oldDelegate.originalHeight != originalHeight ||
-        oldDelegate.boxes != boxes ||
-        oldDelegate.strokeColor != strokeColor ||
-        oldDelegate.fillColor != fillColor;
   }
 }
 
