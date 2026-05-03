@@ -98,7 +98,7 @@ class _SettingsPageState extends State<SettingsPage>
   int _segmentDurationMin = 5; // 以分钟显示，最小1分钟
   // AI 请求最小间隔（秒）
   int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
-  // 动态(segments) structured_json 解析失败时的自动重试次数（0=关闭）
+  // 动态总结格式不符合要求时的自动重试次数（0=关闭）
   int _segmentsJsonAutoRetryMax = 1; // 默认 1
   bool _aiRawResponseCleanupEnabled = true; // 默认开启
   int _aiRawResponseCleanupDays = 30; // 默认保留 30 天
@@ -261,8 +261,8 @@ class _SettingsPageState extends State<SettingsPage>
       barrierLabel: 'recalculate_progress',
       pageBuilder: (BuildContext dialogContext, _, __) {
         final ThemeData theme = Theme.of(dialogContext);
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 260),
@@ -867,8 +867,8 @@ class _SettingsPageState extends State<SettingsPage>
         final AppLocalizations t = AppLocalizations.of(dialogContext);
         final String title = _importExportDialogTitle(t, isExport);
 
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 320),
@@ -973,8 +973,8 @@ class _SettingsPageState extends State<SettingsPage>
         final AppLocalizations t = AppLocalizations.of(dialogContext);
         final String title = _importExportDialogTitle(t, true);
         final String hint = _importExportDoNotCloseHint(t);
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 320),
@@ -1536,13 +1536,13 @@ class _SettingsPageState extends State<SettingsPage>
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: _subPage == _SettingsSubPage.home,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
         if (_subPage != _SettingsSubPage.home) {
           _switchSubPage(_SettingsSubPage.home);
-          return false;
         }
-        return true;
       },
       child: Scaffold(
         appBar: _buildSettingsAppBar(context),
@@ -2207,17 +2207,9 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  // ===== 动态(segments) structured_json 自动重试次数 =====
+  // ===== 动态总结格式自动重试次数 =====
   Widget _buildSegmentsJsonAutoRetryMaxItem(BuildContext context) {
-    final bool isZh = (() {
-      try {
-        return Localizations.localeOf(
-          context,
-        ).languageCode.toLowerCase().startsWith('zh');
-      } catch (_) {
-        return true;
-      }
-    })();
+    final l10n = AppLocalizations.of(context);
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -2236,16 +2228,14 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isZh ? '自动重试次数' : 'Auto Retry Times',
+                  l10n.segmentsJsonAutoRetryTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isZh
-                      ? 'structured_json 解析失败时自动重试（0=关闭，默认1）。当前：$_segmentsJsonAutoRetryMax'
-                      : 'Auto retry when structured_json fails to parse (0=off, default 1). Current: $_segmentsJsonAutoRetryMax',
+                  '${l10n.segmentsJsonAutoRetryDesc} ${l10n.settingCurrentValue(_segmentsJsonAutoRetryMax)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -2576,8 +2566,11 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).aiRequestIntervalTitle,
-      content: _numberField(
-        controller,
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingAiRequestIntervalExplanation,
+        controller: controller,
         hint: AppLocalizations.of(context).intervalInputHint,
       ),
       actions: [
@@ -2638,20 +2631,10 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: l10n.segmentsJsonAutoRetryTitle,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.segmentsJsonAutoRetryDesc,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppTheme.spacing3),
-          _numberField(controller, hint: l10n.segmentsJsonAutoRetryHint),
-        ],
+      content: _numberDialogContent(
+        explanation: l10n.dynamicSettingAutoRetryExplanation,
+        controller: controller,
+        hint: l10n.segmentsJsonAutoRetryHint,
       ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
@@ -2761,44 +2744,12 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).rawResponseRetentionDaysTitle,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: AppLocalizations.of(
-                  context,
-                ).rawResponseRetentionDaysLabel,
-                hintText: AppLocalizations.of(
-                  context,
-                ).rawResponseRetentionDaysHint,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-                labelStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-                hintStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontSize: AppTheme.fontSizeBase,
-              ),
-            ),
-          ),
-        ],
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingRawResponseRetentionExplanation,
+        controller: controller,
+        hint: AppLocalizations.of(context).rawResponseRetentionDaysLabel,
       ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
@@ -2848,8 +2799,11 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).dynamicMergeMaxSpanTitle,
-      content: _numberField(
-        controller,
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingMergeMaxSpanExplanation,
+        controller: controller,
         hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
       ),
       actions: [
@@ -2890,8 +2844,11 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).dynamicMergeMaxGapTitle,
-      content: _numberField(
-        controller,
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingMergeMaxGapExplanation,
+        controller: controller,
         hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
       ),
       actions: [
@@ -2932,8 +2889,11 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).dynamicMergeMaxImagesTitle,
-      content: _numberField(
-        controller,
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingMergeMaxImagesExplanation,
+        controller: controller,
         hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
       ),
       actions: [
@@ -3075,16 +3035,12 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).segmentSampleIntervalTitle,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _numberField(
-            controller,
-            hint: AppLocalizations.of(context).intervalInputHint,
-          ),
-          // hint removed
-        ],
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingSampleExplanation,
+        controller: controller,
+        hint: AppLocalizations.of(context).intervalInputHint,
       ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
@@ -3125,8 +3081,11 @@ class _SettingsPageState extends State<SettingsPage>
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).segmentDurationTitle,
-      content: _numberField(
-        controller,
+      content: _numberDialogContent(
+        explanation: AppLocalizations.of(
+          context,
+        ).dynamicSettingDurationExplanation,
+        controller: controller,
         hint: AppLocalizations.of(context).intervalInputHint,
       ),
       actions: [
@@ -3178,6 +3137,28 @@ class _SettingsPageState extends State<SettingsPage>
           floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
       ),
+    );
+  }
+
+  Widget _numberDialogContent({
+    required String explanation,
+    required TextEditingController controller,
+    required String hint,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          explanation,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacing3),
+        _numberField(controller, hint: hint),
+      ],
     );
   }
 

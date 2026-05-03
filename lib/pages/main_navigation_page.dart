@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/theme_service.dart';
 import '../widgets/ui_components.dart';
 import 'home_page.dart';
@@ -195,8 +196,15 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) return;
+        final bool shouldExit = await _onWillPop();
+        if (shouldExit) {
+          await SystemNavigator.pop();
+        }
+      },
       child: Scaffold(
         body: IndexedStack(index: _currentIndex, children: _pages),
         bottomNavigationBar: ValueListenableBuilder<bool>(
