@@ -320,6 +320,38 @@ dart run tool/i18n_audit.dart --update-baseline
 
 `flutter test` 会自动运行 `test/i18n_audit_test.dart`，用于阻止新的多语言回归。
 
+## 代码结构
+
+Flutter 代码已按分层架构整理：
+
+- `lib/app/`：应用入口装配、`MaterialApp`、全局路由与启动后的后台任务恢复
+- `lib/core/`：跨功能基础设施，包括主题、通用组件、日志、性能记录、生命周期、语言服务和通用工具
+- `lib/data/`：跨功能数据、平台与安全基础设施，例如数据库、路径、设置和安全存储
+- `lib/features/`：按功能收拢页面、组件与应用服务代码，例如应用选择、收藏、备份、AI、AI 对话、诊断、桌面合并、图库、搜索、存储分析、设置、权限、采集、NSFW、每日总结、夜间记忆与时间线
+- `lib/models/` 与 `lib/l10n/`：保留共享模型与生成的国际化代码
+
+Android 原生层已按职责建立子包，入口类保留在 `android/app/src/main/kotlin/com/fqyw/screen_memo/`，其余能力按下列目录组织：
+
+- `app/`：原生应用上下文基础设施
+- `capture/`：无障碍截屏、前台截屏服务、无障碍状态监控与桥接
+- `channel/`：Flutter `MethodChannel` 分发与低耦合原生能力适配
+- `daily/`：每日总结通知、调度、广播接收器与 Worker
+- `database/`：原生数据库辅助写入和查询
+- `diagnostics/`：运行诊断与 OEM 兼容信息
+- `dynamic/`：动态重建前台任务
+- `importing/`：导入后 OCR 修复任务
+- `logging/`：原生日志与输出日志
+- `memory/`：记忆重建通知
+- `network/`：原生网络客户端工厂
+- `permissions/`：权限引导与权限报告
+- `replay/`：时间线回放视频生成与通知
+- `segment/`：原生动态分段与段落总结
+- `service/`：启动、自恢复、保活相关 Service/Receiver
+- `settings/`：原生设置读写、AI 配置和每应用设置桥接
+- `storage/`：原生存储统计与迁移
+
+结构调整原则：优先做“移动文件 + 修复 import + 验证”，避免在目录迁移时同时重写业务逻辑。
+
 ## 贡献指南
 
 欢迎贡献代码、报告问题或提出建议。
