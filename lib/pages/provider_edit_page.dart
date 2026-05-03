@@ -460,7 +460,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     if (providerId == null) {
       UINotifier.warning(
         context,
-        'Please save the provider before refreshing models.',
+        AppLocalizations.of(context).providerSaveBeforeRefreshingModels,
       );
       return;
     }
@@ -884,16 +884,14 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   }
 
   Future<void> _openKeyDialog({AIProviderKey? key}) async {
+    final l10n = AppLocalizations.of(context);
     final providerId = _loaded?.id;
     if (providerId == null) {
-      UINotifier.warning(
-        context,
-        'Please save the provider before adding API keys.',
-      );
+      UINotifier.warning(context, l10n.providerSaveBeforeAddingKey);
       return;
     }
     final nameCtrl = TextEditingController(
-      text: key?.name ?? 'Key ${_keys.length + 1}',
+      text: key?.name ?? l10n.providerDefaultKeyName(_keys.length + 1),
     );
     final apiCtrl = TextEditingController(text: key?.apiKey ?? '');
     final priorityCtrl = TextEditingController(
@@ -947,7 +945,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     }) {
       if (total <= 1) {
         return fallbackName.trim().isEmpty
-            ? 'Current key'
+            ? l10n.providerKeyCurrent
             : fallbackName.trim();
       }
       return _keyNameForBatch(
@@ -999,10 +997,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       setDialogState(() {
         dialogFetching = true;
         dialogProgress = ProviderKeyBatchProgress(
-          phaseLabel: 'Fetch models',
+          phaseLabel: l10n.providerKeyProgressFetchModels,
           current: 0,
           total: apiKeys.length,
-          message: 'Preparing to scan ${apiKeys.length} API keys...',
+          message: l10n.providerKeyProgressPreparingScan(apiKeys.length),
         );
       });
 
@@ -1017,10 +1015,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           if (dialogContext.mounted) {
             setDialogState(() {
               dialogProgress = ProviderKeyBatchProgress(
-                phaseLabel: 'Fetch models',
+                phaseLabel: l10n.providerKeyProgressFetchModels,
                 current: i + 1,
                 total: apiKeys.length,
-                message: 'Fetching models for $label...',
+                message: l10n.providerKeyProgressFetchingModels(label),
               );
             });
           }
@@ -1044,7 +1042,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             }
           } catch (e) {
             final errorText = _clipDialogText(e.toString(), 120);
-            failureHints.add('$label model fetch failed: $errorText');
+            failureHints.add(
+              l10n.providerKeyProgressModelFetchFailed(label, errorText),
+            );
             try {
               await FlutterLogger.nativeWarn(
                 'AI',
@@ -1058,10 +1058,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             if (dialogContext.mounted) {
               setDialogState(() {
                 dialogProgress = ProviderKeyBatchProgress(
-                  phaseLabel: 'Fetch balance',
+                  phaseLabel: l10n.providerKeyProgressFetchBalance,
                   current: i + 1,
                   total: apiKeys.length,
-                  message: 'Fetching balance for $label...',
+                  message: l10n.providerKeyProgressFetchingBalance(label),
                 );
               });
             }
@@ -1072,21 +1072,25 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
               );
               fetchedBalancesByApiKey[apiKey] = balance;
               balanceSuccessCount++;
-              balanceMessage = ', balance: ${balance.display}';
+              balanceMessage = l10n.providerKeyProgressBalanceDisplay(
+                balance.display,
+              );
             } catch (e) {
               final errorText = _clipDialogText(e.toString(), 120);
-              balanceMessage = ', balance failed';
-              failureHints.add('$label balance fetch failed: $errorText');
+              balanceMessage = l10n.providerKeyProgressBalanceFailedShort;
+              failureHints.add(
+                l10n.providerKeyProgressBalanceFetchFailed(label, errorText),
+              );
             }
           }
 
           if (dialogContext.mounted) {
             final modelMessage = modelOk
-                ? '${fetched.length} models'
-                : 'model fetch failed, skipped';
+                ? l10n.providerKeyProgressModelsCount(fetched.length)
+                : l10n.providerKeyProgressModelFailedSkipped;
             setDialogState(() {
               dialogProgress = ProviderKeyBatchProgress(
-                phaseLabel: 'Scan keys',
+                phaseLabel: l10n.providerKeyProgressScanKeys,
                 current: i + 1,
                 total: apiKeys.length,
                 message: '$label: $modelMessage$balanceMessage',
@@ -1100,32 +1104,46 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           final fetchedCount = _mergeModelNames(<Iterable<String>>[
             fetchedModelPool,
           ]).length;
-          final balanceHint = provider.hasBalanceQuery
-              ? ', balance $balanceSuccessCount/${apiKeys.length}'
-              : '';
-          final failedHint = failureHints.isNotEmpty
-              ? ', ${failureHints.length} failed items'
-              : '';
           UINotifier.success(
             context,
-            'Model fetch complete: $modelSuccessCount/${apiKeys.length} keys succeeded, $fetchedCount models merged$balanceHint$failedHint',
+            provider.hasBalanceQuery
+                ? l10n.providerKeyFetchCompleteToast(
+                    modelSuccessCount,
+                    apiKeys.length,
+                    fetchedCount,
+                    balanceSuccessCount,
+                    apiKeys.length,
+                    failureHints.length,
+                  )
+                : l10n.providerKeyFetchCompleteToastNoBalance(
+                    modelSuccessCount,
+                    apiKeys.length,
+                    fetchedCount,
+                    failureHints.length,
+                  ),
           );
         } else {
-          UINotifier.error(
-            context,
-            'No key returned models. The current manual model list is unchanged.',
-          );
+          UINotifier.error(context, l10n.providerKeyNoModelsFetchedToast);
         }
       } finally {
         if (dialogContext.mounted) {
           setDialogState(() {
             dialogFetching = false;
             dialogProgress = ProviderKeyBatchProgress(
-              phaseLabel: 'Fetch complete',
+              phaseLabel: l10n.providerKeyProgressFetchComplete,
               current: apiKeys.length,
               total: apiKeys.length,
-              message:
-                  'Models $modelSuccessCount/${apiKeys.length}, balances $balanceSuccessCount/${provider.hasBalanceQuery ? apiKeys.length : 0}',
+              message: provider.hasBalanceQuery
+                  ? l10n.providerKeyProgressFetchCompleteMessage(
+                      modelSuccessCount,
+                      apiKeys.length,
+                      balanceSuccessCount,
+                      apiKeys.length,
+                    )
+                  : l10n.providerKeyProgressFetchCompleteMessageNoBalance(
+                      modelSuccessCount,
+                      apiKeys.length,
+                    ),
             );
           });
         }
@@ -1162,10 +1180,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       }
       final providerSnapshot = _currentProviderSnapshot();
       if (providerSnapshot == null) {
-        UINotifier.warning(
-          context,
-          'Please save the provider before adding API keys.',
-        );
+        UINotifier.warning(context, l10n.providerSaveBeforeAddingKey);
         return;
       }
       final priority =
@@ -1180,10 +1195,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           : const <String>[];
       final skipped = key == null ? apiKeys.length - keysToCreate.length : 0;
       if (key == null && keysToCreate.isEmpty) {
-        UINotifier.warning(
-          context,
-          'No new key: all entered API keys already exist.',
-        );
+        UINotifier.warning(context, l10n.providerNoNewApiKeyDuplicate);
         return;
       }
 
@@ -1195,10 +1207,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       setDialogState(() {
         dialogSaving = true;
         dialogProgress = ProviderKeyBatchProgress(
-          phaseLabel: 'Save keys',
+          phaseLabel: l10n.providerKeyProgressSaveKeys,
           current: 0,
           total: total,
-          message: 'Preparing to save...',
+          message: l10n.providerKeyProgressPreparingSave,
         );
       });
 
@@ -1215,10 +1227,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             if (dialogContext.mounted) {
               setDialogState(() {
                 dialogProgress = ProviderKeyBatchProgress(
-                  phaseLabel: 'Save keys',
+                  phaseLabel: l10n.providerKeyProgressSaveKeys,
                   current: i + 1,
                   total: total,
-                  message: 'Saving $keyName...',
+                  message: l10n.providerKeyProgressSaving(keyName),
                 );
               });
             }
@@ -1238,10 +1250,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
               if (dialogContext.mounted) {
                 setDialogState(() {
                   dialogProgress = ProviderKeyBatchProgress(
-                    phaseLabel: 'Save balance',
+                    phaseLabel: l10n.providerKeyProgressSaveBalance,
                     current: i + 1,
                     total: total,
-                    message: 'Saving balance for $keyName...',
+                    message: l10n.providerKeyProgressSavingBalance(keyName),
                   );
                 });
               }
@@ -1265,11 +1277,14 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           if (dialogContext.mounted) {
             setDialogState(() {
               dialogProgress = ProviderKeyBatchProgress(
-                phaseLabel: 'Save key',
+                phaseLabel: l10n.providerKeyProgressSaveKey,
                 current: 1,
                 total: 1,
-                message:
-                    'Saving ${nameCtrl.text.trim().isEmpty ? key.name : nameCtrl.text.trim()}...',
+                message: l10n.providerKeyProgressSaving(
+                  nameCtrl.text.trim().isEmpty
+                      ? key.name
+                      : nameCtrl.text.trim(),
+                ),
               );
             });
           }
@@ -1302,17 +1317,26 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
 
         await _reloadKeys();
         if (!mounted || !dialogContext.mounted) return;
-        final balanceHint = providerSnapshot.hasBalanceQuery
-            ? ', balance $balanceUpdatedCount/$savedCount'
-            : '';
-        final skippedHint = skipped > 0
-            ? ', skipped $skipped duplicate keys'
-            : '';
         UINotifier.success(
           context,
           key == null
-              ? 'Imported $savedCount API keys$balanceHint$skippedHint'
-              : 'API Key saved$balanceHint',
+              ? (providerSnapshot.hasBalanceQuery
+                    ? l10n.providerKeySaveSuccessNew(
+                        savedCount,
+                        balanceUpdatedCount,
+                        savedCount,
+                        skipped,
+                      )
+                    : l10n.providerKeySaveSuccessNewNoBalance(
+                        savedCount,
+                        skipped,
+                      ))
+              : (providerSnapshot.hasBalanceQuery
+                    ? l10n.providerKeySaveSuccessEdit(
+                        balanceUpdatedCount,
+                        savedCount,
+                      )
+                    : l10n.providerKeySaveSuccessEditNoBalance),
         );
         shouldCloseDialog = true;
         Navigator.of(dialogContext).pop(true);
@@ -1326,13 +1350,13 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         if (mounted) {
           UINotifier.error(
             context,
-            'Failed to save API Key: ${_clipDialogText(e.toString())}',
+            l10n.providerKeySaveFailedToast(_clipDialogText(e.toString())),
           );
         }
         if (dialogContext.mounted) {
           setDialogState(() {
             dialogProgress = ProviderKeyBatchProgress(
-              phaseLabel: 'Save failed',
+              phaseLabel: l10n.providerKeyProgressSaveFailed,
               current: savedCount,
               total: total,
               message: _clipDialogText(e.toString(), 160),
@@ -1355,9 +1379,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           final busy = dialogFetching || dialogSaving;
           return AlertDialog(
             title: Text(
-              key == null
-                  ? AppLocalizations.of(context).providerAddApiKey
-                  : AppLocalizations.of(context).providerEditApiKey,
+              key == null ? l10n.providerAddApiKey : l10n.providerEditApiKey,
             ),
             content: SizedBox(
               width: 560,
@@ -1368,13 +1390,15 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                   children: [
                     _buildKeyDialogTextField(
                       controller: nameCtrl,
-                      label: 'Key name',
+                      label: l10n.providerKeyNameLabel,
                     ),
                     _buildKeyDialogTextField(
                       controller: apiCtrl,
-                      label: key == null ? 'API Key (one per line)' : 'API Key',
+                      label: key == null
+                          ? l10n.providerApiKeyMultiLineLabel
+                          : l10n.providerApiKeySingleLineLabel,
                       hint: key == null
-                          ? 'One API Key per line. Fetch scans every key.'
+                          ? l10n.providerApiKeyMultiLineHint
                           : null,
                       obscure: key != null,
                       minLines: key == null ? 3 : 1,
@@ -1382,12 +1406,12 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                     ),
                     _buildKeyDialogTextField(
                       controller: priorityCtrl,
-                      label: 'Priority (100 = dynamic allocation)',
+                      label: l10n.providerKeyPriorityLabel,
                       keyboardType: TextInputType.number,
                     ),
                     _buildKeyDialogTextField(
                       controller: modelsCtrl,
-                      label: 'Supported models (one per line)',
+                      label: l10n.providerKeyModelsLabel,
                       minLines: 5,
                       maxLines: 10,
                     ),
@@ -2028,32 +2052,81 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              'API Key',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppTheme.spacing2,
+                runSpacing: AppTheme.spacing1,
+                children: [
+                  Text(
+                    'API Key',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: theme.colorScheme.outline.withValues(
+                          alpha: 0.65,
+                        ),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (balanceSummary != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: theme.colorScheme.outline.withValues(
+                            alpha: 0.35,
+                          ),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.account_balance_wallet_outlined,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            balanceSummary,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: AppTheme.spacing2),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: theme.colorScheme.outline.withValues(alpha: 0.65),
-                  width: 1,
-                ),
-              ),
-              child: Text(
-                badgeText,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const Spacer(),
             PopupMenuButton<_ProviderKeySortMode>(
               initialValue: _keySortMode,
               onSelected: (mode) => setState(() => _keySortMode = mode),
@@ -2093,43 +2166,6 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             ),
           ],
         ),
-        if (balanceSummary != null) ...[
-          const SizedBox(height: AppTheme.spacing3),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.spacing3,
-              vertical: AppTheme.spacing2,
-            ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.22,
-              ),
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              border: Border.all(
-                color: theme.colorScheme.outline.withValues(alpha: 0.35),
-                width: 0.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_balance_wallet_outlined,
-                  size: 17,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  balanceSummary,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
         const SizedBox(height: AppTheme.spacing4),
         Row(
           children: [
