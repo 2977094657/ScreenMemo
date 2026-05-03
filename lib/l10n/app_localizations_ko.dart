@@ -403,7 +403,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get segmentSummarySectionTitle => '다이내믹 설정';
 
   @override
-  String get segmentSummarySectionDesc => '샘플링 / 길이 / 병합 / AI 요청 간격';
+  String get segmentSummarySectionDesc => '샘플링/길이/AI 간격';
 
   @override
   String get dailyReminderSectionTitle => '일일 요약 알림';
@@ -3230,6 +3230,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get rawResponseCleanupEnableAction => '사용하고 지금 정리';
 
   @override
+  String get segmentsJsonAutoRetryTitle => '자동 재시도 횟수';
+
+  @override
+  String get segmentsJsonAutoRetryDesc =>
+      'AI가 앱 요구사항에 맞지 않는 동적 요약을 반환할 때 자동으로 재시도할 횟수입니다(0=끄기, 기본값 1).';
+
+  @override
   String get segmentsJsonAutoRetryHint => '횟수(0-5)';
 
   @override
@@ -3283,211 +3290,263 @@ class AppLocalizationsKo extends AppLocalizations {
   String get actualBatteryOptimizationStatusTitle => '실제 배터리 최적화 상태';
 
   @override
-  String get keyDialogProviderNotSavedHint => 'API 키를 추가하기 전에 공급자를 저장하세요.';
+  String get providerSaveBeforeAddingKey => 'API Key를 추가하기 전에 제공자를 먼저 저장하세요.';
 
   @override
-  String get keyDialogNameLabel => '키 이름';
+  String get providerSaveBeforeRefreshingModels =>
+      '모델을 새로고침하기 전에 제공자를 먼저 저장하세요.';
 
   @override
-  String get keyDialogApiKeyLabel => 'API 키';
-
-  @override
-  String get keyDialogApiKeyLabelMulti => 'API 키 (한 줄에 하나)';
-
-  @override
-  String get keyDialogApiKeyHintMulti => '한 줄에 하나의 API 키. 가져오기는 모든 키를 스캔합니다.';
-
-  @override
-  String get keyDialogPriorityLabel => '우선 순위 (100 = 동적 할당)';
-
-  @override
-  String get keyDialogModelsLabel => '지원 모델 (한 줄에 하나)';
-
-  @override
-  String get keyDialogPhaseFetchModels => '모델 가져오기';
-
-  @override
-  String get keyDialogPhaseFetchBalance => '잔액 가져오기';
-
-  @override
-  String get keyDialogPhaseScanKeys => '키 스캔';
-
-  @override
-  String get keyDialogPhaseSaveKeys => '키 저장';
-
-  @override
-  String get keyDialogPhaseSaveKey => '키 저장';
-
-  @override
-  String get keyDialogPhaseSaveBalance => '잔액 저장';
-
-  @override
-  String get keyDialogPhaseFetchComplete => '가져오기 완료';
-
-  @override
-  String get keyDialogPhaseSaveFailed => '저장 실패';
-
-  @override
-  String get keyDialogFallbackKeyName => '현재 키';
-
-  @override
-  String keyDialogPreparingScan(int count) {
-    return '$count개의 API 키를 스캔 준비 중…';
+  String providerDefaultKeyName(Object count) {
+    return 'Key $count';
   }
 
   @override
-  String keyDialogFetchingModelsFor(String label) {
-    return '$label의 모델 가져오는 중…';
+  String get providerKeyCurrent => '현재 Key';
+
+  @override
+  String get providerNoNewApiKeyDuplicate =>
+      '새 Key가 없습니다. 입력한 API Key가 모두 이미 존재합니다.';
+
+  @override
+  String get providerKeyNameLabel => 'Key 이름';
+
+  @override
+  String get providerApiKeyMultiLineLabel => 'API Key(한 줄에 하나)';
+
+  @override
+  String get providerApiKeySingleLineLabel => 'API Key';
+
+  @override
+  String get providerApiKeyMultiLineHint =>
+      '한 줄에 하나의 API Key를 입력하세요. 가져오기 시 각 Key를 순서대로 확인합니다.';
+
+  @override
+  String get providerKeyPriorityLabel => '우선순위(100 = 동적 할당)';
+
+  @override
+  String get providerKeyModelsLabel => '지원 모델(한 줄에 하나)';
+
+  @override
+  String get providerKeyProgressFetchModels => '모델 가져오기';
+
+  @override
+  String get providerKeyProgressFetchBalance => '잔액 가져오기';
+
+  @override
+  String get providerKeyProgressScanKeys => 'Key 스캔';
+
+  @override
+  String get providerKeyProgressFetchComplete => '가져오기 완료';
+
+  @override
+  String get providerKeyProgressSaveKeys => 'Key 저장';
+
+  @override
+  String get providerKeyProgressSaveKey => 'Key 저장';
+
+  @override
+  String get providerKeyProgressSaveBalance => '잔액 저장';
+
+  @override
+  String get providerKeyProgressSaveFailed => '저장 실패';
+
+  @override
+  String providerKeyProgressPreparingScan(Object count) {
+    return 'API Key $count개 스캔 준비 중...';
   }
 
   @override
-  String keyDialogFetchingBalanceFor(String label) {
-    return '$label의 잔액 가져오는 중…';
+  String providerKeyProgressFetchingModels(Object label) {
+    return '$label의 모델을 가져오는 중...';
   }
 
   @override
-  String keyDialogModelFetchFailed(String label, String error) {
+  String providerKeyProgressFetchingBalance(Object label) {
+    return '$label의 잔액을 가져오는 중...';
+  }
+
+  @override
+  String providerKeyProgressModelFetchFailed(Object label, Object error) {
     return '$label 모델 가져오기 실패: $error';
   }
 
   @override
-  String keyDialogBalanceFetchFailed(String label, String error) {
+  String providerKeyProgressBalanceFetchFailed(Object label, Object error) {
     return '$label 잔액 가져오기 실패: $error';
   }
 
   @override
-  String keyDialogModelsCountText(int count) {
-    return '$count개 모델';
+  String providerKeyProgressBalanceDisplay(Object display) {
+    return ', 잔액: $display';
   }
 
   @override
-  String get keyDialogModelFetchSkipped => '모델 가져오기 실패, 건너뜀';
+  String get providerKeyProgressBalanceFailedShort => ', 잔액 가져오기 실패';
 
   @override
-  String keyDialogBalanceSuffixSuccess(String value) {
-    return ', 잔액: $value';
+  String providerKeyProgressModelsCount(Object count) {
+    return '모델 $count개';
   }
 
   @override
-  String get keyDialogBalanceSuffixFailed => ', 잔액 실패';
+  String get providerKeyProgressModelFailedSkipped => '모델 가져오기 실패로 건너뜀';
 
   @override
-  String keyDialogScanLine(
-    String label,
-    String modelMessage,
-    String balanceMessage,
+  String providerKeyFetchCompleteToast(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object balanceSuccess,
+    Object balanceTotal,
+    Object failedCount,
   ) {
-    return '$label: $modelMessage$balanceMessage';
+    return '모델 가져오기 완료: $modelSuccess/$total개 Key 성공, 모델 $fetchedCount개 병합, 잔액 $balanceSuccess/$balanceTotal, 실패 항목 $failedCount';
   }
 
   @override
-  String keyDialogModelFetchSummarySuccess(
-    int ok,
-    int total,
-    int merged,
-    String balanceHint,
-    String failedHint,
+  String get providerKeyNoModelsFetchedToast =>
+      '모델을 반환한 Key가 없습니다. 현재 수동 모델 목록은 변경되지 않습니다.';
+
+  @override
+  String providerKeyProgressFetchCompleteMessage(
+    Object modelSuccess,
+    Object total,
+    Object balanceSuccess,
+    Object balanceTotal,
   ) {
-    return '모델 가져오기 완료: $ok/$total 키 성공, $merged개 모델 병합$balanceHint$failedHint';
+    return '모델 $modelSuccess/$total, 잔액 $balanceSuccess/$balanceTotal';
   }
 
   @override
-  String get keyDialogModelFetchSummaryNone =>
-      '어떤 키에서도 모델을 반환하지 않았습니다. 현재 수동 모델 목록은 변경되지 않습니다.';
+  String get providerKeyProgressPreparingSave => '저장 준비 중...';
 
   @override
-  String get keyDialogPreparingSave => '저장 준비 중…';
-
-  @override
-  String keyDialogSavingItem(String label) {
-    return '$label 저장 중…';
+  String providerKeyProgressSaving(Object label) {
+    return '$label 저장 중...';
   }
 
   @override
-  String keyDialogSavingBalanceItem(String label) {
-    return '$label의 잔액 저장 중…';
+  String providerKeyProgressSavingBalance(Object label) {
+    return '$label의 잔액 저장 중...';
   }
 
   @override
-  String keyDialogImportedKeys(
-    int count,
-    String balanceHint,
-    String skippedHint,
+  String providerKeySaveSuccessNew(
+    Object saved,
+    Object balanceUpdated,
+    Object balanceTotal,
+    Object skipped,
   ) {
-    return '$count개의 API 키를 가져왔습니다$balanceHint$skippedHint';
+    return 'API Key $saved개를 가져왔습니다. 잔액 $balanceUpdated/$balanceTotal, 중복 $skipped개 건너뜀';
   }
 
   @override
-  String keyDialogApiKeySaved(String balanceHint) {
-    return 'API 키 저장됨$balanceHint';
-  }
-
-  @override
-  String get keyDialogNoNewKey => '새 키 없음: 입력한 API 키가 모두 이미 존재합니다.';
-
-  @override
-  String keyDialogSaveFailed(String error) {
-    return 'API 키 저장 실패: $error';
-  }
-
-  @override
-  String keyDialogBalanceHintFraction(int ok, int total) {
-    return ', 잔액 $ok/$total';
-  }
-
-  @override
-  String keyDialogSkippedDuplicates(int count) {
-    return ', 중복 키 $count개 건너뜀';
-  }
-
-  @override
-  String keyDialogFailedItemsHint(int count) {
-    return ', $count개 실패';
-  }
-
-  @override
-  String keyDialogFinalSummary(
-    int modelOk,
-    int modelTotal,
-    int balanceOk,
-    int balanceTotal,
+  String providerKeySaveSuccessEdit(
+    Object balanceUpdated,
+    Object balanceTotal,
   ) {
-    return '모델 $modelOk/$modelTotal, 잔액 $balanceOk/$balanceTotal';
+    return 'API Key를 저장했습니다. 잔액 $balanceUpdated/$balanceTotal';
   }
 
   @override
-  String get segmentSampleIntervalExplain =>
-      '단일 세그먼트 요약을 생성할 때 스크린샷을 샘플링하는 간격입니다. 값이 작을수록 더 많은 세부 정보를 포착하지만 토큰 사용량이 늘어납니다. 값이 클수록 비용이 절감되지만 짧은 이벤트를 놓칠 수 있습니다.';
-
-  @override
-  String get segmentDurationExplain =>
-      '단일 다이내믹 세그먼트의 최대 길이입니다. 이 시간을 초과하면 활동이 계속되더라도 새 세그먼트를 시작합니다. 짧을수록 세부 요약, 길수록 넓은 맥락이 됩니다.';
-
-  @override
-  String get dynamicMergeMaxSpanExplain =>
-      '인접한 여러 다이내믹 세그먼트가 하나의 요약으로 병합될 수 있는 최대 시간 범위입니다. 0으로 설정하면 제한이 없습니다.';
-
-  @override
-  String get dynamicMergeMaxGapExplain =>
-      '인접한 두 다이내믹 세그먼트 사이에 허용되는 최대 공백 시간입니다. 이를 초과하면 병합되지 않습니다. 0으로 설정하면 제한이 없습니다.';
-
-  @override
-  String get dynamicMergeMaxImagesExplain =>
-      '한 번의 병합 요약에 모델로 전달되는 스크린샷의 최대 수입니다. 값이 클수록 더 많은 맥락이 제공되지만 비용과 지연 시간이 증가합니다. 0으로 설정하면 제한이 없습니다.';
-
-  @override
-  String get aiRequestIntervalExplain =>
-      '앱이 보내는 AI 요청 사이의 최소 간격입니다. 공급자가 속도 제한을 적용하거나 전체 사용량을 줄이려면 값을 늘리세요.';
-
-  @override
-  String get segmentsJsonAutoRetryTitle => '자동 재시도 횟수';
-
-  @override
-  String segmentsJsonAutoRetryDesc(int count) {
-    return 'AI 응답이 요구되는 형식과 일치하지 않을 때 자동으로 재요청하는 횟수입니다 (0 = 끔, 기본값 1). 현재: $count';
+  String providerKeySaveFailedToast(Object error) {
+    return 'API Key 저장 실패: $error';
   }
 
   @override
-  String get segmentsJsonAutoRetryExplain =>
-      'AI는 가끔 파싱할 수 없거나 필요한 구조와 일치하지 않는 내용을 반환합니다. 그럴 때 앱은 설정된 횟수만큼 자동으로 재요청하여 성공률을 높이지만, 시간과 토큰을 더 소비합니다.';
+  String get dynamicSettingSampleExplanation =>
+      '동적 재구성의 샘플링 간격을 제어합니다. 간격이 짧을수록 더 세밀하게 기록되지만 스크린샷 수와 AI 처리량이 늘어납니다.';
+
+  @override
+  String get dynamicSettingDurationExplanation =>
+      '하나의 동적 조각이 포함하는 시간을 제어합니다. 시간이 길수록 한 번의 요약에 더 많은 맥락이 포함됩니다.';
+
+  @override
+  String get dynamicSettingMergeMaxSpanExplanation =>
+      '병합할 수 있는 동적 기록의 전체 시간 범위를 제한합니다. 0은 제한 없음입니다.';
+
+  @override
+  String get dynamicSettingMergeMaxGapExplanation =>
+      '인접한 두 동적 조각을 병합할 수 있는 최대 간격을 제한합니다. 0은 제한 없음입니다.';
+
+  @override
+  String get dynamicSettingMergeMaxImagesExplanation =>
+      '한 번의 병합에 포함할 최대 스크린샷 수를 제한합니다. 0은 제한 없음입니다.';
+
+  @override
+  String get dynamicSettingAiRequestIntervalExplanation =>
+      '동적 재구성이 AI에 요청을 보내는 최소 간격을 제한해 너무 잦은 요청을 방지합니다.';
+
+  @override
+  String get dynamicSettingAutoRetryExplanation =>
+      'AI가 앱 요구사항에 맞지 않는 내용을 반환하면 앱이 자동으로 재시도합니다. 횟수가 많을수록 안정적이지만 시간과 사용량이 늘어납니다.';
+
+  @override
+  String get dynamicSettingRawResponseRetentionExplanation =>
+      'AI 원본 응답을 보관할 일수를 제어합니다. 만료 후에는 원본 응답만 정리되며 생성된 요약에는 영향을 주지 않습니다.';
+
+  @override
+  String get promptManagerReadOnlyBadge => '읽기 전용';
+
+  @override
+  String get promptManagerEditingBadge => '편집 중';
+
+  @override
+  String get promptAddonOptionalLabel => '선택 사항';
+
+  @override
+  String promptAddonCharCount(Object count) {
+    return '$count자';
+  }
+
+  @override
+  String promptAddonCharCountLimit(Object count, Object max) {
+    return '$count / $max';
+  }
+
+  @override
+  String get promptManagerSupportsPlainText => '일반 텍스트 지원';
+
+  @override
+  String promptAddonTooLongError(Object max) {
+    return '추가 설명은 $max자를 초과할 수 없습니다.';
+  }
+
+  @override
+  String providerKeyFetchCompleteToastNoBalance(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object failedCount,
+  ) {
+    return '모델 가져오기 완료: $modelSuccess/$total개 Key 성공, 모델 $fetchedCount개 병합, 실패 항목 $failedCount';
+  }
+
+  @override
+  String providerKeyProgressFetchCompleteMessageNoBalance(
+    Object modelSuccess,
+    Object total,
+  ) {
+    return '모델 $modelSuccess/$total';
+  }
+
+  @override
+  String providerKeySaveSuccessNewNoBalance(Object saved, Object skipped) {
+    return 'API Key $saved개를 가져왔습니다. 중복 $skipped개 건너뜀';
+  }
+
+  @override
+  String get providerKeySaveSuccessEditNoBalance => 'API Key를 저장했습니다';
+
+  @override
+  String settingCurrentValue(Object value) {
+    return '현재: $value';
+  }
+
+  @override
+  String get savedMorningPromptToast => '아침 인사이트 프롬프트를 저장했습니다';
+
+  @override
+  String get promptAddonSectionTitle => '추가 설명';
 }

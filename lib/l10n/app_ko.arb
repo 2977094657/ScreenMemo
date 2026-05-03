@@ -169,7 +169,7 @@
   "displayAndSortSectionTitle": "디스플레이 및 정렬",
   "screenshotSectionTitle": "캡처 설정",
   "screenshotSectionDesc": "간격/품질/만료 정리",
-  "segmentSummarySectionTitle": "세그먼트 요약",
+  "segmentSummarySectionTitle": "다이내믹 설정",
   "segmentSummarySectionDesc": "샘플링/길이/AI 간격",
   "dailyReminderSectionTitle": "일일 요약 알림",
   "dailyReminderSectionDesc": "시간/배너 권한/테스트",
@@ -1719,7 +1719,7 @@
   },
   "rawResponseCleanupEnableAction": "사용하고 지금 정리",
   "segmentsJsonAutoRetryTitle": "자동 재시도 횟수",
-  "segmentsJsonAutoRetryDesc": "동적 요약 structured_json 파싱에 실패했을 때의 자동 재시도 횟수입니다(0=끄기, 기본 1).",
+  "segmentsJsonAutoRetryDesc": "AI가 앱 요구사항에 맞지 않는 동적 요약을 반환할 때 자동으로 재시도할 횟수입니다(0=끄기, 기본값 1).",
   "segmentsJsonAutoRetryHint": "횟수(0-5)",
   "rawResponseCleanupTitle": "원본 응답 자동 정리",
   "rawResponseCleanupKeepLabel": "보관",
@@ -1745,5 +1745,194 @@
   "permissionConfiguredStatus": "설정됨",
   "permissionNeedsConfigurationStatus": "설정 필요",
   "backgroundPermissionTitle": "백그라운드 실행 권한",
-  "actualBatteryOptimizationStatusTitle": "실제 배터리 최적화 상태"
+  "actualBatteryOptimizationStatusTitle": "실제 배터리 최적화 상태",
+  "providerSaveBeforeAddingKey": "API Key를 추가하기 전에 제공자를 먼저 저장하세요.",
+  "providerSaveBeforeRefreshingModels": "모델을 새로고침하기 전에 제공자를 먼저 저장하세요.",
+  "providerDefaultKeyName": "Key {count}",
+  "@providerDefaultKeyName": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyCurrent": "현재 Key",
+  "providerNoNewApiKeyDuplicate": "새 Key가 없습니다. 입력한 API Key가 모두 이미 존재합니다.",
+  "providerKeyNameLabel": "Key 이름",
+  "providerApiKeyMultiLineLabel": "API Key(한 줄에 하나)",
+  "providerApiKeySingleLineLabel": "API Key",
+  "providerApiKeyMultiLineHint": "한 줄에 하나의 API Key를 입력하세요. 가져오기 시 각 Key를 순서대로 확인합니다.",
+  "providerKeyPriorityLabel": "우선순위(100 = 동적 할당)",
+  "providerKeyModelsLabel": "지원 모델(한 줄에 하나)",
+  "providerKeyProgressFetchModels": "모델 가져오기",
+  "providerKeyProgressFetchBalance": "잔액 가져오기",
+  "providerKeyProgressScanKeys": "Key 스캔",
+  "providerKeyProgressFetchComplete": "가져오기 완료",
+  "providerKeyProgressSaveKeys": "Key 저장",
+  "providerKeyProgressSaveKey": "Key 저장",
+  "providerKeyProgressSaveBalance": "잔액 저장",
+  "providerKeyProgressSaveFailed": "저장 실패",
+  "providerKeyProgressPreparingScan": "API Key {count}개 스캔 준비 중...",
+  "@providerKeyProgressPreparingScan": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressFetchingModels": "{label}의 모델을 가져오는 중...",
+  "@providerKeyProgressFetchingModels": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressFetchingBalance": "{label}의 잔액을 가져오는 중...",
+  "@providerKeyProgressFetchingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressModelFetchFailed": "{label} 모델 가져오기 실패: {error}",
+  "@providerKeyProgressModelFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceFetchFailed": "{label} 잔액 가져오기 실패: {error}",
+  "@providerKeyProgressBalanceFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceDisplay": ", 잔액: {display}",
+  "@providerKeyProgressBalanceDisplay": {
+    "placeholders": {
+      "display": {}
+    }
+  },
+  "providerKeyProgressBalanceFailedShort": ", 잔액 가져오기 실패",
+  "providerKeyProgressModelsCount": "모델 {count}개",
+  "@providerKeyProgressModelsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressModelFailedSkipped": "모델 가져오기 실패로 건너뜀",
+  "providerKeyFetchCompleteToast": "모델 가져오기 완료: {modelSuccess}/{total}개 Key 성공, 모델 {fetchedCount}개 병합, 잔액 {balanceSuccess}/{balanceTotal}, 실패 항목 {failedCount}",
+  "@providerKeyFetchCompleteToast": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "balanceSuccess": {},
+      "balanceTotal": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyNoModelsFetchedToast": "모델을 반환한 Key가 없습니다. 현재 수동 모델 목록은 변경되지 않습니다.",
+  "providerKeyProgressFetchCompleteMessage": "모델 {modelSuccess}/{total}, 잔액 {balanceSuccess}/{balanceTotal}",
+  "@providerKeyProgressFetchCompleteMessage": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "balanceSuccess": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeyProgressPreparingSave": "저장 준비 중...",
+  "providerKeyProgressSaving": "{label} 저장 중...",
+  "@providerKeyProgressSaving": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressSavingBalance": "{label}의 잔액 저장 중...",
+  "@providerKeyProgressSavingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeySaveSuccessNew": "API Key {saved}개를 가져왔습니다. 잔액 {balanceUpdated}/{balanceTotal}, 중복 {skipped}개 건너뜀",
+  "@providerKeySaveSuccessNew": {
+    "placeholders": {
+      "saved": {},
+      "balanceUpdated": {},
+      "balanceTotal": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEdit": "API Key를 저장했습니다. 잔액 {balanceUpdated}/{balanceTotal}",
+  "@providerKeySaveSuccessEdit": {
+    "placeholders": {
+      "balanceUpdated": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeySaveFailedToast": "API Key 저장 실패: {error}",
+  "@providerKeySaveFailedToast": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "dynamicSettingSampleExplanation": "동적 재구성의 샘플링 간격을 제어합니다. 간격이 짧을수록 더 세밀하게 기록되지만 스크린샷 수와 AI 처리량이 늘어납니다.",
+  "dynamicSettingDurationExplanation": "하나의 동적 조각이 포함하는 시간을 제어합니다. 시간이 길수록 한 번의 요약에 더 많은 맥락이 포함됩니다.",
+  "dynamicSettingMergeMaxSpanExplanation": "병합할 수 있는 동적 기록의 전체 시간 범위를 제한합니다. 0은 제한 없음입니다.",
+  "dynamicSettingMergeMaxGapExplanation": "인접한 두 동적 조각을 병합할 수 있는 최대 간격을 제한합니다. 0은 제한 없음입니다.",
+  "dynamicSettingMergeMaxImagesExplanation": "한 번의 병합에 포함할 최대 스크린샷 수를 제한합니다. 0은 제한 없음입니다.",
+  "dynamicSettingAiRequestIntervalExplanation": "동적 재구성이 AI에 요청을 보내는 최소 간격을 제한해 너무 잦은 요청을 방지합니다.",
+  "dynamicSettingAutoRetryExplanation": "AI가 앱 요구사항에 맞지 않는 내용을 반환하면 앱이 자동으로 재시도합니다. 횟수가 많을수록 안정적이지만 시간과 사용량이 늘어납니다.",
+  "dynamicSettingRawResponseRetentionExplanation": "AI 원본 응답을 보관할 일수를 제어합니다. 만료 후에는 원본 응답만 정리되며 생성된 요약에는 영향을 주지 않습니다.",
+  "promptManagerReadOnlyBadge": "읽기 전용",
+  "promptManagerEditingBadge": "편집 중",
+  "promptAddonOptionalLabel": "선택 사항",
+  "promptAddonCharCount": "{count}자",
+  "@promptAddonCharCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "promptAddonCharCountLimit": "{count} / {max}",
+  "@promptAddonCharCountLimit": {
+    "placeholders": {
+      "count": {},
+      "max": {}
+    }
+  },
+  "promptManagerSupportsPlainText": "일반 텍스트 지원",
+  "promptAddonTooLongError": "추가 설명은 {max}자를 초과할 수 없습니다.",
+  "@promptAddonTooLongError": {
+    "placeholders": {
+      "max": {}
+    }
+  },
+  "providerKeyFetchCompleteToastNoBalance": "모델 가져오기 완료: {modelSuccess}/{total}개 Key 성공, 모델 {fetchedCount}개 병합, 실패 항목 {failedCount}",
+  "@providerKeyFetchCompleteToastNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyProgressFetchCompleteMessageNoBalance": "모델 {modelSuccess}/{total}",
+  "@providerKeyProgressFetchCompleteMessageNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {}
+    }
+  },
+  "providerKeySaveSuccessNewNoBalance": "API Key {saved}개를 가져왔습니다. 중복 {skipped}개 건너뜀",
+  "@providerKeySaveSuccessNewNoBalance": {
+    "placeholders": {
+      "saved": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEditNoBalance": "API Key를 저장했습니다",
+  "settingCurrentValue": "현재: {value}",
+  "@settingCurrentValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "savedMorningPromptToast": "아침 인사이트 프롬프트를 저장했습니다",
+  "promptAddonSectionTitle": "추가 설명"
 }

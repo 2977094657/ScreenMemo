@@ -171,7 +171,7 @@
   "displayAndSortSectionTitle": "Display & Sorting",
   "screenshotSectionTitle": "Capture settings",
   "screenshotSectionDesc": "Interval, quality, expiration",
-  "segmentSummarySectionTitle": "Segment summary",
+  "segmentSummarySectionTitle": "Dynamic settings",
   "segmentSummarySectionDesc": "Sampling, duration, AI throttle",
   "dailyReminderSectionTitle": "Daily summary reminder",
   "dailyReminderSectionDesc": "Time, banner permission, test",
@@ -1719,7 +1719,7 @@
   },
   "rawResponseCleanupEnableAction": "Enable & Clean Now",
   "segmentsJsonAutoRetryTitle": "Auto Retry Times",
-  "segmentsJsonAutoRetryDesc": "Auto retry times when segment structured_json fails to parse (0=off, default 1).",
+  "segmentsJsonAutoRetryDesc": "How many times to retry when the AI returns a dynamic summary that does not meet the app requirements (0 = off, default 1).",
   "segmentsJsonAutoRetryHint": "Times (0-5)",
   "rawResponseCleanupTitle": "Auto Clean Raw Responses",
   "rawResponseCleanupKeepLabel": "Keep",
@@ -1745,5 +1745,194 @@
   "permissionConfiguredStatus": "Configured",
   "permissionNeedsConfigurationStatus": "Needs configuration",
   "backgroundPermissionTitle": "Background run permission",
-  "actualBatteryOptimizationStatusTitle": "Actual battery optimization status"
+  "actualBatteryOptimizationStatusTitle": "Actual battery optimization status",
+  "providerSaveBeforeAddingKey": "Please save the provider before adding API keys.",
+  "providerSaveBeforeRefreshingModels": "Please save the provider before refreshing models.",
+  "providerDefaultKeyName": "Key {count}",
+  "@providerDefaultKeyName": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyCurrent": "Current key",
+  "providerNoNewApiKeyDuplicate": "No new key: all entered API keys already exist.",
+  "providerKeyNameLabel": "Key name",
+  "providerApiKeyMultiLineLabel": "API Key (one per line)",
+  "providerApiKeySingleLineLabel": "API Key",
+  "providerApiKeyMultiLineHint": "One API Key per line. Fetch scans every key.",
+  "providerKeyPriorityLabel": "Priority (100 = dynamic allocation)",
+  "providerKeyModelsLabel": "Supported models (one per line)",
+  "providerKeyProgressFetchModels": "Fetch models",
+  "providerKeyProgressFetchBalance": "Fetch balance",
+  "providerKeyProgressScanKeys": "Scan keys",
+  "providerKeyProgressFetchComplete": "Fetch complete",
+  "providerKeyProgressSaveKeys": "Save keys",
+  "providerKeyProgressSaveKey": "Save key",
+  "providerKeyProgressSaveBalance": "Save balance",
+  "providerKeyProgressSaveFailed": "Save failed",
+  "providerKeyProgressPreparingScan": "Preparing to scan {count} API keys...",
+  "@providerKeyProgressPreparingScan": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressFetchingModels": "Fetching models for {label}...",
+  "@providerKeyProgressFetchingModels": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressFetchingBalance": "Fetching balance for {label}...",
+  "@providerKeyProgressFetchingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressModelFetchFailed": "{label} model fetch failed: {error}",
+  "@providerKeyProgressModelFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceFetchFailed": "{label} balance fetch failed: {error}",
+  "@providerKeyProgressBalanceFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceDisplay": ", balance: {display}",
+  "@providerKeyProgressBalanceDisplay": {
+    "placeholders": {
+      "display": {}
+    }
+  },
+  "providerKeyProgressBalanceFailedShort": ", balance failed",
+  "providerKeyProgressModelsCount": "{count} models",
+  "@providerKeyProgressModelsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressModelFailedSkipped": "model fetch failed, skipped",
+  "providerKeyFetchCompleteToast": "Model fetch complete: {modelSuccess}/{total} keys succeeded, {fetchedCount} models merged, balance {balanceSuccess}/{balanceTotal}, failed items {failedCount}",
+  "@providerKeyFetchCompleteToast": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "balanceSuccess": {},
+      "balanceTotal": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyNoModelsFetchedToast": "No key returned models. The current manual model list is unchanged.",
+  "providerKeyProgressFetchCompleteMessage": "Models {modelSuccess}/{total}, balances {balanceSuccess}/{balanceTotal}",
+  "@providerKeyProgressFetchCompleteMessage": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "balanceSuccess": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeyProgressPreparingSave": "Preparing to save...",
+  "providerKeyProgressSaving": "Saving {label}...",
+  "@providerKeyProgressSaving": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressSavingBalance": "Saving balance for {label}...",
+  "@providerKeyProgressSavingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeySaveSuccessNew": "Imported {saved} API keys, balance {balanceUpdated}/{balanceTotal}, skipped {skipped} duplicate keys",
+  "@providerKeySaveSuccessNew": {
+    "placeholders": {
+      "saved": {},
+      "balanceUpdated": {},
+      "balanceTotal": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEdit": "API Key saved, balance {balanceUpdated}/{balanceTotal}",
+  "@providerKeySaveSuccessEdit": {
+    "placeholders": {
+      "balanceUpdated": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeySaveFailedToast": "Failed to save API Key: {error}",
+  "@providerKeySaveFailedToast": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "dynamicSettingSampleExplanation": "Controls how often screenshots are sampled for dynamic summaries. Shorter intervals keep finer details but take more time and AI cost.",
+  "dynamicSettingDurationExplanation": "Controls the time span covered by each dynamic entry. Shorter spans are more detailed; longer spans are better for quick review.",
+  "dynamicSettingMergeMaxSpanExplanation": "Controls the total time span that merged dynamic entries may cover. Set to 0 for unlimited.",
+  "dynamicSettingMergeMaxGapExplanation": "Controls the maximum allowed gap between two entries that can be merged. Set to 0 for unlimited.",
+  "dynamicSettingMergeMaxImagesExplanation": "Controls the maximum number of images included when merging dynamic entries. Set to 0 for unlimited.",
+  "dynamicSettingAiRequestIntervalExplanation": "Controls the minimum interval between dynamic summary AI requests to reduce rate limits and cost spikes.",
+  "dynamicSettingAutoRetryExplanation": "When the AI returns content that does not meet app requirements, the app can request again automatically. Higher values may fix more failures but increase wait time and cost.",
+  "dynamicSettingRawResponseRetentionExplanation": "Controls how many days raw AI responses are retained. Shorter retention saves storage but leaves less information for troubleshooting.",
+  "promptManagerReadOnlyBadge": "Read only",
+  "promptManagerEditingBadge": "Editing",
+  "promptAddonOptionalLabel": "Optional",
+  "promptAddonCharCount": "{count} chars",
+  "@promptAddonCharCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "promptAddonCharCountLimit": "{count} / {max}",
+  "@promptAddonCharCountLimit": {
+    "placeholders": {
+      "count": {},
+      "max": {}
+    }
+  },
+  "promptManagerSupportsPlainText": "Plain text supported",
+  "promptAddonTooLongError": "Extra instructions cannot exceed {max} characters.",
+  "@promptAddonTooLongError": {
+    "placeholders": {
+      "max": {}
+    }
+  },
+  "providerKeyFetchCompleteToastNoBalance": "Model fetch complete: {modelSuccess}/{total} keys succeeded, {fetchedCount} models merged, failed items {failedCount}",
+  "@providerKeyFetchCompleteToastNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyProgressFetchCompleteMessageNoBalance": "Models {modelSuccess}/{total}",
+  "@providerKeyProgressFetchCompleteMessageNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {}
+    }
+  },
+  "providerKeySaveSuccessNewNoBalance": "Imported {saved} API keys, skipped {skipped} duplicate keys",
+  "@providerKeySaveSuccessNewNoBalance": {
+    "placeholders": {
+      "saved": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEditNoBalance": "API Key saved",
+  "settingCurrentValue": "Current: {value}",
+  "@settingCurrentValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "savedMorningPromptToast": "Morning prompt saved",
+  "promptAddonSectionTitle": "Extra instructions"
 }

@@ -394,7 +394,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get segmentSummarySectionTitle => '动态设置';
 
   @override
-  String get segmentSummarySectionDesc => '采样 / 时长 / 合并 / AI 请求间隔';
+  String get segmentSummarySectionDesc => '采样/时长/AI 请求间隔';
 
   @override
   String get dailyReminderSectionTitle => '每日总结提醒';
@@ -2715,10 +2715,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get providerOnlyOneApiKeyCanEdit => '一次只能编辑一个 API Key';
 
   @override
-  String get providerAddApiKey => 'Add API Key';
+  String get providerAddApiKey => '添加 API Key';
 
   @override
-  String get providerEditApiKey => 'Edit API Key';
+  String get providerEditApiKey => '编辑 API Key';
 
   @override
   String get providerFetchModelsAndBalance => '获取模型与余额';
@@ -3201,6 +3201,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get rawResponseCleanupEnableAction => '开启并立即清理';
 
   @override
+  String get segmentsJsonAutoRetryTitle => '自动重试次数';
+
+  @override
+  String get segmentsJsonAutoRetryDesc =>
+      '当 AI 返回的动态总结不符合应用要求时，最多自动重试的次数（0=关闭，默认 1）。';
+
+  @override
   String get segmentsJsonAutoRetryHint => '次数（0-5）';
 
   @override
@@ -3254,208 +3261,258 @@ class AppLocalizationsZh extends AppLocalizations {
   String get actualBatteryOptimizationStatusTitle => '实际电池优化状态';
 
   @override
-  String get keyDialogProviderNotSavedHint => '请先保存提供商，再添加 API Key。';
+  String get providerSaveBeforeAddingKey => '请先保存提供商，再添加 API Key。';
 
   @override
-  String get keyDialogNameLabel => 'Key 名称';
+  String get providerSaveBeforeRefreshingModels => '请先保存提供商，再刷新模型。';
 
   @override
-  String get keyDialogApiKeyLabel => 'API Key';
-
-  @override
-  String get keyDialogApiKeyLabelMulti => 'API Key（每行一个）';
-
-  @override
-  String get keyDialogApiKeyHintMulti => '每行一个 API Key，获取按钮会逐个扫描。';
-
-  @override
-  String get keyDialogPriorityLabel => '优先级（100 = 动态分配）';
-
-  @override
-  String get keyDialogModelsLabel => '支持的模型（每行一个）';
-
-  @override
-  String get keyDialogPhaseFetchModels => '获取模型';
-
-  @override
-  String get keyDialogPhaseFetchBalance => '获取余额';
-
-  @override
-  String get keyDialogPhaseScanKeys => '扫描 Key';
-
-  @override
-  String get keyDialogPhaseSaveKeys => '保存 Key';
-
-  @override
-  String get keyDialogPhaseSaveKey => '保存 Key';
-
-  @override
-  String get keyDialogPhaseSaveBalance => '保存余额';
-
-  @override
-  String get keyDialogPhaseFetchComplete => '获取完成';
-
-  @override
-  String get keyDialogPhaseSaveFailed => '保存失败';
-
-  @override
-  String get keyDialogFallbackKeyName => '当前 Key';
-
-  @override
-  String keyDialogPreparingScan(int count) {
-    return '准备扫描 $count 个 API Key…';
+  String providerDefaultKeyName(Object count) {
+    return 'Key $count';
   }
 
   @override
-  String keyDialogFetchingModelsFor(String label) {
-    return '正在获取 $label 的模型…';
+  String get providerKeyCurrent => '当前 Key';
+
+  @override
+  String get providerNoNewApiKeyDuplicate => '没有新 Key：输入的 API Key 已全部存在。';
+
+  @override
+  String get providerKeyNameLabel => 'Key 名称';
+
+  @override
+  String get providerApiKeyMultiLineLabel => 'API Key（每行一个）';
+
+  @override
+  String get providerApiKeySingleLineLabel => 'API Key';
+
+  @override
+  String get providerApiKeyMultiLineHint => '每行输入一个 API Key。获取时会逐个扫描。';
+
+  @override
+  String get providerKeyPriorityLabel => '优先级（100 = 动态分配）';
+
+  @override
+  String get providerKeyModelsLabel => '支持的模型（每行一个）';
+
+  @override
+  String get providerKeyProgressFetchModels => '获取模型';
+
+  @override
+  String get providerKeyProgressFetchBalance => '获取余额';
+
+  @override
+  String get providerKeyProgressScanKeys => '扫描 Key';
+
+  @override
+  String get providerKeyProgressFetchComplete => '获取完成';
+
+  @override
+  String get providerKeyProgressSaveKeys => '保存 Key';
+
+  @override
+  String get providerKeyProgressSaveKey => '保存 Key';
+
+  @override
+  String get providerKeyProgressSaveBalance => '保存余额';
+
+  @override
+  String get providerKeyProgressSaveFailed => '保存失败';
+
+  @override
+  String providerKeyProgressPreparingScan(Object count) {
+    return '正在准备扫描 $count 个 API Key...';
   }
 
   @override
-  String keyDialogFetchingBalanceFor(String label) {
-    return '正在获取 $label 的余额…';
+  String providerKeyProgressFetchingModels(Object label) {
+    return '正在获取 $label 的模型...';
   }
 
   @override
-  String keyDialogModelFetchFailed(String label, String error) {
+  String providerKeyProgressFetchingBalance(Object label) {
+    return '正在获取 $label 的余额...';
+  }
+
+  @override
+  String providerKeyProgressModelFetchFailed(Object label, Object error) {
     return '$label 获取模型失败：$error';
   }
 
   @override
-  String keyDialogBalanceFetchFailed(String label, String error) {
+  String providerKeyProgressBalanceFetchFailed(Object label, Object error) {
     return '$label 获取余额失败：$error';
   }
 
   @override
-  String keyDialogModelsCountText(int count) {
+  String providerKeyProgressBalanceDisplay(Object display) {
+    return '，余额：$display';
+  }
+
+  @override
+  String get providerKeyProgressBalanceFailedShort => '，余额获取失败';
+
+  @override
+  String providerKeyProgressModelsCount(Object count) {
     return '$count 个模型';
   }
 
   @override
-  String get keyDialogModelFetchSkipped => '获取模型失败，已跳过';
+  String get providerKeyProgressModelFailedSkipped => '模型获取失败，已跳过';
 
   @override
-  String keyDialogBalanceSuffixSuccess(String value) {
-    return '，余额：$value';
-  }
-
-  @override
-  String get keyDialogBalanceSuffixFailed => '，余额失败';
-
-  @override
-  String keyDialogScanLine(
-    String label,
-    String modelMessage,
-    String balanceMessage,
+  String providerKeyFetchCompleteToast(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object balanceSuccess,
+    Object balanceTotal,
+    Object failedCount,
   ) {
-    return '$label：$modelMessage$balanceMessage';
+    return '模型获取完成：$modelSuccess/$total 个 Key 成功，合并 $fetchedCount 个模型，余额 $balanceSuccess/$balanceTotal，失败项 $failedCount';
   }
 
   @override
-  String keyDialogModelFetchSummarySuccess(
-    int ok,
-    int total,
-    int merged,
-    String balanceHint,
-    String failedHint,
+  String get providerKeyNoModelsFetchedToast => '没有 Key 返回模型，当前手动模型列表保持不变。';
+
+  @override
+  String providerKeyProgressFetchCompleteMessage(
+    Object modelSuccess,
+    Object total,
+    Object balanceSuccess,
+    Object balanceTotal,
   ) {
-    return '模型获取完成：$ok/$total 个 Key 成功，合并 $merged 个模型$balanceHint$failedHint';
+    return '模型 $modelSuccess/$total，余额 $balanceSuccess/$balanceTotal';
   }
 
   @override
-  String get keyDialogModelFetchSummaryNone => '未获取到任何模型，当前手填模型列表未变更。';
+  String get providerKeyProgressPreparingSave => '正在准备保存...';
 
   @override
-  String get keyDialogPreparingSave => '准备保存…';
-
-  @override
-  String keyDialogSavingItem(String label) {
-    return '正在保存 $label…';
+  String providerKeyProgressSaving(Object label) {
+    return '正在保存 $label...';
   }
 
   @override
-  String keyDialogSavingBalanceItem(String label) {
-    return '正在保存 $label 的余额…';
+  String providerKeyProgressSavingBalance(Object label) {
+    return '正在保存 $label 的余额...';
   }
 
   @override
-  String keyDialogImportedKeys(
-    int count,
-    String balanceHint,
-    String skippedHint,
+  String providerKeySaveSuccessNew(
+    Object saved,
+    Object balanceUpdated,
+    Object balanceTotal,
+    Object skipped,
   ) {
-    return '已导入 $count 个 API Key$balanceHint$skippedHint';
+    return '已导入 $saved 个 API Key，余额 $balanceUpdated/$balanceTotal，跳过 $skipped 个重复 Key';
   }
 
   @override
-  String keyDialogApiKeySaved(String balanceHint) {
-    return 'API Key 已保存$balanceHint';
+  String providerKeySaveSuccessEdit(
+    Object balanceUpdated,
+    Object balanceTotal,
+  ) {
+    return 'API Key 已保存，余额 $balanceUpdated/$balanceTotal';
   }
 
   @override
-  String get keyDialogNoNewKey => '没有新增 Key：输入的 API Key 已全部存在。';
-
-  @override
-  String keyDialogSaveFailed(String error) {
+  String providerKeySaveFailedToast(Object error) {
     return '保存 API Key 失败：$error';
   }
 
   @override
-  String keyDialogBalanceHintFraction(int ok, int total) {
-    return '，余额 $ok/$total';
+  String get dynamicSettingSampleExplanation =>
+      '控制动态重建采样间隔。间隔越短，捕捉越细，但会增加截图数量和 AI 处理量。';
+
+  @override
+  String get dynamicSettingDurationExplanation =>
+      '控制单条动态片段覆盖的时长。时长越长，单次总结上下文越多。';
+
+  @override
+  String get dynamicSettingMergeMaxSpanExplanation => '限制可合并动态的总时间跨度，0 表示不限制。';
+
+  @override
+  String get dynamicSettingMergeMaxGapExplanation =>
+      '限制相邻两段动态之间允许合并的最大间隔，0 表示不限制。';
+
+  @override
+  String get dynamicSettingMergeMaxImagesExplanation =>
+      '限制一次合并最多包含的截图数量，0 表示不限制。';
+
+  @override
+  String get dynamicSettingAiRequestIntervalExplanation =>
+      '限制动态重建向 AI 发起请求的最小间隔，避免过于频繁。';
+
+  @override
+  String get dynamicSettingAutoRetryExplanation =>
+      '当 AI 返回内容不符合应用要求时，应用会自动重试。次数越多越稳，但会增加耗时和消耗。';
+
+  @override
+  String get dynamicSettingRawResponseRetentionExplanation =>
+      '控制 AI 原始返回内容保留天数。过期后只清理原始响应，不影响已生成的总结。';
+
+  @override
+  String get promptManagerReadOnlyBadge => '只读';
+
+  @override
+  String get promptManagerEditingBadge => '编辑中';
+
+  @override
+  String get promptAddonOptionalLabel => '可选';
+
+  @override
+  String promptAddonCharCount(Object count) {
+    return '$count 字';
   }
 
   @override
-  String keyDialogSkippedDuplicates(int count) {
-    return '，跳过 $count 个重复 Key';
+  String promptAddonCharCountLimit(Object count, Object max) {
+    return '$count / $max';
   }
 
   @override
-  String keyDialogFailedItemsHint(int count) {
-    return '，$count 项失败';
+  String get promptManagerSupportsPlainText => '支持纯文本';
+
+  @override
+  String promptAddonTooLongError(Object max) {
+    return '补充说明不能超过 $max 字。';
   }
 
   @override
-  String keyDialogFinalSummary(
-    int modelOk,
-    int modelTotal,
-    int balanceOk,
-    int balanceTotal,
+  String providerKeyFetchCompleteToastNoBalance(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object failedCount,
   ) {
-    return '模型 $modelOk/$modelTotal，余额 $balanceOk/$balanceTotal';
+    return '模型获取完成：$modelSuccess/$total 个 Key 成功，合并 $fetchedCount 个模型，失败项 $failedCount';
   }
 
   @override
-  String get segmentSampleIntervalExplain =>
-      '在单个动态段内生成总结时，每隔多久从截图中采样一帧。值越小细节越多，但消耗的 token 也更多；值越大更省，但可能错过短暂事件。';
-
-  @override
-  String get segmentDurationExplain =>
-      '单个动态段的最长时长，超过后会自动开启新段。段越短总结越精细，越长则覆盖更广的上下文。';
-
-  @override
-  String get dynamicMergeMaxSpanExplain => '相邻多个动态段允许被合并成一条总结的总跨度上限。0 表示不限制。';
-
-  @override
-  String get dynamicMergeMaxGapExplain => '两个相邻动态段之间允许的最大空白时长，超过则不再合并。0 表示不限制。';
-
-  @override
-  String get dynamicMergeMaxImagesExplain =>
-      '一次合并总结里送给模型的最大截图数量。值越高上下文越完整，但耗时与费用也会增加。0 表示不限制。';
-
-  @override
-  String get aiRequestIntervalExplain =>
-      '应用对外发起 AI 请求的最小间隔。提供商触发限速、或希望整体节省时，可以适当调大。';
-
-  @override
-  String get segmentsJsonAutoRetryTitle => '自动重试次数';
-
-  @override
-  String segmentsJsonAutoRetryDesc(int count) {
-    return '当 AI 返回的内容不符合要求时，自动重新请求的次数（0 = 关闭，默认 1）。当前：$count';
+  String providerKeyProgressFetchCompleteMessageNoBalance(
+    Object modelSuccess,
+    Object total,
+  ) {
+    return '模型 $modelSuccess/$total';
   }
 
   @override
-  String get segmentsJsonAutoRetryExplain =>
-      'AI 偶尔会返回无法解析或不符合所需结构的内容。开启后应用会按设定次数自动重新请求，从而提升成功率，但会增加耗时与 token 消耗。';
+  String providerKeySaveSuccessNewNoBalance(Object saved, Object skipped) {
+    return '已导入 $saved 个 API Key，跳过 $skipped 个重复 Key';
+  }
+
+  @override
+  String get providerKeySaveSuccessEditNoBalance => 'API Key 已保存';
+
+  @override
+  String settingCurrentValue(Object value) {
+    return '当前：$value';
+  }
+
+  @override
+  String get savedMorningPromptToast => '晨间洞察提示词已保存';
+
+  @override
+  String get promptAddonSectionTitle => '补充说明';
 }

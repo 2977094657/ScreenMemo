@@ -404,7 +404,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get segmentSummarySectionTitle => 'ダイナミック設定';
 
   @override
-  String get segmentSummarySectionDesc => 'サンプリング / 区間長 / マージ / AI リクエスト間隔';
+  String get segmentSummarySectionDesc => 'サンプリング/長さ/AI間隔';
 
   @override
   String get dailyReminderSectionTitle => '毎日の概要リマインダー';
@@ -3230,6 +3230,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get rawResponseCleanupEnableAction => '有効化して今すぐクリーンアップ';
 
   @override
+  String get segmentsJsonAutoRetryTitle => '自動リトライ回数';
+
+  @override
+  String get segmentsJsonAutoRetryDesc =>
+      'AI の返答がアプリの要件を満たさない場合に自動再試行する回数です（0=オフ、既定 1）。';
+
+  @override
   String get segmentsJsonAutoRetryHint => '回数（0-5）';
 
   @override
@@ -3283,212 +3290,262 @@ class AppLocalizationsJa extends AppLocalizations {
   String get actualBatteryOptimizationStatusTitle => '実際のバッテリー最適化状態';
 
   @override
-  String get keyDialogProviderNotSavedHint => 'API キーを追加する前にプロバイダーを保存してください。';
+  String get providerSaveBeforeAddingKey => 'API Key を追加する前にプロバイダーを保存してください。';
 
   @override
-  String get keyDialogNameLabel => 'キー名';
+  String get providerSaveBeforeRefreshingModels => 'モデルを更新する前にプロバイダーを保存してください。';
 
   @override
-  String get keyDialogApiKeyLabel => 'API キー';
-
-  @override
-  String get keyDialogApiKeyLabelMulti => 'API キー（1 行に 1 つ）';
-
-  @override
-  String get keyDialogApiKeyHintMulti =>
-      '1 行に 1 つの API キーを入力。取得ボタンですべてスキャンされます。';
-
-  @override
-  String get keyDialogPriorityLabel => '優先度（100 = 動的割り当て）';
-
-  @override
-  String get keyDialogModelsLabel => '対応モデル（1 行に 1 つ）';
-
-  @override
-  String get keyDialogPhaseFetchModels => 'モデル取得';
-
-  @override
-  String get keyDialogPhaseFetchBalance => '残高取得';
-
-  @override
-  String get keyDialogPhaseScanKeys => 'キーをスキャン';
-
-  @override
-  String get keyDialogPhaseSaveKeys => 'キーを保存';
-
-  @override
-  String get keyDialogPhaseSaveKey => 'キーを保存';
-
-  @override
-  String get keyDialogPhaseSaveBalance => '残高を保存';
-
-  @override
-  String get keyDialogPhaseFetchComplete => '取得完了';
-
-  @override
-  String get keyDialogPhaseSaveFailed => '保存失敗';
-
-  @override
-  String get keyDialogFallbackKeyName => '現在のキー';
-
-  @override
-  String keyDialogPreparingScan(int count) {
-    return '$count 個の API キーをスキャン準備中…';
+  String providerDefaultKeyName(Object count) {
+    return 'Key $count';
   }
 
   @override
-  String keyDialogFetchingModelsFor(String label) {
-    return '$label のモデルを取得中…';
+  String get providerKeyCurrent => '現在の Key';
+
+  @override
+  String get providerNoNewApiKeyDuplicate =>
+      '新しい Key はありません。入力した API Key はすべて既に存在します。';
+
+  @override
+  String get providerKeyNameLabel => 'Key 名';
+
+  @override
+  String get providerApiKeyMultiLineLabel => 'API Key（1行に1つ）';
+
+  @override
+  String get providerApiKeySingleLineLabel => 'API Key';
+
+  @override
+  String get providerApiKeyMultiLineHint =>
+      '1行に1つの API Key を入力してください。取得時は各 Key を順番に確認します。';
+
+  @override
+  String get providerKeyPriorityLabel => '優先度（100 = 動的割り当て）';
+
+  @override
+  String get providerKeyModelsLabel => '対応モデル（1行に1つ）';
+
+  @override
+  String get providerKeyProgressFetchModels => 'モデルを取得';
+
+  @override
+  String get providerKeyProgressFetchBalance => '残高を取得';
+
+  @override
+  String get providerKeyProgressScanKeys => 'Key をスキャン';
+
+  @override
+  String get providerKeyProgressFetchComplete => '取得完了';
+
+  @override
+  String get providerKeyProgressSaveKeys => 'Key を保存';
+
+  @override
+  String get providerKeyProgressSaveKey => 'Key を保存';
+
+  @override
+  String get providerKeyProgressSaveBalance => '残高を保存';
+
+  @override
+  String get providerKeyProgressSaveFailed => '保存失敗';
+
+  @override
+  String providerKeyProgressPreparingScan(Object count) {
+    return '$count 個の API Key をスキャンする準備中...';
   }
 
   @override
-  String keyDialogFetchingBalanceFor(String label) {
-    return '$label の残高を取得中…';
+  String providerKeyProgressFetchingModels(Object label) {
+    return '$label のモデルを取得中...';
   }
 
   @override
-  String keyDialogModelFetchFailed(String label, String error) {
-    return '$label のモデル取得に失敗: $error';
+  String providerKeyProgressFetchingBalance(Object label) {
+    return '$label の残高を取得中...';
   }
 
   @override
-  String keyDialogBalanceFetchFailed(String label, String error) {
-    return '$label の残高取得に失敗: $error';
+  String providerKeyProgressModelFetchFailed(Object label, Object error) {
+    return '$label のモデル取得に失敗しました：$error';
   }
 
   @override
-  String keyDialogModelsCountText(int count) {
-    return '$count モデル';
+  String providerKeyProgressBalanceFetchFailed(Object label, Object error) {
+    return '$label の残高取得に失敗しました：$error';
   }
 
   @override
-  String get keyDialogModelFetchSkipped => 'モデル取得失敗、スキップしました';
-
-  @override
-  String keyDialogBalanceSuffixSuccess(String value) {
-    return '、残高: $value';
+  String providerKeyProgressBalanceDisplay(Object display) {
+    return '、残高：$display';
   }
 
   @override
-  String get keyDialogBalanceSuffixFailed => '、残高取得失敗';
+  String get providerKeyProgressBalanceFailedShort => '、残高取得失敗';
 
   @override
-  String keyDialogScanLine(
-    String label,
-    String modelMessage,
-    String balanceMessage,
+  String providerKeyProgressModelsCount(Object count) {
+    return '$count 個のモデル';
+  }
+
+  @override
+  String get providerKeyProgressModelFailedSkipped => 'モデル取得に失敗したためスキップしました';
+
+  @override
+  String providerKeyFetchCompleteToast(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object balanceSuccess,
+    Object balanceTotal,
+    Object failedCount,
   ) {
-    return '$label: $modelMessage$balanceMessage';
+    return 'モデル取得完了：$modelSuccess/$total 個の Key が成功、$fetchedCount 個のモデルを統合、残高 $balanceSuccess/$balanceTotal、失敗項目 $failedCount';
   }
 
   @override
-  String keyDialogModelFetchSummarySuccess(
-    int ok,
-    int total,
-    int merged,
-    String balanceHint,
-    String failedHint,
+  String get providerKeyNoModelsFetchedToast =>
+      'モデルを返した Key がありません。現在の手動モデル一覧は変更されません。';
+
+  @override
+  String providerKeyProgressFetchCompleteMessage(
+    Object modelSuccess,
+    Object total,
+    Object balanceSuccess,
+    Object balanceTotal,
   ) {
-    return 'モデル取得完了: $ok/$total キー成功、$merged モデルをマージ$balanceHint$failedHint';
+    return 'モデル $modelSuccess/$total、残高 $balanceSuccess/$balanceTotal';
   }
 
   @override
-  String get keyDialogModelFetchSummaryNone =>
-      'モデルを取得できませんでした。現在の手動モデル一覧は変更されていません。';
+  String get providerKeyProgressPreparingSave => '保存の準備中...';
 
   @override
-  String get keyDialogPreparingSave => '保存準備中…';
-
-  @override
-  String keyDialogSavingItem(String label) {
-    return '$label を保存中…';
+  String providerKeyProgressSaving(Object label) {
+    return '$label を保存中...';
   }
 
   @override
-  String keyDialogSavingBalanceItem(String label) {
-    return '$label の残高を保存中…';
+  String providerKeyProgressSavingBalance(Object label) {
+    return '$label の残高を保存中...';
   }
 
   @override
-  String keyDialogImportedKeys(
-    int count,
-    String balanceHint,
-    String skippedHint,
+  String providerKeySaveSuccessNew(
+    Object saved,
+    Object balanceUpdated,
+    Object balanceTotal,
+    Object skipped,
   ) {
-    return '$count 個の API キーをインポートしました$balanceHint$skippedHint';
+    return '$saved 個の API Key を取り込みました。残高 $balanceUpdated/$balanceTotal、重複 $skipped 個をスキップ';
   }
 
   @override
-  String keyDialogApiKeySaved(String balanceHint) {
-    return 'API キーを保存しました$balanceHint';
-  }
-
-  @override
-  String get keyDialogNoNewKey => '新しいキーはありません: 入力されたすべての API キーは既に存在します。';
-
-  @override
-  String keyDialogSaveFailed(String error) {
-    return 'API キーの保存に失敗: $error';
-  }
-
-  @override
-  String keyDialogBalanceHintFraction(int ok, int total) {
-    return '、残高 $ok/$total';
-  }
-
-  @override
-  String keyDialogSkippedDuplicates(int count) {
-    return '、$count 個の重複キーをスキップ';
-  }
-
-  @override
-  String keyDialogFailedItemsHint(int count) {
-    return '、$count 件失敗';
-  }
-
-  @override
-  String keyDialogFinalSummary(
-    int modelOk,
-    int modelTotal,
-    int balanceOk,
-    int balanceTotal,
+  String providerKeySaveSuccessEdit(
+    Object balanceUpdated,
+    Object balanceTotal,
   ) {
-    return 'モデル $modelOk/$modelTotal、残高 $balanceOk/$balanceTotal';
+    return 'API Key を保存しました。残高 $balanceUpdated/$balanceTotal';
   }
 
   @override
-  String get segmentSampleIntervalExplain =>
-      '1 つのセグメントの要約を生成する際にスクリーンショットをサンプリングする間隔。値が小さいほど詳細を捉えますが、トークン消費が増えます。値が大きいほど省コストですが、短時間のイベントを見逃す可能性があります。';
-
-  @override
-  String get segmentDurationExplain =>
-      '単一のダイナミックセグメントの最大時間。これを超えると、活動が継続していても新しいセグメントを開始します。短いほど詳細な要約、長いほど広い文脈になります。';
-
-  @override
-  String get dynamicMergeMaxSpanExplain =>
-      '隣接する複数のダイナミックセグメントを 1 つの要約にマージできる最大時間範囲。0 を指定すると無制限になります。';
-
-  @override
-  String get dynamicMergeMaxGapExplain =>
-      '隣接する 2 つのダイナミックセグメント間で許容される最大の空白時間。これを超えるとマージされません。0 を指定すると無制限になります。';
-
-  @override
-  String get dynamicMergeMaxImagesExplain =>
-      'マージされた要約 1 回に渡されるスクリーンショットの最大数。多いほど文脈が豊富になりますが、コストとレイテンシも増えます。0 を指定すると無制限になります。';
-
-  @override
-  String get aiRequestIntervalExplain =>
-      'アプリが送信する AI リクエスト間の最小間隔。プロバイダーのレート制限に引っかかる場合や、全体的な使用量を抑えたい場合は値を大きくしてください。';
-
-  @override
-  String get segmentsJsonAutoRetryTitle => '自動再試行回数';
-
-  @override
-  String segmentsJsonAutoRetryDesc(int count) {
-    return 'AI の応答が必要な形式に一致しない場合に自動で再リクエストする回数（0 = オフ、既定 1）。現在: $count';
+  String providerKeySaveFailedToast(Object error) {
+    return 'API Key の保存に失敗しました：$error';
   }
 
   @override
-  String get segmentsJsonAutoRetryExplain =>
-      'AI は時々、解析できない、または必要な構造に一致しない内容を返します。その場合、アプリは設定された回数まで自動的に再リクエストします。値を大きくすると成功率が上がりますが、時間とトークンを多く消費します。';
+  String get dynamicSettingSampleExplanation =>
+      'ダイナミック再構築のサンプリング間隔を制御します。短いほど細かく記録できますが、スクリーンショット数と AI 処理量が増えます。';
+
+  @override
+  String get dynamicSettingDurationExplanation =>
+      '1つのダイナミック片がカバーする時間を制御します。長いほど一度の要約に含まれる文脈が増えます。';
+
+  @override
+  String get dynamicSettingMergeMaxSpanExplanation =>
+      'マージできるダイナミック全体の時間幅を制限します。0 は無制限です。';
+
+  @override
+  String get dynamicSettingMergeMaxGapExplanation =>
+      '隣接する2つのダイナミック片をマージできる最大間隔を制限します。0 は無制限です。';
+
+  @override
+  String get dynamicSettingMergeMaxImagesExplanation =>
+      '1回のマージに含める最大スクリーンショット数を制限します。0 は無制限です。';
+
+  @override
+  String get dynamicSettingAiRequestIntervalExplanation =>
+      'ダイナミック再構築が AI にリクエストする最小間隔を制限し、頻度が高くなりすぎるのを防ぎます。';
+
+  @override
+  String get dynamicSettingAutoRetryExplanation =>
+      'AI の返答がアプリの要件を満たさない場合、アプリが自動的に再試行します。回数を増やすと安定しますが、時間と消費量も増えます。';
+
+  @override
+  String get dynamicSettingRawResponseRetentionExplanation =>
+      'AI の生の返答を保持する日数を制御します。期限切れ後は生の返答のみ削除し、生成済みの要約には影響しません。';
+
+  @override
+  String get promptManagerReadOnlyBadge => '読み取り専用';
+
+  @override
+  String get promptManagerEditingBadge => '編集中';
+
+  @override
+  String get promptAddonOptionalLabel => '任意';
+
+  @override
+  String promptAddonCharCount(Object count) {
+    return '$count 文字';
+  }
+
+  @override
+  String promptAddonCharCountLimit(Object count, Object max) {
+    return '$count / $max';
+  }
+
+  @override
+  String get promptManagerSupportsPlainText => 'プレーンテキスト対応';
+
+  @override
+  String promptAddonTooLongError(Object max) {
+    return '補足説明は $max 文字以内にしてください。';
+  }
+
+  @override
+  String providerKeyFetchCompleteToastNoBalance(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object failedCount,
+  ) {
+    return 'モデル取得完了：$modelSuccess/$total 個の Key が成功、$fetchedCount 個のモデルを統合、失敗項目 $failedCount';
+  }
+
+  @override
+  String providerKeyProgressFetchCompleteMessageNoBalance(
+    Object modelSuccess,
+    Object total,
+  ) {
+    return 'モデル $modelSuccess/$total';
+  }
+
+  @override
+  String providerKeySaveSuccessNewNoBalance(Object saved, Object skipped) {
+    return '$saved 個の API Key を取り込みました。重複 $skipped 個をスキップ';
+  }
+
+  @override
+  String get providerKeySaveSuccessEditNoBalance => 'API Key を保存しました';
+
+  @override
+  String settingCurrentValue(Object value) {
+    return '現在：$value';
+  }
+
+  @override
+  String get savedMorningPromptToast => '朝のインサイトプロンプトを保存しました';
+
+  @override
+  String get promptAddonSectionTitle => '補足説明';
 }

@@ -171,7 +171,7 @@
   "displayAndSortSectionTitle": "显示与排序",
   "screenshotSectionTitle": "截屏设置",
   "screenshotSectionDesc": "间隔/质量/过期清理",
-  "segmentSummarySectionTitle": "时间段总结",
+  "segmentSummarySectionTitle": "动态设置",
   "segmentSummarySectionDesc": "采样/时长/AI 请求间隔",
   "dailyReminderSectionTitle": "每日总结提醒",
   "dailyReminderSectionDesc": "提醒时间/横幅权限/测试触发",
@@ -1443,8 +1443,8 @@
   "providerBatchTestResultTitle": "批量测试结果",
   "actionClose": "关闭",
   "providerOnlyOneApiKeyCanEdit": "一次只能编辑一个 API Key",
-  "providerAddApiKey": "Add API Key",
-  "providerEditApiKey": "Edit API Key",
+  "providerAddApiKey": "添加 API Key",
+  "providerEditApiKey": "编辑 API Key",
   "providerFetchModelsAndBalance": "获取模型与余额",
   "actionSaving": "保存中",
   "providerFetchModelsFailedManual": "获取模型失败，可以手动添加。",
@@ -1719,7 +1719,7 @@
   },
   "rawResponseCleanupEnableAction": "开启并立即清理",
   "segmentsJsonAutoRetryTitle": "自动重试次数",
-  "segmentsJsonAutoRetryDesc": "当动态摘要 structured_json 解析失败时，自动重试次数（0=关闭，默认1）。",
+  "segmentsJsonAutoRetryDesc": "当 AI 返回的动态总结不符合应用要求时，最多自动重试的次数（0=关闭，默认 1）。",
   "segmentsJsonAutoRetryHint": "次数（0-5）",
   "rawResponseCleanupTitle": "原始响应自动清理",
   "rawResponseCleanupKeepLabel": "保留",
@@ -1745,5 +1745,194 @@
   "permissionConfiguredStatus": "已配置",
   "permissionNeedsConfigurationStatus": "需要配置",
   "backgroundPermissionTitle": "后台运行权限",
-  "actualBatteryOptimizationStatusTitle": "实际电池优化状态"
+  "actualBatteryOptimizationStatusTitle": "实际电池优化状态",
+  "providerSaveBeforeAddingKey": "请先保存提供商，再添加 API Key。",
+  "providerSaveBeforeRefreshingModels": "请先保存提供商，再刷新模型。",
+  "providerDefaultKeyName": "Key {count}",
+  "@providerDefaultKeyName": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyCurrent": "当前 Key",
+  "providerNoNewApiKeyDuplicate": "没有新 Key：输入的 API Key 已全部存在。",
+  "providerKeyNameLabel": "Key 名称",
+  "providerApiKeyMultiLineLabel": "API Key（每行一个）",
+  "providerApiKeySingleLineLabel": "API Key",
+  "providerApiKeyMultiLineHint": "每行输入一个 API Key。获取时会逐个扫描。",
+  "providerKeyPriorityLabel": "优先级（100 = 动态分配）",
+  "providerKeyModelsLabel": "支持的模型（每行一个）",
+  "providerKeyProgressFetchModels": "获取模型",
+  "providerKeyProgressFetchBalance": "获取余额",
+  "providerKeyProgressScanKeys": "扫描 Key",
+  "providerKeyProgressFetchComplete": "获取完成",
+  "providerKeyProgressSaveKeys": "保存 Key",
+  "providerKeyProgressSaveKey": "保存 Key",
+  "providerKeyProgressSaveBalance": "保存余额",
+  "providerKeyProgressSaveFailed": "保存失败",
+  "providerKeyProgressPreparingScan": "正在准备扫描 {count} 个 API Key...",
+  "@providerKeyProgressPreparingScan": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressFetchingModels": "正在获取 {label} 的模型...",
+  "@providerKeyProgressFetchingModels": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressFetchingBalance": "正在获取 {label} 的余额...",
+  "@providerKeyProgressFetchingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressModelFetchFailed": "{label} 获取模型失败：{error}",
+  "@providerKeyProgressModelFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceFetchFailed": "{label} 获取余额失败：{error}",
+  "@providerKeyProgressBalanceFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceDisplay": "，余额：{display}",
+  "@providerKeyProgressBalanceDisplay": {
+    "placeholders": {
+      "display": {}
+    }
+  },
+  "providerKeyProgressBalanceFailedShort": "，余额获取失败",
+  "providerKeyProgressModelsCount": "{count} 个模型",
+  "@providerKeyProgressModelsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressModelFailedSkipped": "模型获取失败，已跳过",
+  "providerKeyFetchCompleteToast": "模型获取完成：{modelSuccess}/{total} 个 Key 成功，合并 {fetchedCount} 个模型，余额 {balanceSuccess}/{balanceTotal}，失败项 {failedCount}",
+  "@providerKeyFetchCompleteToast": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "balanceSuccess": {},
+      "balanceTotal": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyNoModelsFetchedToast": "没有 Key 返回模型，当前手动模型列表保持不变。",
+  "providerKeyProgressFetchCompleteMessage": "模型 {modelSuccess}/{total}，余额 {balanceSuccess}/{balanceTotal}",
+  "@providerKeyProgressFetchCompleteMessage": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "balanceSuccess": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeyProgressPreparingSave": "正在准备保存...",
+  "providerKeyProgressSaving": "正在保存 {label}...",
+  "@providerKeyProgressSaving": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressSavingBalance": "正在保存 {label} 的余额...",
+  "@providerKeyProgressSavingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeySaveSuccessNew": "已导入 {saved} 个 API Key，余额 {balanceUpdated}/{balanceTotal}，跳过 {skipped} 个重复 Key",
+  "@providerKeySaveSuccessNew": {
+    "placeholders": {
+      "saved": {},
+      "balanceUpdated": {},
+      "balanceTotal": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEdit": "API Key 已保存，余额 {balanceUpdated}/{balanceTotal}",
+  "@providerKeySaveSuccessEdit": {
+    "placeholders": {
+      "balanceUpdated": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeySaveFailedToast": "保存 API Key 失败：{error}",
+  "@providerKeySaveFailedToast": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "dynamicSettingSampleExplanation": "控制动态重建采样间隔。间隔越短，捕捉越细，但会增加截图数量和 AI 处理量。",
+  "dynamicSettingDurationExplanation": "控制单条动态片段覆盖的时长。时长越长，单次总结上下文越多。",
+  "dynamicSettingMergeMaxSpanExplanation": "限制可合并动态的总时间跨度，0 表示不限制。",
+  "dynamicSettingMergeMaxGapExplanation": "限制相邻两段动态之间允许合并的最大间隔，0 表示不限制。",
+  "dynamicSettingMergeMaxImagesExplanation": "限制一次合并最多包含的截图数量，0 表示不限制。",
+  "dynamicSettingAiRequestIntervalExplanation": "限制动态重建向 AI 发起请求的最小间隔，避免过于频繁。",
+  "dynamicSettingAutoRetryExplanation": "当 AI 返回内容不符合应用要求时，应用会自动重试。次数越多越稳，但会增加耗时和消耗。",
+  "dynamicSettingRawResponseRetentionExplanation": "控制 AI 原始返回内容保留天数。过期后只清理原始响应，不影响已生成的总结。",
+  "promptManagerReadOnlyBadge": "只读",
+  "promptManagerEditingBadge": "编辑中",
+  "promptAddonOptionalLabel": "可选",
+  "promptAddonCharCount": "{count} 字",
+  "@promptAddonCharCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "promptAddonCharCountLimit": "{count} / {max}",
+  "@promptAddonCharCountLimit": {
+    "placeholders": {
+      "count": {},
+      "max": {}
+    }
+  },
+  "promptManagerSupportsPlainText": "支持纯文本",
+  "promptAddonTooLongError": "补充说明不能超过 {max} 字。",
+  "@promptAddonTooLongError": {
+    "placeholders": {
+      "max": {}
+    }
+  },
+  "providerKeyFetchCompleteToastNoBalance": "模型获取完成：{modelSuccess}/{total} 个 Key 成功，合并 {fetchedCount} 个模型，失败项 {failedCount}",
+  "@providerKeyFetchCompleteToastNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyProgressFetchCompleteMessageNoBalance": "模型 {modelSuccess}/{total}",
+  "@providerKeyProgressFetchCompleteMessageNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {}
+    }
+  },
+  "providerKeySaveSuccessNewNoBalance": "已导入 {saved} 个 API Key，跳过 {skipped} 个重复 Key",
+  "@providerKeySaveSuccessNewNoBalance": {
+    "placeholders": {
+      "saved": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEditNoBalance": "API Key 已保存",
+  "settingCurrentValue": "当前：{value}",
+  "@settingCurrentValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "savedMorningPromptToast": "晨间洞察提示词已保存",
+  "promptAddonSectionTitle": "补充说明"
 }

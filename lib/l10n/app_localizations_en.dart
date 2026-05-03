@@ -420,8 +420,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get segmentSummarySectionTitle => 'Dynamic settings';
 
   @override
-  String get segmentSummarySectionDesc =>
-      'Sampling / duration / merging / AI request interval';
+  String get segmentSummarySectionDesc => 'Sampling, duration, AI throttle';
 
   @override
   String get dailyReminderSectionTitle => 'Daily summary reminder';
@@ -3316,6 +3315,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rawResponseCleanupEnableAction => 'Enable & Clean Now';
 
   @override
+  String get segmentsJsonAutoRetryTitle => 'Auto Retry Times';
+
+  @override
+  String get segmentsJsonAutoRetryDesc =>
+      'How many times to retry when the AI returns a dynamic summary that does not meet the app requirements (0 = off, default 1).';
+
+  @override
   String get segmentsJsonAutoRetryHint => 'Times (0-5)';
 
   @override
@@ -3371,214 +3377,265 @@ class AppLocalizationsEn extends AppLocalizations {
       'Actual battery optimization status';
 
   @override
-  String get keyDialogProviderNotSavedHint =>
+  String get providerSaveBeforeAddingKey =>
       'Please save the provider before adding API keys.';
 
   @override
-  String get keyDialogNameLabel => 'Key name';
+  String get providerSaveBeforeRefreshingModels =>
+      'Please save the provider before refreshing models.';
 
   @override
-  String get keyDialogApiKeyLabel => 'API Key';
+  String providerDefaultKeyName(Object count) {
+    return 'Key $count';
+  }
 
   @override
-  String get keyDialogApiKeyLabelMulti => 'API Key (one per line)';
+  String get providerKeyCurrent => 'Current key';
 
   @override
-  String get keyDialogApiKeyHintMulti =>
+  String get providerNoNewApiKeyDuplicate =>
+      'No new key: all entered API keys already exist.';
+
+  @override
+  String get providerKeyNameLabel => 'Key name';
+
+  @override
+  String get providerApiKeyMultiLineLabel => 'API Key (one per line)';
+
+  @override
+  String get providerApiKeySingleLineLabel => 'API Key';
+
+  @override
+  String get providerApiKeyMultiLineHint =>
       'One API Key per line. Fetch scans every key.';
 
   @override
-  String get keyDialogPriorityLabel => 'Priority (100 = dynamic allocation)';
+  String get providerKeyPriorityLabel => 'Priority (100 = dynamic allocation)';
 
   @override
-  String get keyDialogModelsLabel => 'Supported models (one per line)';
+  String get providerKeyModelsLabel => 'Supported models (one per line)';
 
   @override
-  String get keyDialogPhaseFetchModels => 'Fetch models';
+  String get providerKeyProgressFetchModels => 'Fetch models';
 
   @override
-  String get keyDialogPhaseFetchBalance => 'Fetch balance';
+  String get providerKeyProgressFetchBalance => 'Fetch balance';
 
   @override
-  String get keyDialogPhaseScanKeys => 'Scan keys';
+  String get providerKeyProgressScanKeys => 'Scan keys';
 
   @override
-  String get keyDialogPhaseSaveKeys => 'Save keys';
+  String get providerKeyProgressFetchComplete => 'Fetch complete';
 
   @override
-  String get keyDialogPhaseSaveKey => 'Save key';
+  String get providerKeyProgressSaveKeys => 'Save keys';
 
   @override
-  String get keyDialogPhaseSaveBalance => 'Save balance';
+  String get providerKeyProgressSaveKey => 'Save key';
 
   @override
-  String get keyDialogPhaseFetchComplete => 'Fetch complete';
+  String get providerKeyProgressSaveBalance => 'Save balance';
 
   @override
-  String get keyDialogPhaseSaveFailed => 'Save failed';
+  String get providerKeyProgressSaveFailed => 'Save failed';
 
   @override
-  String get keyDialogFallbackKeyName => 'Current key';
-
-  @override
-  String keyDialogPreparingScan(int count) {
+  String providerKeyProgressPreparingScan(Object count) {
     return 'Preparing to scan $count API keys...';
   }
 
   @override
-  String keyDialogFetchingModelsFor(String label) {
+  String providerKeyProgressFetchingModels(Object label) {
     return 'Fetching models for $label...';
   }
 
   @override
-  String keyDialogFetchingBalanceFor(String label) {
+  String providerKeyProgressFetchingBalance(Object label) {
     return 'Fetching balance for $label...';
   }
 
   @override
-  String keyDialogModelFetchFailed(String label, String error) {
+  String providerKeyProgressModelFetchFailed(Object label, Object error) {
     return '$label model fetch failed: $error';
   }
 
   @override
-  String keyDialogBalanceFetchFailed(String label, String error) {
+  String providerKeyProgressBalanceFetchFailed(Object label, Object error) {
     return '$label balance fetch failed: $error';
   }
 
   @override
-  String keyDialogModelsCountText(int count) {
+  String providerKeyProgressBalanceDisplay(Object display) {
+    return ', balance: $display';
+  }
+
+  @override
+  String get providerKeyProgressBalanceFailedShort => ', balance failed';
+
+  @override
+  String providerKeyProgressModelsCount(Object count) {
     return '$count models';
   }
 
   @override
-  String get keyDialogModelFetchSkipped => 'model fetch failed, skipped';
+  String get providerKeyProgressModelFailedSkipped =>
+      'model fetch failed, skipped';
 
   @override
-  String keyDialogBalanceSuffixSuccess(String value) {
-    return ', balance: $value';
-  }
-
-  @override
-  String get keyDialogBalanceSuffixFailed => ', balance failed';
-
-  @override
-  String keyDialogScanLine(
-    String label,
-    String modelMessage,
-    String balanceMessage,
+  String providerKeyFetchCompleteToast(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object balanceSuccess,
+    Object balanceTotal,
+    Object failedCount,
   ) {
-    return '$label: $modelMessage$balanceMessage';
+    return 'Model fetch complete: $modelSuccess/$total keys succeeded, $fetchedCount models merged, balance $balanceSuccess/$balanceTotal, failed items $failedCount';
   }
 
   @override
-  String keyDialogModelFetchSummarySuccess(
-    int ok,
-    int total,
-    int merged,
-    String balanceHint,
-    String failedHint,
-  ) {
-    return 'Model fetch complete: $ok/$total keys succeeded, $merged models merged$balanceHint$failedHint';
-  }
-
-  @override
-  String get keyDialogModelFetchSummaryNone =>
+  String get providerKeyNoModelsFetchedToast =>
       'No key returned models. The current manual model list is unchanged.';
 
   @override
-  String get keyDialogPreparingSave => 'Preparing to save...';
+  String providerKeyProgressFetchCompleteMessage(
+    Object modelSuccess,
+    Object total,
+    Object balanceSuccess,
+    Object balanceTotal,
+  ) {
+    return 'Models $modelSuccess/$total, balances $balanceSuccess/$balanceTotal';
+  }
 
   @override
-  String keyDialogSavingItem(String label) {
+  String get providerKeyProgressPreparingSave => 'Preparing to save...';
+
+  @override
+  String providerKeyProgressSaving(Object label) {
     return 'Saving $label...';
   }
 
   @override
-  String keyDialogSavingBalanceItem(String label) {
+  String providerKeyProgressSavingBalance(Object label) {
     return 'Saving balance for $label...';
   }
 
   @override
-  String keyDialogImportedKeys(
-    int count,
-    String balanceHint,
-    String skippedHint,
+  String providerKeySaveSuccessNew(
+    Object saved,
+    Object balanceUpdated,
+    Object balanceTotal,
+    Object skipped,
   ) {
-    return 'Imported $count API keys$balanceHint$skippedHint';
+    return 'Imported $saved API keys, balance $balanceUpdated/$balanceTotal, skipped $skipped duplicate keys';
   }
 
   @override
-  String keyDialogApiKeySaved(String balanceHint) {
-    return 'API Key saved$balanceHint';
+  String providerKeySaveSuccessEdit(
+    Object balanceUpdated,
+    Object balanceTotal,
+  ) {
+    return 'API Key saved, balance $balanceUpdated/$balanceTotal';
   }
 
   @override
-  String get keyDialogNoNewKey =>
-      'No new key: all entered API keys already exist.';
-
-  @override
-  String keyDialogSaveFailed(String error) {
+  String providerKeySaveFailedToast(Object error) {
     return 'Failed to save API Key: $error';
   }
 
   @override
-  String keyDialogBalanceHintFraction(int ok, int total) {
-    return ', balance $ok/$total';
+  String get dynamicSettingSampleExplanation =>
+      'Controls how often screenshots are sampled for dynamic summaries. Shorter intervals keep finer details but take more time and AI cost.';
+
+  @override
+  String get dynamicSettingDurationExplanation =>
+      'Controls the time span covered by each dynamic entry. Shorter spans are more detailed; longer spans are better for quick review.';
+
+  @override
+  String get dynamicSettingMergeMaxSpanExplanation =>
+      'Controls the total time span that merged dynamic entries may cover. Set to 0 for unlimited.';
+
+  @override
+  String get dynamicSettingMergeMaxGapExplanation =>
+      'Controls the maximum allowed gap between two entries that can be merged. Set to 0 for unlimited.';
+
+  @override
+  String get dynamicSettingMergeMaxImagesExplanation =>
+      'Controls the maximum number of images included when merging dynamic entries. Set to 0 for unlimited.';
+
+  @override
+  String get dynamicSettingAiRequestIntervalExplanation =>
+      'Controls the minimum interval between dynamic summary AI requests to reduce rate limits and cost spikes.';
+
+  @override
+  String get dynamicSettingAutoRetryExplanation =>
+      'When the AI returns content that does not meet app requirements, the app can request again automatically. Higher values may fix more failures but increase wait time and cost.';
+
+  @override
+  String get dynamicSettingRawResponseRetentionExplanation =>
+      'Controls how many days raw AI responses are retained. Shorter retention saves storage but leaves less information for troubleshooting.';
+
+  @override
+  String get promptManagerReadOnlyBadge => 'Read only';
+
+  @override
+  String get promptManagerEditingBadge => 'Editing';
+
+  @override
+  String get promptAddonOptionalLabel => 'Optional';
+
+  @override
+  String promptAddonCharCount(Object count) {
+    return '$count chars';
   }
 
   @override
-  String keyDialogSkippedDuplicates(int count) {
-    return ', skipped $count duplicate keys';
+  String promptAddonCharCountLimit(Object count, Object max) {
+    return '$count / $max';
   }
 
   @override
-  String keyDialogFailedItemsHint(int count) {
-    return ', $count failed items';
+  String get promptManagerSupportsPlainText => 'Plain text supported';
+
+  @override
+  String promptAddonTooLongError(Object max) {
+    return 'Extra instructions cannot exceed $max characters.';
   }
 
   @override
-  String keyDialogFinalSummary(
-    int modelOk,
-    int modelTotal,
-    int balanceOk,
-    int balanceTotal,
+  String providerKeyFetchCompleteToastNoBalance(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object failedCount,
   ) {
-    return 'Models $modelOk/$modelTotal, balances $balanceOk/$balanceTotal';
+    return 'Model fetch complete: $modelSuccess/$total keys succeeded, $fetchedCount models merged, failed items $failedCount';
   }
 
   @override
-  String get segmentSampleIntervalExplain =>
-      'How often a screenshot is sampled within a single segment when generating a summary. Smaller values capture more detail but use more tokens; larger values are cheaper but may miss short-lived events.';
-
-  @override
-  String get segmentDurationExplain =>
-      'Maximum duration of a single dynamic segment. After this length, a new segment is started even if the activity continues. Shorter segments produce more granular summaries; longer ones provide broader context.';
-
-  @override
-  String get dynamicMergeMaxSpanExplain =>
-      'Upper bound on the time span across which adjacent dynamic segments may be merged into one summary. Set to 0 to disable the limit.';
-
-  @override
-  String get dynamicMergeMaxGapExplain =>
-      'Maximum allowed gap between two adjacent dynamic segments for them to be considered mergeable. Set to 0 to disable the limit.';
-
-  @override
-  String get dynamicMergeMaxImagesExplain =>
-      'Maximum number of screenshots fed into a merged summary in one go. Higher values give the model more context but increase cost and latency. Set to 0 for no limit.';
-
-  @override
-  String get aiRequestIntervalExplain =>
-      'Minimum interval between two AI requests sent by the app. Increase this if your provider rate-limits you, or to reduce overall consumption.';
-
-  @override
-  String get segmentsJsonAutoRetryTitle => 'Auto retry count';
-
-  @override
-  String segmentsJsonAutoRetryDesc(int count) {
-    return 'When the AI response does not match the expected format, automatically retry the request this many times (0 = off, default 1). Current: $count';
+  String providerKeyProgressFetchCompleteMessageNoBalance(
+    Object modelSuccess,
+    Object total,
+  ) {
+    return 'Models $modelSuccess/$total';
   }
 
   @override
-  String get segmentsJsonAutoRetryExplain =>
-      'The AI sometimes returns content that cannot be parsed or does not match the required structure. When this happens, the app will automatically resend the request up to this many times. Higher values improve success rate but cost more time and tokens.';
+  String providerKeySaveSuccessNewNoBalance(Object saved, Object skipped) {
+    return 'Imported $saved API keys, skipped $skipped duplicate keys';
+  }
+
+  @override
+  String get providerKeySaveSuccessEditNoBalance => 'API Key saved';
+
+  @override
+  String settingCurrentValue(Object value) {
+    return 'Current: $value';
+  }
+
+  @override
+  String get savedMorningPromptToast => 'Morning prompt saved';
+
+  @override
+  String get promptAddonSectionTitle => 'Extra instructions';
 }

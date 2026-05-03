@@ -837,7 +837,7 @@ abstract class AppLocalizations {
   /// No description provided for @segmentSummarySectionDesc.
   ///
   /// In en, this message translates to:
-  /// **'Sampling / duration / merging / AI request interval'**
+  /// **'Sampling, duration, AI throttle'**
   String get segmentSummarySectionDesc;
 
   /// No description provided for @dailyReminderSectionTitle.
@@ -5874,6 +5874,18 @@ abstract class AppLocalizations {
   /// **'Enable & Clean Now'**
   String get rawResponseCleanupEnableAction;
 
+  /// No description provided for @segmentsJsonAutoRetryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto Retry Times'**
+  String get segmentsJsonAutoRetryTitle;
+
+  /// No description provided for @segmentsJsonAutoRetryDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'How many times to retry when the AI returns a dynamic summary that does not meet the app requirements (0 = off, default 1).'**
+  String get segmentsJsonAutoRetryDesc;
+
   /// No description provided for @segmentsJsonAutoRetryHint.
   ///
   /// In en, this message translates to:
@@ -5970,312 +5982,384 @@ abstract class AppLocalizations {
   /// **'Actual battery optimization status'**
   String get actualBatteryOptimizationStatusTitle;
 
-  /// No description provided for @keyDialogProviderNotSavedHint.
+  /// No description provided for @providerSaveBeforeAddingKey.
   ///
   /// In en, this message translates to:
   /// **'Please save the provider before adding API keys.'**
-  String get keyDialogProviderNotSavedHint;
+  String get providerSaveBeforeAddingKey;
 
-  /// No description provided for @keyDialogNameLabel.
+  /// No description provided for @providerSaveBeforeRefreshingModels.
   ///
   /// In en, this message translates to:
-  /// **'Key name'**
-  String get keyDialogNameLabel;
+  /// **'Please save the provider before refreshing models.'**
+  String get providerSaveBeforeRefreshingModels;
 
-  /// No description provided for @keyDialogApiKeyLabel.
+  /// No description provided for @providerDefaultKeyName.
   ///
   /// In en, this message translates to:
-  /// **'API Key'**
-  String get keyDialogApiKeyLabel;
+  /// **'Key {count}'**
+  String providerDefaultKeyName(Object count);
 
-  /// No description provided for @keyDialogApiKeyLabelMulti.
-  ///
-  /// In en, this message translates to:
-  /// **'API Key (one per line)'**
-  String get keyDialogApiKeyLabelMulti;
-
-  /// No description provided for @keyDialogApiKeyHintMulti.
-  ///
-  /// In en, this message translates to:
-  /// **'One API Key per line. Fetch scans every key.'**
-  String get keyDialogApiKeyHintMulti;
-
-  /// No description provided for @keyDialogPriorityLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Priority (100 = dynamic allocation)'**
-  String get keyDialogPriorityLabel;
-
-  /// No description provided for @keyDialogModelsLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Supported models (one per line)'**
-  String get keyDialogModelsLabel;
-
-  /// No description provided for @keyDialogPhaseFetchModels.
-  ///
-  /// In en, this message translates to:
-  /// **'Fetch models'**
-  String get keyDialogPhaseFetchModels;
-
-  /// No description provided for @keyDialogPhaseFetchBalance.
-  ///
-  /// In en, this message translates to:
-  /// **'Fetch balance'**
-  String get keyDialogPhaseFetchBalance;
-
-  /// No description provided for @keyDialogPhaseScanKeys.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan keys'**
-  String get keyDialogPhaseScanKeys;
-
-  /// No description provided for @keyDialogPhaseSaveKeys.
-  ///
-  /// In en, this message translates to:
-  /// **'Save keys'**
-  String get keyDialogPhaseSaveKeys;
-
-  /// No description provided for @keyDialogPhaseSaveKey.
-  ///
-  /// In en, this message translates to:
-  /// **'Save key'**
-  String get keyDialogPhaseSaveKey;
-
-  /// No description provided for @keyDialogPhaseSaveBalance.
-  ///
-  /// In en, this message translates to:
-  /// **'Save balance'**
-  String get keyDialogPhaseSaveBalance;
-
-  /// No description provided for @keyDialogPhaseFetchComplete.
-  ///
-  /// In en, this message translates to:
-  /// **'Fetch complete'**
-  String get keyDialogPhaseFetchComplete;
-
-  /// No description provided for @keyDialogPhaseSaveFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Save failed'**
-  String get keyDialogPhaseSaveFailed;
-
-  /// No description provided for @keyDialogFallbackKeyName.
+  /// No description provided for @providerKeyCurrent.
   ///
   /// In en, this message translates to:
   /// **'Current key'**
-  String get keyDialogFallbackKeyName;
+  String get providerKeyCurrent;
 
-  /// No description provided for @keyDialogPreparingScan.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing to scan {count} API keys...'**
-  String keyDialogPreparingScan(int count);
-
-  /// No description provided for @keyDialogFetchingModelsFor.
-  ///
-  /// In en, this message translates to:
-  /// **'Fetching models for {label}...'**
-  String keyDialogFetchingModelsFor(String label);
-
-  /// No description provided for @keyDialogFetchingBalanceFor.
-  ///
-  /// In en, this message translates to:
-  /// **'Fetching balance for {label}...'**
-  String keyDialogFetchingBalanceFor(String label);
-
-  /// No description provided for @keyDialogModelFetchFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'{label} model fetch failed: {error}'**
-  String keyDialogModelFetchFailed(String label, String error);
-
-  /// No description provided for @keyDialogBalanceFetchFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'{label} balance fetch failed: {error}'**
-  String keyDialogBalanceFetchFailed(String label, String error);
-
-  /// No description provided for @keyDialogModelsCountText.
-  ///
-  /// In en, this message translates to:
-  /// **'{count} models'**
-  String keyDialogModelsCountText(int count);
-
-  /// No description provided for @keyDialogModelFetchSkipped.
-  ///
-  /// In en, this message translates to:
-  /// **'model fetch failed, skipped'**
-  String get keyDialogModelFetchSkipped;
-
-  /// No description provided for @keyDialogBalanceSuffixSuccess.
-  ///
-  /// In en, this message translates to:
-  /// **', balance: {value}'**
-  String keyDialogBalanceSuffixSuccess(String value);
-
-  /// No description provided for @keyDialogBalanceSuffixFailed.
-  ///
-  /// In en, this message translates to:
-  /// **', balance failed'**
-  String get keyDialogBalanceSuffixFailed;
-
-  /// No description provided for @keyDialogScanLine.
-  ///
-  /// In en, this message translates to:
-  /// **'{label}: {modelMessage}{balanceMessage}'**
-  String keyDialogScanLine(
-    String label,
-    String modelMessage,
-    String balanceMessage,
-  );
-
-  /// No description provided for @keyDialogModelFetchSummarySuccess.
-  ///
-  /// In en, this message translates to:
-  /// **'Model fetch complete: {ok}/{total} keys succeeded, {merged} models merged{balanceHint}{failedHint}'**
-  String keyDialogModelFetchSummarySuccess(
-    int ok,
-    int total,
-    int merged,
-    String balanceHint,
-    String failedHint,
-  );
-
-  /// No description provided for @keyDialogModelFetchSummaryNone.
-  ///
-  /// In en, this message translates to:
-  /// **'No key returned models. The current manual model list is unchanged.'**
-  String get keyDialogModelFetchSummaryNone;
-
-  /// No description provided for @keyDialogPreparingSave.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing to save...'**
-  String get keyDialogPreparingSave;
-
-  /// No description provided for @keyDialogSavingItem.
-  ///
-  /// In en, this message translates to:
-  /// **'Saving {label}...'**
-  String keyDialogSavingItem(String label);
-
-  /// No description provided for @keyDialogSavingBalanceItem.
-  ///
-  /// In en, this message translates to:
-  /// **'Saving balance for {label}...'**
-  String keyDialogSavingBalanceItem(String label);
-
-  /// No description provided for @keyDialogImportedKeys.
-  ///
-  /// In en, this message translates to:
-  /// **'Imported {count} API keys{balanceHint}{skippedHint}'**
-  String keyDialogImportedKeys(
-    int count,
-    String balanceHint,
-    String skippedHint,
-  );
-
-  /// No description provided for @keyDialogApiKeySaved.
-  ///
-  /// In en, this message translates to:
-  /// **'API Key saved{balanceHint}'**
-  String keyDialogApiKeySaved(String balanceHint);
-
-  /// No description provided for @keyDialogNoNewKey.
+  /// No description provided for @providerNoNewApiKeyDuplicate.
   ///
   /// In en, this message translates to:
   /// **'No new key: all entered API keys already exist.'**
-  String get keyDialogNoNewKey;
+  String get providerNoNewApiKeyDuplicate;
 
-  /// No description provided for @keyDialogSaveFailed.
+  /// No description provided for @providerKeyNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Key name'**
+  String get providerKeyNameLabel;
+
+  /// No description provided for @providerApiKeyMultiLineLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key (one per line)'**
+  String get providerApiKeyMultiLineLabel;
+
+  /// No description provided for @providerApiKeySingleLineLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key'**
+  String get providerApiKeySingleLineLabel;
+
+  /// No description provided for @providerApiKeyMultiLineHint.
+  ///
+  /// In en, this message translates to:
+  /// **'One API Key per line. Fetch scans every key.'**
+  String get providerApiKeyMultiLineHint;
+
+  /// No description provided for @providerKeyPriorityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority (100 = dynamic allocation)'**
+  String get providerKeyPriorityLabel;
+
+  /// No description provided for @providerKeyModelsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported models (one per line)'**
+  String get providerKeyModelsLabel;
+
+  /// No description provided for @providerKeyProgressFetchModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch models'**
+  String get providerKeyProgressFetchModels;
+
+  /// No description provided for @providerKeyProgressFetchBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch balance'**
+  String get providerKeyProgressFetchBalance;
+
+  /// No description provided for @providerKeyProgressScanKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan keys'**
+  String get providerKeyProgressScanKeys;
+
+  /// No description provided for @providerKeyProgressFetchComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch complete'**
+  String get providerKeyProgressFetchComplete;
+
+  /// No description provided for @providerKeyProgressSaveKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Save keys'**
+  String get providerKeyProgressSaveKeys;
+
+  /// No description provided for @providerKeyProgressSaveKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Save key'**
+  String get providerKeyProgressSaveKey;
+
+  /// No description provided for @providerKeyProgressSaveBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Save balance'**
+  String get providerKeyProgressSaveBalance;
+
+  /// No description provided for @providerKeyProgressSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed'**
+  String get providerKeyProgressSaveFailed;
+
+  /// No description provided for @providerKeyProgressPreparingScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to scan {count} API keys...'**
+  String providerKeyProgressPreparingScan(Object count);
+
+  /// No description provided for @providerKeyProgressFetchingModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching models for {label}...'**
+  String providerKeyProgressFetchingModels(Object label);
+
+  /// No description provided for @providerKeyProgressFetchingBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching balance for {label}...'**
+  String providerKeyProgressFetchingBalance(Object label);
+
+  /// No description provided for @providerKeyProgressModelFetchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} model fetch failed: {error}'**
+  String providerKeyProgressModelFetchFailed(Object label, Object error);
+
+  /// No description provided for @providerKeyProgressBalanceFetchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} balance fetch failed: {error}'**
+  String providerKeyProgressBalanceFetchFailed(Object label, Object error);
+
+  /// No description provided for @providerKeyProgressBalanceDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **', balance: {display}'**
+  String providerKeyProgressBalanceDisplay(Object display);
+
+  /// No description provided for @providerKeyProgressBalanceFailedShort.
+  ///
+  /// In en, this message translates to:
+  /// **', balance failed'**
+  String get providerKeyProgressBalanceFailedShort;
+
+  /// No description provided for @providerKeyProgressModelsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} models'**
+  String providerKeyProgressModelsCount(Object count);
+
+  /// No description provided for @providerKeyProgressModelFailedSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'model fetch failed, skipped'**
+  String get providerKeyProgressModelFailedSkipped;
+
+  /// No description provided for @providerKeyFetchCompleteToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Model fetch complete: {modelSuccess}/{total} keys succeeded, {fetchedCount} models merged, balance {balanceSuccess}/{balanceTotal}, failed items {failedCount}'**
+  String providerKeyFetchCompleteToast(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object balanceSuccess,
+    Object balanceTotal,
+    Object failedCount,
+  );
+
+  /// No description provided for @providerKeyNoModelsFetchedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'No key returned models. The current manual model list is unchanged.'**
+  String get providerKeyNoModelsFetchedToast;
+
+  /// No description provided for @providerKeyProgressFetchCompleteMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Models {modelSuccess}/{total}, balances {balanceSuccess}/{balanceTotal}'**
+  String providerKeyProgressFetchCompleteMessage(
+    Object modelSuccess,
+    Object total,
+    Object balanceSuccess,
+    Object balanceTotal,
+  );
+
+  /// No description provided for @providerKeyProgressPreparingSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to save...'**
+  String get providerKeyProgressPreparingSave;
+
+  /// No description provided for @providerKeyProgressSaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving {label}...'**
+  String providerKeyProgressSaving(Object label);
+
+  /// No description provided for @providerKeyProgressSavingBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving balance for {label}...'**
+  String providerKeyProgressSavingBalance(Object label);
+
+  /// No description provided for @providerKeySaveSuccessNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {saved} API keys, balance {balanceUpdated}/{balanceTotal}, skipped {skipped} duplicate keys'**
+  String providerKeySaveSuccessNew(
+    Object saved,
+    Object balanceUpdated,
+    Object balanceTotal,
+    Object skipped,
+  );
+
+  /// No description provided for @providerKeySaveSuccessEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key saved, balance {balanceUpdated}/{balanceTotal}'**
+  String providerKeySaveSuccessEdit(Object balanceUpdated, Object balanceTotal);
+
+  /// No description provided for @providerKeySaveFailedToast.
   ///
   /// In en, this message translates to:
   /// **'Failed to save API Key: {error}'**
-  String keyDialogSaveFailed(String error);
+  String providerKeySaveFailedToast(Object error);
 
-  /// No description provided for @keyDialogBalanceHintFraction.
+  /// No description provided for @dynamicSettingSampleExplanation.
   ///
   /// In en, this message translates to:
-  /// **', balance {ok}/{total}'**
-  String keyDialogBalanceHintFraction(int ok, int total);
+  /// **'Controls how often screenshots are sampled for dynamic summaries. Shorter intervals keep finer details but take more time and AI cost.'**
+  String get dynamicSettingSampleExplanation;
 
-  /// No description provided for @keyDialogSkippedDuplicates.
+  /// No description provided for @dynamicSettingDurationExplanation.
   ///
   /// In en, this message translates to:
-  /// **', skipped {count} duplicate keys'**
-  String keyDialogSkippedDuplicates(int count);
+  /// **'Controls the time span covered by each dynamic entry. Shorter spans are more detailed; longer spans are better for quick review.'**
+  String get dynamicSettingDurationExplanation;
 
-  /// No description provided for @keyDialogFailedItemsHint.
+  /// No description provided for @dynamicSettingMergeMaxSpanExplanation.
   ///
   /// In en, this message translates to:
-  /// **', {count} failed items'**
-  String keyDialogFailedItemsHint(int count);
+  /// **'Controls the total time span that merged dynamic entries may cover. Set to 0 for unlimited.'**
+  String get dynamicSettingMergeMaxSpanExplanation;
 
-  /// No description provided for @keyDialogFinalSummary.
+  /// No description provided for @dynamicSettingMergeMaxGapExplanation.
   ///
   /// In en, this message translates to:
-  /// **'Models {modelOk}/{modelTotal}, balances {balanceOk}/{balanceTotal}'**
-  String keyDialogFinalSummary(
-    int modelOk,
-    int modelTotal,
-    int balanceOk,
-    int balanceTotal,
+  /// **'Controls the maximum allowed gap between two entries that can be merged. Set to 0 for unlimited.'**
+  String get dynamicSettingMergeMaxGapExplanation;
+
+  /// No description provided for @dynamicSettingMergeMaxImagesExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls the maximum number of images included when merging dynamic entries. Set to 0 for unlimited.'**
+  String get dynamicSettingMergeMaxImagesExplanation;
+
+  /// No description provided for @dynamicSettingAiRequestIntervalExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls the minimum interval between dynamic summary AI requests to reduce rate limits and cost spikes.'**
+  String get dynamicSettingAiRequestIntervalExplanation;
+
+  /// No description provided for @dynamicSettingAutoRetryExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'When the AI returns content that does not meet app requirements, the app can request again automatically. Higher values may fix more failures but increase wait time and cost.'**
+  String get dynamicSettingAutoRetryExplanation;
+
+  /// No description provided for @dynamicSettingRawResponseRetentionExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls how many days raw AI responses are retained. Shorter retention saves storage but leaves less information for troubleshooting.'**
+  String get dynamicSettingRawResponseRetentionExplanation;
+
+  /// No description provided for @promptManagerReadOnlyBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Read only'**
+  String get promptManagerReadOnlyBadge;
+
+  /// No description provided for @promptManagerEditingBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing'**
+  String get promptManagerEditingBadge;
+
+  /// No description provided for @promptAddonOptionalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional'**
+  String get promptAddonOptionalLabel;
+
+  /// No description provided for @promptAddonCharCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} chars'**
+  String promptAddonCharCount(Object count);
+
+  /// No description provided for @promptAddonCharCountLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} / {max}'**
+  String promptAddonCharCountLimit(Object count, Object max);
+
+  /// No description provided for @promptManagerSupportsPlainText.
+  ///
+  /// In en, this message translates to:
+  /// **'Plain text supported'**
+  String get promptManagerSupportsPlainText;
+
+  /// No description provided for @promptAddonTooLongError.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra instructions cannot exceed {max} characters.'**
+  String promptAddonTooLongError(Object max);
+
+  /// No description provided for @providerKeyFetchCompleteToastNoBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Model fetch complete: {modelSuccess}/{total} keys succeeded, {fetchedCount} models merged, failed items {failedCount}'**
+  String providerKeyFetchCompleteToastNoBalance(
+    Object modelSuccess,
+    Object total,
+    Object fetchedCount,
+    Object failedCount,
   );
 
-  /// No description provided for @segmentSampleIntervalExplain.
+  /// No description provided for @providerKeyProgressFetchCompleteMessageNoBalance.
   ///
   /// In en, this message translates to:
-  /// **'How often a screenshot is sampled within a single segment when generating a summary. Smaller values capture more detail but use more tokens; larger values are cheaper but may miss short-lived events.'**
-  String get segmentSampleIntervalExplain;
+  /// **'Models {modelSuccess}/{total}'**
+  String providerKeyProgressFetchCompleteMessageNoBalance(
+    Object modelSuccess,
+    Object total,
+  );
 
-  /// No description provided for @segmentDurationExplain.
+  /// No description provided for @providerKeySaveSuccessNewNoBalance.
   ///
   /// In en, this message translates to:
-  /// **'Maximum duration of a single dynamic segment. After this length, a new segment is started even if the activity continues. Shorter segments produce more granular summaries; longer ones provide broader context.'**
-  String get segmentDurationExplain;
+  /// **'Imported {saved} API keys, skipped {skipped} duplicate keys'**
+  String providerKeySaveSuccessNewNoBalance(Object saved, Object skipped);
 
-  /// No description provided for @dynamicMergeMaxSpanExplain.
+  /// No description provided for @providerKeySaveSuccessEditNoBalance.
   ///
   /// In en, this message translates to:
-  /// **'Upper bound on the time span across which adjacent dynamic segments may be merged into one summary. Set to 0 to disable the limit.'**
-  String get dynamicMergeMaxSpanExplain;
+  /// **'API Key saved'**
+  String get providerKeySaveSuccessEditNoBalance;
 
-  /// No description provided for @dynamicMergeMaxGapExplain.
+  /// No description provided for @settingCurrentValue.
   ///
   /// In en, this message translates to:
-  /// **'Maximum allowed gap between two adjacent dynamic segments for them to be considered mergeable. Set to 0 to disable the limit.'**
-  String get dynamicMergeMaxGapExplain;
+  /// **'Current: {value}'**
+  String settingCurrentValue(Object value);
 
-  /// No description provided for @dynamicMergeMaxImagesExplain.
+  /// No description provided for @savedMorningPromptToast.
   ///
   /// In en, this message translates to:
-  /// **'Maximum number of screenshots fed into a merged summary in one go. Higher values give the model more context but increase cost and latency. Set to 0 for no limit.'**
-  String get dynamicMergeMaxImagesExplain;
+  /// **'Morning prompt saved'**
+  String get savedMorningPromptToast;
 
-  /// No description provided for @aiRequestIntervalExplain.
+  /// No description provided for @promptAddonSectionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Minimum interval between two AI requests sent by the app. Increase this if your provider rate-limits you, or to reduce overall consumption.'**
-  String get aiRequestIntervalExplain;
-
-  /// No description provided for @segmentsJsonAutoRetryTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Auto retry count'**
-  String get segmentsJsonAutoRetryTitle;
-
-  /// No description provided for @segmentsJsonAutoRetryDesc.
-  ///
-  /// In en, this message translates to:
-  /// **'When the AI response does not match the expected format, automatically retry the request this many times (0 = off, default 1). Current: {count}'**
-  String segmentsJsonAutoRetryDesc(int count);
-
-  /// No description provided for @segmentsJsonAutoRetryExplain.
-  ///
-  /// In en, this message translates to:
-  /// **'The AI sometimes returns content that cannot be parsed or does not match the required structure. When this happens, the app will automatically resend the request up to this many times. Higher values improve success rate but cost more time and tokens.'**
-  String get segmentsJsonAutoRetryExplain;
+  /// **'Extra instructions'**
+  String get promptAddonSectionTitle;
 }
 
 class _AppLocalizationsDelegate

@@ -169,7 +169,7 @@
   "displayAndSortSectionTitle": "表示と並べ替え",
   "screenshotSectionTitle": "キャプチャ設定",
   "screenshotSectionDesc": "間隔/品質/期限削除",
-  "segmentSummarySectionTitle": "セグメントの概要",
+  "segmentSummarySectionTitle": "ダイナミック設定",
   "segmentSummarySectionDesc": "サンプリング/長さ/AI間隔",
   "dailyReminderSectionTitle": "毎日の概要リマインダー",
   "dailyReminderSectionDesc": "時刻/バナー権限/テスト",
@@ -1719,7 +1719,7 @@
   },
   "rawResponseCleanupEnableAction": "有効化して今すぐクリーンアップ",
   "segmentsJsonAutoRetryTitle": "自動リトライ回数",
-  "segmentsJsonAutoRetryDesc": "動的サマリーの structured_json 解析に失敗したときの自動リトライ回数です（0=オフ、既定1）。",
+  "segmentsJsonAutoRetryDesc": "AI の返答がアプリの要件を満たさない場合に自動再試行する回数です（0=オフ、既定 1）。",
   "segmentsJsonAutoRetryHint": "回数（0-5）",
   "rawResponseCleanupTitle": "原始応答の自動クリーンアップ",
   "rawResponseCleanupKeepLabel": "保持",
@@ -1745,5 +1745,194 @@
   "permissionConfiguredStatus": "設定済み",
   "permissionNeedsConfigurationStatus": "設定が必要",
   "backgroundPermissionTitle": "バックグラウンド実行権限",
-  "actualBatteryOptimizationStatusTitle": "実際のバッテリー最適化状態"
+  "actualBatteryOptimizationStatusTitle": "実際のバッテリー最適化状態",
+  "providerSaveBeforeAddingKey": "API Key を追加する前にプロバイダーを保存してください。",
+  "providerSaveBeforeRefreshingModels": "モデルを更新する前にプロバイダーを保存してください。",
+  "providerDefaultKeyName": "Key {count}",
+  "@providerDefaultKeyName": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyCurrent": "現在の Key",
+  "providerNoNewApiKeyDuplicate": "新しい Key はありません。入力した API Key はすべて既に存在します。",
+  "providerKeyNameLabel": "Key 名",
+  "providerApiKeyMultiLineLabel": "API Key（1行に1つ）",
+  "providerApiKeySingleLineLabel": "API Key",
+  "providerApiKeyMultiLineHint": "1行に1つの API Key を入力してください。取得時は各 Key を順番に確認します。",
+  "providerKeyPriorityLabel": "優先度（100 = 動的割り当て）",
+  "providerKeyModelsLabel": "対応モデル（1行に1つ）",
+  "providerKeyProgressFetchModels": "モデルを取得",
+  "providerKeyProgressFetchBalance": "残高を取得",
+  "providerKeyProgressScanKeys": "Key をスキャン",
+  "providerKeyProgressFetchComplete": "取得完了",
+  "providerKeyProgressSaveKeys": "Key を保存",
+  "providerKeyProgressSaveKey": "Key を保存",
+  "providerKeyProgressSaveBalance": "残高を保存",
+  "providerKeyProgressSaveFailed": "保存失敗",
+  "providerKeyProgressPreparingScan": "{count} 個の API Key をスキャンする準備中...",
+  "@providerKeyProgressPreparingScan": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressFetchingModels": "{label} のモデルを取得中...",
+  "@providerKeyProgressFetchingModels": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressFetchingBalance": "{label} の残高を取得中...",
+  "@providerKeyProgressFetchingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressModelFetchFailed": "{label} のモデル取得に失敗しました：{error}",
+  "@providerKeyProgressModelFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceFetchFailed": "{label} の残高取得に失敗しました：{error}",
+  "@providerKeyProgressBalanceFetchFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  },
+  "providerKeyProgressBalanceDisplay": "、残高：{display}",
+  "@providerKeyProgressBalanceDisplay": {
+    "placeholders": {
+      "display": {}
+    }
+  },
+  "providerKeyProgressBalanceFailedShort": "、残高取得失敗",
+  "providerKeyProgressModelsCount": "{count} 個のモデル",
+  "@providerKeyProgressModelsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "providerKeyProgressModelFailedSkipped": "モデル取得に失敗したためスキップしました",
+  "providerKeyFetchCompleteToast": "モデル取得完了：{modelSuccess}/{total} 個の Key が成功、{fetchedCount} 個のモデルを統合、残高 {balanceSuccess}/{balanceTotal}、失敗項目 {failedCount}",
+  "@providerKeyFetchCompleteToast": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "balanceSuccess": {},
+      "balanceTotal": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyNoModelsFetchedToast": "モデルを返した Key がありません。現在の手動モデル一覧は変更されません。",
+  "providerKeyProgressFetchCompleteMessage": "モデル {modelSuccess}/{total}、残高 {balanceSuccess}/{balanceTotal}",
+  "@providerKeyProgressFetchCompleteMessage": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "balanceSuccess": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeyProgressPreparingSave": "保存の準備中...",
+  "providerKeyProgressSaving": "{label} を保存中...",
+  "@providerKeyProgressSaving": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeyProgressSavingBalance": "{label} の残高を保存中...",
+  "@providerKeyProgressSavingBalance": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "providerKeySaveSuccessNew": "{saved} 個の API Key を取り込みました。残高 {balanceUpdated}/{balanceTotal}、重複 {skipped} 個をスキップ",
+  "@providerKeySaveSuccessNew": {
+    "placeholders": {
+      "saved": {},
+      "balanceUpdated": {},
+      "balanceTotal": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEdit": "API Key を保存しました。残高 {balanceUpdated}/{balanceTotal}",
+  "@providerKeySaveSuccessEdit": {
+    "placeholders": {
+      "balanceUpdated": {},
+      "balanceTotal": {}
+    }
+  },
+  "providerKeySaveFailedToast": "API Key の保存に失敗しました：{error}",
+  "@providerKeySaveFailedToast": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "dynamicSettingSampleExplanation": "ダイナミック再構築のサンプリング間隔を制御します。短いほど細かく記録できますが、スクリーンショット数と AI 処理量が増えます。",
+  "dynamicSettingDurationExplanation": "1つのダイナミック片がカバーする時間を制御します。長いほど一度の要約に含まれる文脈が増えます。",
+  "dynamicSettingMergeMaxSpanExplanation": "マージできるダイナミック全体の時間幅を制限します。0 は無制限です。",
+  "dynamicSettingMergeMaxGapExplanation": "隣接する2つのダイナミック片をマージできる最大間隔を制限します。0 は無制限です。",
+  "dynamicSettingMergeMaxImagesExplanation": "1回のマージに含める最大スクリーンショット数を制限します。0 は無制限です。",
+  "dynamicSettingAiRequestIntervalExplanation": "ダイナミック再構築が AI にリクエストする最小間隔を制限し、頻度が高くなりすぎるのを防ぎます。",
+  "dynamicSettingAutoRetryExplanation": "AI の返答がアプリの要件を満たさない場合、アプリが自動的に再試行します。回数を増やすと安定しますが、時間と消費量も増えます。",
+  "dynamicSettingRawResponseRetentionExplanation": "AI の生の返答を保持する日数を制御します。期限切れ後は生の返答のみ削除し、生成済みの要約には影響しません。",
+  "promptManagerReadOnlyBadge": "読み取り専用",
+  "promptManagerEditingBadge": "編集中",
+  "promptAddonOptionalLabel": "任意",
+  "promptAddonCharCount": "{count} 文字",
+  "@promptAddonCharCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "promptAddonCharCountLimit": "{count} / {max}",
+  "@promptAddonCharCountLimit": {
+    "placeholders": {
+      "count": {},
+      "max": {}
+    }
+  },
+  "promptManagerSupportsPlainText": "プレーンテキスト対応",
+  "promptAddonTooLongError": "補足説明は {max} 文字以内にしてください。",
+  "@promptAddonTooLongError": {
+    "placeholders": {
+      "max": {}
+    }
+  },
+  "providerKeyFetchCompleteToastNoBalance": "モデル取得完了：{modelSuccess}/{total} 個の Key が成功、{fetchedCount} 個のモデルを統合、失敗項目 {failedCount}",
+  "@providerKeyFetchCompleteToastNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {},
+      "fetchedCount": {},
+      "failedCount": {}
+    }
+  },
+  "providerKeyProgressFetchCompleteMessageNoBalance": "モデル {modelSuccess}/{total}",
+  "@providerKeyProgressFetchCompleteMessageNoBalance": {
+    "placeholders": {
+      "modelSuccess": {},
+      "total": {}
+    }
+  },
+  "providerKeySaveSuccessNewNoBalance": "{saved} 個の API Key を取り込みました。重複 {skipped} 個をスキップ",
+  "@providerKeySaveSuccessNewNoBalance": {
+    "placeholders": {
+      "saved": {},
+      "skipped": {}
+    }
+  },
+  "providerKeySaveSuccessEditNoBalance": "API Key を保存しました",
+  "settingCurrentValue": "現在：{value}",
+  "@settingCurrentValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "savedMorningPromptToast": "朝のインサイトプロンプトを保存しました",
+  "promptAddonSectionTitle": "補足説明"
 }
