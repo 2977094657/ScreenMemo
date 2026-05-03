@@ -41,6 +41,15 @@ class DynamicRebuildWorkerState {
 
   factory DynamicRebuildWorkerState.fromMap(Map<dynamic, dynamic>? map) {
     final data = map ?? const <dynamic, dynamic>{};
+    final List<String> recentStreamChunks =
+        ((data['recentStreamChunks'] as List?) ?? const <Object?>[])
+            .map((Object? value) => value?.toString().trim() ?? '')
+            .where((String value) => value.isNotEmpty)
+            .toList(growable: false);
+    final List<String> visibleRecentStreamChunks =
+        recentStreamChunks.length <= 3
+        ? recentStreamChunks
+        : recentStreamChunks.sublist(recentStreamChunks.length - 3);
     return DynamicRebuildWorkerState(
       slotId: DynamicRebuildTaskStatus.safeTaskInt(data['slotId']),
       status: (data['status'] as String?)?.trim().isNotEmpty == true
@@ -61,12 +70,7 @@ class DynamicRebuildWorkerState {
       ),
       retryCount: DynamicRebuildTaskStatus.safeTaskInt(data['retryCount']),
       retryLimit: DynamicRebuildTaskStatus.safeTaskInt(data['retryLimit']),
-      recentStreamChunks:
-          ((data['recentStreamChunks'] as List?) ?? const <Object?>[])
-              .map((Object? value) => value?.toString().trim() ?? '')
-              .where((String value) => value.isNotEmpty)
-              .take(3)
-              .toList(growable: false),
+      recentStreamChunks: visibleRecentStreamChunks,
     );
   }
 
@@ -388,9 +392,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// 另保留一个历史字段 balance_path（早期实现预留、当前未使用）。
   Future<void> _ensureAiProvidersBalanceColumns(DatabaseExecutor db) async {
     try {
-      await db.execute(
-        'ALTER TABLE ai_providers ADD COLUMN balance_path TEXT',
-      );
+      await db.execute('ALTER TABLE ai_providers ADD COLUMN balance_path TEXT');
     } catch (_) {}
     try {
       await db.execute(
@@ -1614,8 +1616,9 @@ ORDER BY day ASC
         'chat_path': chatPath?.trim(),
         'models_path': modelsPath?.trim(),
         'balance_endpoint_type': balanceEndpointType?.trim(),
-        'balance_auto_delete_zero_key':
-            (balanceAutoDeleteZeroKey ?? false) ? 1 : 0,
+        'balance_auto_delete_zero_key': (balanceAutoDeleteZeroKey ?? false)
+            ? 1
+            : 0,
         'use_response_api': useResponseApi ? 1 : 0,
         'enabled': enabled ? 1 : 0,
         'is_default': isDefault ? 1 : 0,
@@ -1668,9 +1671,7 @@ ORDER BY day ASC
         data['balance_endpoint_type'] = (t == null || t.isEmpty) ? null : t;
       }
       if (balanceAutoDeleteZeroKey != null) {
-        data['balance_auto_delete_zero_key'] = balanceAutoDeleteZeroKey
-            ? 1
-            : 0;
+        data['balance_auto_delete_zero_key'] = balanceAutoDeleteZeroKey ? 1 : 0;
       }
       if (useResponseApi != null)
         data['use_response_api'] = useResponseApi ? 1 : 0;

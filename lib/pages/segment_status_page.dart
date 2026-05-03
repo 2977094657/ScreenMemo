@@ -32,6 +32,7 @@ import '../widgets/ai_request_logs_viewer.dart';
 import '../widgets/ai_request_logs_sheet.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
+import '../widgets/search_styles.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
@@ -568,23 +569,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                       const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: TextField(
+                        child: SearchTextField(
                           controller: queryCtrl,
+                          hintText: AppLocalizations.of(
+                            context,
+                          ).searchProviderPlaceholder,
                           autofocus: true,
                           onChanged: (_) {
                             _segProviderQueryText = queryCtrl.text;
                             setModalState(() {});
                           },
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(
-                              context,
-                            ).searchProviderPlaceholder,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                         ),
                       ),
                       Expanded(
@@ -719,23 +713,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                       const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: TextField(
+                        child: SearchTextField(
                           controller: queryCtrl,
+                          hintText: AppLocalizations.of(
+                            context,
+                          ).searchModelPlaceholder,
                           autofocus: true,
                           onChanged: (_) {
                             _segModelQueryText = queryCtrl.text;
                             setModalState(() {});
                           },
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(
-                              context,
-                            ).searchModelPlaceholder,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                         ),
                       ),
                       Expanded(
@@ -2022,10 +2009,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final String rangeLabel = worker?.currentRangeLabel.trim() ?? '';
     final int processed = worker?.processedSegments ?? 0;
     final int total = worker?.totalSegments ?? 0;
-    final List<String> recentStreamChunks =
-        (worker?.recentStreamChunks ?? const <String>[]).reversed
-            .take(3)
-            .toList(growable: false);
+    final List<String> allRecentStreamChunks =
+        worker?.recentStreamChunks ?? const <String>[];
+    final List<String> recentStreamChunks = allRecentStreamChunks.length <= 3
+        ? allRecentStreamChunks
+        : allRecentStreamChunks.sublist(allRecentStreamChunks.length - 3);
     final double? progressValue = total > 0
         ? (processed / total).clamp(0, 1)
         : null;

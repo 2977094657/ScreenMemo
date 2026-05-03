@@ -497,7 +497,12 @@ void main() {
               'currentSegmentId': 302,
               'retryCount': 0,
               'retryLimit': 3,
-              'recentStreamChunks': <String>['第一条流式预览', '第二条流式预览', '第三条流式预览'],
+              'recentStreamChunks': <String>[
+                '最旧流式预览',
+                '第一条流式预览',
+                '第二条流式预览',
+                '第三条流式预览',
+              ],
             },
             <String, Object?>{
               'slotId': 2,
@@ -547,9 +552,9 @@ void main() {
         expect(find.textContaining('并发 3'), findsOneWidget);
         expect(find.textContaining('待续失败天数 1'), findsOneWidget);
         expect(find.text('最近 3 条流式数据'), findsOneWidget);
-        expect(find.textContaining('1. 第三条流式预览'), findsOneWidget);
+        expect(find.textContaining('1. 第一条流式预览'), findsOneWidget);
         expect(find.textContaining('2. 第二条流式预览'), findsOneWidget);
-        expect(find.textContaining('3. 第一条流式预览'), findsOneWidget);
+        expect(find.textContaining('3. 第三条流式预览'), findsOneWidget);
 
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();

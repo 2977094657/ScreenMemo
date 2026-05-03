@@ -43,7 +43,12 @@ void main() {
             'currentSegmentId': 42,
             'retryCount': 0,
             'retryLimit': 3,
-            'recentStreamChunks': <String>['第一段流式文本', '第二段流式文本', '第三段流式文本'],
+            'recentStreamChunks': <String>[
+              '最旧流式文本',
+              '第一段流式文本',
+              '第二段流式文本',
+              '第三段流式文本',
+            ],
           },
           <String, Object?>{
             'slotId': 2,
@@ -74,7 +79,11 @@ void main() {
     expect(status.workers, hasLength(2));
     expect(status.workers.first.slotId, 1);
     expect(status.workers.first.dayKey, '2026-03-12');
-    expect(status.workers.first.recentStreamChunks, hasLength(3));
+    expect(status.workers.first.recentStreamChunks, <String>[
+      '第一段流式文本',
+      '第二段流式文本',
+      '第三段流式文本',
+    ]);
     expect(status.workers.first.recentStreamChunks.last, '第三段流式文本');
     expect(status.workers.last.isFailedWaiting, isTrue);
     expect(status.recentLogs.single, contains('[T1][2026-03-12]'));
