@@ -1,5 +1,13 @@
 package com.fqyw.screen_memo
 
+import com.fqyw.screen_memo.app.AppContextProvider
+import com.fqyw.screen_memo.daily.DailySummaryScheduler
+import com.fqyw.screen_memo.diagnostics.RuntimeDiagnostics
+import com.fqyw.screen_memo.dynamic.DynamicRebuildService
+import com.fqyw.screen_memo.importing.ImportOcrRepairService
+import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.logging.OutputFileLogger
+
 import android.app.Application
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache

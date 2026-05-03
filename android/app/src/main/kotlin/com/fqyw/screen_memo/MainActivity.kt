@@ -1,5 +1,20 @@
 package com.fqyw.screen_memo
 
+import com.fqyw.screen_memo.R
+
+import com.fqyw.screen_memo.capture.AccessibilityServiceWatchdog
+import com.fqyw.screen_memo.capture.AccessibilityStateMonitor
+import com.fqyw.screen_memo.capture.ScreenCaptureAccessibilityService
+import com.fqyw.screen_memo.capture.ScreenCaptureService
+import com.fqyw.screen_memo.database.ScreenshotDatabaseHelper
+import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.service.DaemonService
+import com.fqyw.screen_memo.service.KeepAliveJobService
+import com.fqyw.screen_memo.service.ServiceDebugHelper
+import com.fqyw.screen_memo.settings.LegacySettingKeysNative
+import com.fqyw.screen_memo.settings.UserSettingsKeysNative
+import com.fqyw.screen_memo.settings.UserSettingsStorage
+
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.AppOpsManager
@@ -68,7 +83,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.ArrayList
 import kotlin.math.max
 import kotlin.math.min
-import com.fqyw.screen_memo.OutputFileLogger
+import com.fqyw.screen_memo.logging.OutputFileLogger
+import com.fqyw.screen_memo.channel.ExtractedMainMethodHandler
 import com.fqyw.screen_memo.storage.StorageAnalyzer
 import com.fqyw.screen_memo.replay.ReplayExportNotificationHelper
 import com.fqyw.screen_memo.replay.ReplayVideoComposer
@@ -119,7 +135,11 @@ class MainActivity : FlutterActivity() {
 
         // 创建方法通道
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        val extractedMethodHandler = ExtractedMainMethodHandler(this, methodChannel)
         methodChannel.setMethodCallHandler { call, result ->
+            if (extractedMethodHandler.handle(call, result)) {
+                return@setMethodCallHandler
+            }
             when (call.method) {
                 "hideStatusBar" -> {
                     hideStatusBar()
@@ -164,288 +184,12 @@ class MainActivity : FlutterActivity() {
                     
                     result.success(running)
                 }
-                "nativeLog" -> {
-                    try {
-                        val level = call.argument<String>("level") ?: "info"
-                        val tag = call.argument<String>("tag") ?: "Flutter"
-                        val msg = call.argument<String>("message") ?: ""
-                        // 统一通过 FileLogger 控制，是否落盘由 FileLogger 决定
-                        when (level.lowercase()) {
-                            "debug" -> FileLogger.d(tag, msg)
-                            "warn" -> FileLogger.w(tag, msg)
-                            "error" -> FileLogger.e(tag, msg)
-                            else -> FileLogger.i(tag, msg)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("log_error", e.message, null)
-                    }
-                }
-                "setFileLoggingEnabled" -> {
-                    try {
-                        val enabled = call.argument<Boolean>("enabled") ?: true
-                        val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                        sp.edit().putBoolean("logging_enabled", enabled).apply()
-                        FileLogger.enableFileLogging(enabled)
-                        FileLogger.setLevel(if (enabled) 4 else 1)
-                        try { OutputFileLogger.setEnabled(enabled) } catch (_: Exception) {}
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("log_toggle_error", e.message, null)
-                    }
-                }
-                "setNativeLogLevel" -> {
-                    try {
-                        val level = call.argument<String>("level")?.lowercase() ?: "debug"
-                        val lvl = when(level) {
-                            "error" -> 1
-                            "warn" -> 2
-                            "info" -> 3
-                            else -> 4
-                        }
-                        FileLogger.setLevel(lvl)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("log_level_error", e.message, null)
-                    }
-                }
-                "setCategoryLoggingEnabled" -> {
-                    try {
-                        val category = call.argument<String>("category") ?: ""
-                        val enabled = call.argument<Boolean>("enabled") ?: false
-                        if (category.isNotBlank()) {
-                            FileLogger.setCategoryEnabled(this, category, enabled)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("log_category_error", e.message, null)
-                    }
-                }
-                "getOutputLogsDirToday" -> {
-                    val dir = OutputFileLogger.getTodayDir(this)
-                    result.success(dir?.absolutePath)
-                }
-                "getPendingRuntimeDiagnostic" -> {
-                    result.success(RuntimeDiagnostics.getPendingIssueSummary(this))
-                }
-                "markRuntimeDiagnosticHandled" -> {
-                    val issueId = call.argument<String>("id")
-                    RuntimeDiagnostics.markIssueHandled(this, issueId)
-                    result.success(true)
-                }
                 "openDiagnosticFile" -> {
                     val path = call.argument<String>("path")
                     if (path.isNullOrBlank()) {
                         result.error("invalid_path", "path is blank", null)
                     } else {
                         openDiagnosticFile(path, result)
-                    }
-                }
-                "getSegmentsAIConfig" -> {
-                    try {
-                        val cfg = AISettingsNative.readConfigSnapshot(this)
-                        val map = mapOf(
-                            "baseUrl" to (cfg.baseUrl ?: ""),
-                            "model" to (cfg.model ?: ""),
-                            "apiKey" to (cfg.apiKey ?: "")
-                        )
-                        result.success(map)
-                    } catch (e: Exception) {
-                        result.error("read_failed", e.message, null)
-                    }
-                }
-                "setSegmentSettings" -> {
-                    try {
-                        val sample = (call.argument<Int>("sampleIntervalSec") ?: 20).coerceAtLeast(5)
-                        val duration = (call.argument<Int>("segmentDurationSec") ?: 300).coerceAtLeast(60)
-                        try { FileLogger.i(TAG, "设置段落参数(call)：sampleIntervalSec=${sample} segmentDurationSec=${duration}") } catch (_: Exception) {}
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC,
-                            sample
-                        )
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.SEGMENT_DURATION_SEC,
-                            duration
-                        )
-                        try {
-                            val n = SegmentDatabaseHelper.updateCollectingSegmentsSampleInterval(this, sample)
-                            val cur = try { SegmentDatabaseHelper.getCollectingSegment(this) } catch (_: Exception) { null }
-                            val persistedSample = try {
-                                UserSettingsStorage.getInt(this, UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC, 20)
-                            } catch (_: Exception) { -1 }
-                            val persistedDuration = try {
-                                UserSettingsStorage.getInt(this, UserSettingsKeysNative.SEGMENT_DURATION_SEC, 300)
-                            } catch (_: Exception) { -1 }
-                            try {
-                                FileLogger.i(
-                                    TAG,
-                                    "setSegmentSettings(persisted): sample=${persistedSample}, duration=${persistedDuration}, updatedCollecting=${n}, collectingId=${cur?.id}, collectingInterval=${cur?.sampleIntervalSec}"
-                                )
-                            } catch (_: Exception) {}
-                        } catch (_: Exception) {}
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "getSegmentSettings" -> {
-                    try {
-                        val sample = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC,
-                            20
-                        ).coerceAtLeast(5)
-                        val duration = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.SEGMENT_DURATION_SEC,
-                            300
-                        ).coerceAtLeast(60)
-                        try { FileLogger.i(TAG, "获取段落参数：sampleIntervalSec=${sample} segmentDurationSec=${duration}") } catch (_: Exception) {}
-                        result.success(
-                            mapOf(
-                                "sampleIntervalSec" to sample,
-                                "segmentDurationSec" to duration
-                            )
-                        )
-                    } catch (e: Exception) {
-                        result.error("read_failed", e.message, null)
-                    }
-                }
-                "getDynamicAutoRepairEnabled" -> {
-                    try {
-                        val enabled = UserSettingsStorage.getBoolean(
-                            this,
-                            UserSettingsKeysNative.DYNAMIC_AUTO_REPAIR_ENABLED,
-                            true
-                        )
-                        result.success(enabled)
-                    } catch (e: Exception) {
-                        result.error("read_failed", e.message, null)
-                    }
-                }
-                "setDynamicAutoRepairEnabled" -> {
-                    try {
-                        val enabled = call.argument<Boolean>("enabled") ?: true
-                        UserSettingsStorage.putBoolean(
-                            this,
-                            UserSettingsKeysNative.DYNAMIC_AUTO_REPAIR_ENABLED,
-                            enabled
-                        )
-                        try {
-                            FileLogger.i(
-                                TAG,
-                                "设置动态自动补建开关：enabled=${enabled}"
-                            )
-                        } catch (_: Exception) {}
-                        result.success(enabled)
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "setDynamicMergeLimits" -> {
-                    try {
-                        val spanRaw = call.argument<Int>("maxSpanSec") ?: (3 * 3600)
-                        val gapRaw = call.argument<Int>("maxGapSec") ?: 3600
-                        val maxImagesRaw = call.argument<Int>("maxImages") ?: 200
-                        val span = when {
-                            spanRaw < 0 -> 0
-                            spanRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
-                            else -> spanRaw
-                        }
-                        val gap = when {
-                            gapRaw < 0 -> 0
-                            gapRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
-                            else -> gapRaw
-                        }
-                        val maxImages = when {
-                            maxImagesRaw < 0 -> 0
-                            maxImagesRaw > 100000 -> 100000
-                            else -> maxImagesRaw
-                        }
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
-                            span
-                        )
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
-                            gap
-                        )
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
-                            maxImages
-                        )
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "getDynamicMergeLimits" -> {
-                    try {
-                        val span = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
-                            3 * 3600
-                        ).let { if (it < 0) 0 else it }
-                        val gap = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
-                            3600
-                        ).let { if (it < 0) 0 else it }
-                        val maxImages = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
-                            200
-                        ).let { if (it < 0) 0 else it }
-                        result.success(
-                            mapOf(
-                                "maxSpanSec" to span,
-                                "maxGapSec" to gap,
-                                "maxImages" to maxImages
-                            )
-                        )
-                    } catch (e: Exception) {
-                        result.error("read_failed", e.message, null)
-                    }
-                }
-                "setAiRequestIntervalSec" -> {
-                    try {
-                        val secRaw = call.argument<Int>("seconds") ?: 3
-                        val sec = when {
-                            secRaw < 1 -> 1
-                            secRaw > 60 -> 60
-                            else -> secRaw
-                        }
-                        UserSettingsStorage.putInt(
-                            this,
-                            UserSettingsKeysNative.AI_MIN_REQUEST_INTERVAL_SEC,
-                            sec
-                        )
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "getAiRequestIntervalSec" -> {
-                    try {
-                        val sec = UserSettingsStorage.getInt(
-                            this,
-                            UserSettingsKeysNative.AI_MIN_REQUEST_INTERVAL_SEC,
-                            3
-                        )
-                        result.success(
-                            when {
-                                sec < 1 -> 1
-                                sec > 60 -> 60
-                                else -> sec
-                            }
-                        )
-                    } catch (e: Exception) {
-                        result.error("read_failed", e.message, null)
                     }
                 }
                 "startForegroundService" -> {
@@ -495,35 +239,6 @@ class MainActivity : FlutterActivity() {
                     FileLogger.e(TAG, "=== 立即截屏结果: $filePath ===")
                     result.success(filePath)
                 }
-                "checkPermissionGuideNeeded" -> {
-                    result.success(PermissionGuideHelper.shouldShowPermissionGuide(this))
-                }
-                "getPermissionGuideText" -> {
-                    result.success(PermissionGuideHelper.getPermissionGuideText(this))
-                }
-                "openAppDetailsSettings" -> {
-                    result.success(PermissionGuideHelper.openAppDetailsSettings(this))
-                }
-                "openBatteryOptimizationSettings" -> {
-                    result.success(PermissionGuideHelper.openBatteryOptimizationSettings(this))
-                }
-                "openAutoStartSettings" -> {
-                    result.success(PermissionGuideHelper.openAutoStartSettings(this))
-                }
-                "markPermissionConfigured" -> {
-                    val permissionType = call.argument<String>("type") ?: "all"
-                    PermissionGuideHelper.markPermissionConfigured(this, permissionType)
-                    result.success(true)
-                }
-                "getPermissionStatus" -> {
-                    result.success(PermissionGuideHelper.checkPermissionStatus(this))
-                }
-                "getPermissionReport" -> {
-                    result.success(PermissionGuideHelper.generatePermissionReport(this))
-                }
-                "getDeviceInfo" -> {
-                    result.success(OEMCompatibilityHelper.getDeviceInfo())
-                }
                 "switchLauncherAlias" -> {
                     try {
                         val lang = call.argument<String>("lang") ?: ""
@@ -532,49 +247,6 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         FileLogger.e(TAG, "切换Launcher别名失败", e)
                         result.error("alias_switch_failed", e.message, null)
-                    }
-                }
-                "getEnabledImeList" -> {
-                    try {
-                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                        val pms = packageManager
-                        val list = imm.enabledInputMethodList?.map { imi ->
-                            val pkg = imi.packageName
-                            val label = try { imi.loadLabel(pms)?.toString() ?: pkg } catch (_: Exception) { pkg }
-                            mapOf(
-                                "packageName" to pkg,
-                                "appName" to label,
-                            )
-                        } ?: emptyList()
-                        result.success(list)
-                    } catch (e: Exception) {
-                        FileLogger.e(TAG, "获取启用的输入法列表失败", e)
-                        result.success(emptyList<Map<String, String>>())
-                    }
-                }
-                "getDefaultInputMethod" -> {
-                    try {
-                        val id = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-                        if (id.isNullOrBlank()) {
-                            result.success(null)
-                        } else {
-                            // id like: com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
-                            val pkg = id.substringBefore('/')
-                            val pms = packageManager
-                            val appName = try {
-                                val ai = pms.getApplicationInfo(pkg, 0)
-                                pms.getApplicationLabel(ai)?.toString() ?: pkg
-                            } catch (_: Exception) { pkg }
-                            result.success(mapOf(
-                                "id" to id,
-                                // UI 不展示包名，避免对用户造成困惑
-                                "packageName" to "",
-                                "appName" to appName,
-                            ))
-                        }
-                    } catch (e: Exception) {
-                        FileLogger.e(TAG, "读取默认输入法失败", e)
-                        result.success(null)
                     }
                 }
                 "exportFileToDownloads" -> {
@@ -734,74 +406,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                "getDetailedStorageStats" -> {
-                    val pendingResult = result
-                    Thread {
-                        try {
-                            val data = StorageAnalyzer.collect(applicationContext)
-                            runOnUiThread { pendingResult.success(data) }
-                        } catch (e: Exception) {
-                            FileLogger.e(TAG, "获取详细存储统计失败", e)
-                            runOnUiThread {
-                                pendingResult.error("storage_stats_failed", e.message, null)
-                            }
-                        }
-                    }.start()
-                }
-                "getStorageMigrationStatus" -> {
-                    try {
-                        val status = StorageMigrationManager.getStatus(applicationContext)
-                        result.success(status.toMap())
-                    } catch (e: Exception) {
-                        result.error("migration_status_error", e.message, null)
-                    }
-                }
-                "startStorageMigration" -> {
-                    val pendingResult = result
-                    Thread {
-                        try {
-                            val migrationResult = StorageMigrationManager.migrate(
-                                applicationContext
-                            ) { progress ->
-                                runOnUiThread {
-                                    try {
-                                        methodChannel.invokeMethod(
-                                            "onStorageMigrationProgress",
-                                            progress.toMap()
-                                        )
-                                    } catch (_: Exception) {
-                                    }
-                                }
-                            }
-                            runOnUiThread {
-                                pendingResult.success(migrationResult.toMap())
-                            }
-                        } catch (e: Exception) {
-                            runOnUiThread {
-                                pendingResult.error("migration_failed", e.message, null)
-                            }
-                        }
-                    }.start()
-                }
-                "checkServiceHealth" -> {
-                    // 手动触发看门狗健康检查
-                    val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
-                    val statusSummary = AccessibilityServiceWatchdog.getStatusSummary(this)
-                    
-                    FileLogger.i(TAG, "手动健康检查结果：")
-                    FileLogger.i(TAG, statusSummary)
-                    
-                    result.success(mapOf(
-                        "isReallyRunning" to watchdogStatus.isReallyRunning,
-                        "needsRestart" to watchdogStatus.needsRestart,
-                        "isSystemEnabled" to watchdogStatus.isSystemEnabled,
-                        "isInstanceExists" to watchdogStatus.isInstanceExists,
-                        "isProcessAlive" to watchdogStatus.isProcessAlive,
-                        "isHeartbeatValid" to watchdogStatus.isHeartbeatValid,
-                        "isFunctional" to watchdogStatus.isFunctional,
-                        "statusSummary" to statusSummary
-                    ))
-                }
                 "getOcrMatchBoxes" -> {
                     try {
                         val filePath = call.argument<String>("filePath")
@@ -865,125 +469,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }.start()
                 }
-                "startImportOcrRepairTask" -> {
-                    try {
-                        val onlyMissing = call.argument<Boolean>("onlyMissing") ?: true
-                        val batchSize = call.argument<Int>("batchSize") ?: 12
-                        val status = ImportOcrRepairService.startOrResumeTask(
-                            applicationContext,
-                            onlyMissing,
-                            batchSize,
-                        )
-                        result.success(status)
-                    } catch (e: Exception) {
-                        result.error("start_import_ocr_task_failed", e.message, null)
-                    }
-                }
-                "getImportOcrRepairTaskStatus" -> {
-                    try {
-                        result.success(ImportOcrRepairService.getTaskStatus(applicationContext))
-                    } catch (e: Exception) {
-                        result.error("get_import_ocr_task_status_failed", e.message, null)
-                    }
-                }
-                "ensureImportOcrRepairTaskResumed" -> {
-                    try {
-                        result.success(
-                            ImportOcrRepairService.ensureResumedIfPending(
-                                applicationContext,
-                                "flutter_request",
-                            )
-                        )
-                    } catch (e: Exception) {
-                        result.error("ensure_import_ocr_task_resumed_failed", e.message, null)
-                    }
-                }
-                "cancelImportOcrRepairTask" -> {
-                    try {
-                        result.success(ImportOcrRepairService.cancelTask(applicationContext))
-                    } catch (e: Exception) {
-                        result.error("cancel_import_ocr_task_failed", e.message, null)
-                    }
-                }
-                "startDynamicRebuildTask" -> {
-                    try {
-                        val resumeExisting = call.argument<Boolean>("resumeExisting") ?: false
-                        val dayConcurrency = call.argument<Int>("dayConcurrency")
-                        val status = DynamicRebuildService.startOrResumeTask(
-                            applicationContext,
-                            resumeExisting,
-                            dayConcurrency,
-                        )
-                        result.success(status)
-                    } catch (e: Exception) {
-                        result.error("start_dynamic_rebuild_task_failed", e.message, null)
-                    }
-                }
-                "getDynamicRebuildTaskStatus" -> {
-                    try {
-                        result.success(DynamicRebuildService.getTaskStatus(applicationContext))
-                    } catch (e: Exception) {
-                        result.error("get_dynamic_rebuild_task_status_failed", e.message, null)
-                    }
-                }
-                "ensureDynamicRebuildTaskResumed" -> {
-                    try {
-                        result.success(
-                            DynamicRebuildService.ensureResumedIfPending(
-                                applicationContext,
-                                "flutter_request",
-                            ),
-                        )
-                    } catch (e: Exception) {
-                        result.error("ensure_dynamic_rebuild_task_resumed_failed", e.message, null)
-                    }
-                }
-                "cancelDynamicRebuildTask" -> {
-                    try {
-                        result.success(DynamicRebuildService.cancelTask(applicationContext))
-                    } catch (e: Exception) {
-                        result.error("cancel_dynamic_rebuild_task_failed", e.message, null)
-                    }
-                }
-                "showMemoryRebuildNotification" -> {
-                    try {
-                        val status = call.argument<String>("status") ?: "running"
-                        val processed = call.argument<Int>("processed") ?: 0
-                        val failed = call.argument<Int>("failed") ?: 0
-                        val total = call.argument<Int>("total") ?: 0
-                        val currentPosition = call.argument<Int>("currentPosition") ?: 0
-                        val currentSegmentId = call.argument<Int>("currentSegmentId") ?: 0
-                        val segmentSampleCursor = call.argument<Int>("segmentSampleCursor") ?: 0
-                        val segmentSampleTotal = call.argument<Int>("segmentSampleTotal") ?: 0
-                        val pauseReason = call.argument<String>("pauseReason")
-                        val lastError = call.argument<String>("lastError")
-                        result.success(
-                            MemoryRebuildNotifier.show(
-                                applicationContext,
-                                status,
-                                processed,
-                                failed,
-                                total,
-                                currentPosition,
-                                currentSegmentId,
-                                segmentSampleCursor,
-                                segmentSampleTotal,
-                                pauseReason,
-                                lastError,
-                            )
-                        )
-                    } catch (e: Exception) {
-                        result.error("show_memory_rebuild_notification_failed", e.message, null)
-                    }
-                }
-                "cancelMemoryRebuildNotification" -> {
-                    try {
-                        MemoryRebuildNotifier.cancel(applicationContext)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("cancel_memory_rebuild_notification_failed", e.message, null)
-                    }
-                }
                 "compressScreenshotFile" -> {
                     val filePath = call.argument<String>("filePath")
                     val format = call.argument<String>("format") ?: "webp_lossy"
@@ -1021,199 +506,6 @@ class MainActivity : FlutterActivity() {
                         parallelism,
                         result,
                     )
-                }
-                "triggerSegmentTick" -> {
-                    try {
-                        try { FileLogger.i(TAG, "triggerSegmentTick 调用") } catch (_: Exception) {}
-                        Thread {
-                            try {
-                                try { FileLogger.i(TAG, "triggerSegmentTick 线程开始") } catch (_: Exception) {}
-                                SegmentSummaryManager.tick(this)
-                                try { FileLogger.i(TAG, "triggerSegmentTick 线程结束") } catch (_: Exception) {}
-                            } catch (e: Exception) {
-                                FileLogger.w(TAG, "手动 tick 失败：${e.message}")
-                            }
-                        }.start()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("tick_failed", e.message, null)
-                    }
-                }
-                "retrySegments" -> {
-                    try {
-                        val ids = (call.argument<List<Int>>("ids") ?: emptyList()).map { it.toLong() }
-                        val force = call.argument<Boolean>("force") ?: false
-                        try { FileLogger.i(TAG, "retrySegments：ids=${ids} force=${force}") } catch (_: Exception) {}
-                        Thread {
-                            try {
-                                val n = SegmentSummaryManager.retrySegmentsByIds(this, ids, force)
-                                runOnUiThread { result.success(n) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("retry_failed", e.message, null) }
-                            }
-                        }.start()
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "forceMergeSegment" -> {
-                    try {
-                        val id = (call.argument<Int>("id") ?: 0).toLong()
-                        val prevId = call.argument<Int>("prev_id")?.toLong()
-                        try { FileLogger.i(TAG, "forceMergeSegment：id=${id} prev_id=${prevId}") } catch (_: Exception) {}
-                        Thread {
-                            try {
-                                val ok = SegmentSummaryManager.forceMergeSegmentById(this, id, prevId)
-                                runOnUiThread { result.success(ok) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("force_merge_failed", e.message, null) }
-                            }
-                        }.start()
-                    } catch (e: Exception) {
-                        result.error("invalid_args", e.message, null)
-                    }
-                }
-                "showSimpleNotification" -> {
-                    try {
-                        val title = call.argument<String>("title") ?: "Daily Summary"
-                        val message = call.argument<String>("message") ?: ""
-                        try { FileLogger.i(TAG, "显示简单通知：标题=${title} 长度=${message.length}") } catch (_: Exception) {}
-                        val ok = DailySummaryNotifier.showSimple(this, title, message)
-                        result.success(ok)
-                    } catch (e: Exception) {
-                        result.error("notify_failed", e.message, null)
-                    }
-                }
-                "showNotification" -> {
-                    try {
-                        val title = call.argument<String>("title") ?: "Daily Summary"
-                        val message = call.argument<String>("message") ?: ""
-                        try { FileLogger.i(TAG, "显示大文本通知：标题=${title} 长度=${message.length}") } catch (_: Exception) {}
-                        val ok = DailySummaryNotifier.showBigText(this, title, message)
-                        result.success(ok)
-                    } catch (e: Exception) {
-                        result.error("notify_failed", e.message, null)
-                    }
-                }
-                "scheduleDailySummaryNotification" -> {
-                    try {
-                        val hour = call.argument<Int>("hour") ?: 20
-                        val minute = call.argument<Int>("minute") ?: 0
-                        val enabled = call.argument<Boolean>("enabled") ?: true
-                        val ok = if (enabled) {
-                            DailySummaryScheduler.schedule(this, hour, minute)
-                        } else {
-                            DailySummaryScheduler.cancel(this)
-                        }
-                        try { FileLogger.i(TAG, "调度每日总结通知：启用=${enabled} 小时=${hour} 分钟=${minute} 结果=${ok}") } catch (_: Exception) {}
-                        result.success(ok)
-                    } catch (e: Exception) {
-                        result.error("schedule_failed", e.message, null)
-                    }
-                }
-                "openAppNotificationSettings" -> {
-                    try {
-                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                            } else {
-                                putExtra("app_package", packageName)
-                                putExtra("app_uid", applicationInfo.uid)
-                            }
-                        }
-                        startActivity(intent)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        try {
-                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.parse("package:$packageName")
-                            }
-                            startActivity(fallback)
-                            result.success(true)
-                        } catch (e2: Exception) {
-                            result.error("open_app_notify_failed", e2.message, null)
-                        }
-                    }
-                }
-                "openDailySummaryNotificationSettings" -> {
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                            val high = nm.getNotificationChannel("daily_summary_high")
-                            val channelId = if (high != null) "daily_summary_high" else "daily_summary"
-                            val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
-                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                                putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
-                            }
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                putExtra("app_package", packageName)
-                                putExtra("app_uid", applicationInfo.uid)
-                            }
-                            startActivity(intent)
-                            result.success(true)
-                        }
-                    } catch (e: Exception) {
-                        try {
-                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.parse("package:$packageName")
-                            }
-                            startActivity(fallback)
-                            result.success(true)
-                        } catch (e2: Exception) {
-                            result.error("open_channel_notify_failed", e2.message, null)
-                        }
-                    }
-                }
-                "openExactAlarmSettings" -> {
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                data = Uri.parse("package:$packageName")
-                            }
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            result.success(true)
-                        }
-                    } catch (e: Exception) {
-                        try {
-                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.parse("package:$packageName")
-                            }
-                            startActivity(fallback)
-                            result.success(true)
-                        } catch (e2: Exception) {
-                            result.error("open_exact_alarm_failed", e2.message, null)
-                        }
-                    }
-                }
-                "setDailyBrief" -> {
-                    try {
-                        val dateKey = call.argument<String>("dateKey") ?: ""
-                        val brief = call.argument<String>("brief") ?: ""
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        sp.edit()
-                            .putString("daily_brief_$dateKey", brief)
-                            .putString("daily_brief_last", brief)
-                            .apply()
-                        try { FileLogger.i(TAG, "设置通知简报：dateKey=$dateKey 长度=${brief.length}") } catch (_: Exception) {}
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("set_brief_failed", e.message, null)
-                    }
-                }
-                "getDailyBrief" -> {
-                    try {
-                        val dateKey = call.argument<String>("dateKey") ?: ""
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        val brief = sp.getString("daily_brief_$dateKey", null)
-                        result.success(brief)
-                    } catch (e: Exception) {
-                        result.error("get_brief_failed", e.message, null)
-                    }
                 }
                 else -> {
                     result.notImplemented()

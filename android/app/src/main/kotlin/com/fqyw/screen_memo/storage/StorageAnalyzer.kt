@@ -10,7 +10,7 @@ import android.os.Process
 import android.os.UserHandle
 import android.os.storage.StorageManager
 import androidx.annotation.RequiresApi
-import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.logging.FileLogger
 import java.io.File
 
 /**

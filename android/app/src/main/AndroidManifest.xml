@@ -131,7 +131,7 @@
 
         <!-- 无障碍服务声明 -->
         <service
-            android:name=".ScreenCaptureAccessibilityService"
+            android:name=".capture.ScreenCaptureAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -144,7 +144,7 @@
 
         <!-- 前台服务声明 -->
         <service
-            android:name=".ScreenCaptureService"
+            android:name=".capture.ScreenCaptureService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">
@@ -154,13 +154,13 @@
         </service>
 
         <service
-            android:name=".ImportOcrRepairService"
+            android:name=".importing.ImportOcrRepairService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".DynamicRebuildService"
+            android:name=".dynamic.DynamicRebuildService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
@@ -168,7 +168,7 @@
         <!-- 守护服务（已禁用，避免重复前台通知） -->
         <!--
         <service
-            android:name=".DaemonService"
+            android:name=".service.DaemonService"
             android:process=":daemon"
             android:exported="false"
             android:stopWithTask="false"
@@ -177,13 +177,13 @@
             
         <!-- AccessibilityService桥接服务 -->
         <service
-            android:name=".AccessibilityBridgeService"
+            android:name=".capture.AccessibilityBridgeService"
             android:process=":accessibility"
             android:exported="false" />
             
         <!-- JobService保活服务 -->
         <service
-            android:name=".KeepAliveJobService"
+            android:name=".service.KeepAliveJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="true" />
 
@@ -199,12 +199,12 @@
  
         <!-- 每日总结提醒闹钟接收器 -->
         <receiver
-            android:name=".DailySummaryAlarmReceiver"
+            android:name=".daily.DailySummaryAlarmReceiver"
             android:exported="false" />
  
         <!-- 开机自启接收器 -->
         <receiver
-            android:name=".BootReceiver"
+            android:name=".service.BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter android:priority="1000">
@@ -217,7 +217,7 @@
 
         <!-- 服务重启接收器 -->
         <receiver
-            android:name=".RestartReceiver"
+            android:name=".service.RestartReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter android:priority="1000">
@@ -231,7 +231,7 @@
         
         <!-- 系统事件接收器 -->
         <receiver
-            android:name=".SystemEventReceiver"
+            android:name=".service.SystemEventReceiver"
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true">

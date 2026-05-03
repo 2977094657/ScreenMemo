@@ -1,5 +1,8 @@
 package com.fqyw.screen_memo
 
+import com.fqyw.screen_memo.database.SegmentDatabaseHelper
+import com.fqyw.screen_memo.segment.SegmentSummaryManager
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -19,7 +19,7 @@ import android.os.SystemClock
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
-import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.logging.FileLogger
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
