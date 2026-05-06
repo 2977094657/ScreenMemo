@@ -1687,6 +1687,135 @@
   "logClearFailed": "清空失败",
   "logNoLogs": "暂无日志",
   "logNoMatchingLogs": "没有匹配的日志",
+  "logManagementTitle": "日志管理",
+  "logManagementSubtitle": "按 output/logs 的文件夹层级浏览日志，每次只加载当前目录，文件夹和文件都可单独分享或删除。",
+  "logManagementRefreshTooltip": "刷新日志",
+  "logManagementShareAll": "分享所有日志",
+  "logManagementShareDay": "分享这一天",
+  "logManagementDeleteDay": "删除这一天",
+  "logManagementShareFolder": "分享此文件夹",
+  "logManagementDeleteFolder": "删除此文件夹",
+  "logManagementShareFile": "分享此文件",
+  "logManagementDeleteFile": "删除此文件",
+  "logManagementLoading": "正在加载日志…",
+  "logManagementExporting": "正在打包…",
+  "logManagementNoLogsTitle": "暂无已保存日志",
+  "logManagementNoLogsDesc": "开启日志并使用应用一段时间后，可回到这里分享已落盘的日志文件。",
+  "logManagementEmptyFolderTitle": "当前文件夹为空",
+  "logManagementEmptyFolderDesc": "这里没有可管理的日志文件或子文件夹，可以返回上一级继续查看。",
+  "logManagementParentDirectory": "返回上一级",
+  "logManagementCurrentPath": "当前位置：{path}",
+  "@logManagementCurrentPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "logManagementUnknownTime": "未知时间",
+  "logManagementSummary": "共 {fileCount} 个文件 • {size}",
+  "@logManagementSummary": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDaySubtitle": "{fileCount} 个文件 • {size} • 更新于 {modified}",
+  "@logManagementDaySubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFileSubtitle": "{size} • 更新于 {modified}",
+  "@logManagementFileSubtitle": {
+    "placeholders": {
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFolderSubtitle": "{fileCount} 个文件 • {size} • 更新于 {modified}",
+  "@logManagementFolderSubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementDeleteFileTitle": "删除日志文件",
+  "logManagementDeleteFileMessage": "确定删除“{fileName}”吗？此操作无法撤销。",
+  "@logManagementDeleteFileMessage": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "logManagementDeleteDayTitle": "删除当天日志",
+  "logManagementDeleteDayMessage": "确定删除 {date} 的 {fileCount} 个日志文件（{size}）吗？此操作无法撤销。",
+  "@logManagementDeleteDayMessage": {
+    "placeholders": {
+      "date": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDeleteFolderTitle": "删除日志文件夹",
+  "logManagementDeleteFolderMessage": "确定删除“{folderName}”及其中的 {fileCount} 个日志文件（{size}）吗？此操作无法撤销。",
+  "@logManagementDeleteFolderMessage": {
+    "placeholders": {
+      "folderName": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementFileDeleted": "日志文件已删除",
+  "logManagementFileMissing": "日志文件已不存在",
+  "logManagementFolderDeleted": "已删除文件夹和 {fileCount} 个日志文件",
+  "@logManagementFolderDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementFolderDeletedEmpty": "日志文件夹已删除",
+  "logManagementFolderMissing": "日志文件夹已不存在",
+  "logManagementDayDeleted": "已删除 {fileCount} 个日志文件",
+  "@logManagementDayDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementDayMissing": "当天日志已不存在",
+  "logManagementDeleteFailed": "删除日志失败：{error}",
+  "@logManagementDeleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementShareEmpty": "没有可分享的日志文件",
+  "logManagementShareFailed": "分享失败：{error}",
+  "@logManagementShareFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLoadFailed": "加载日志失败：{error}",
+  "@logManagementLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLargeExportTitle": "日志文件较大",
+  "logManagementLargeExportMessage": "本次选择的日志约 {size}，是否继续打包并分享？",
+  "@logManagementLargeExportMessage": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "logManagementLargeExportConfirm": "继续",
+  "logManagementZipReady": "日志 ZIP 已准备：{size}",
+  "@logManagementZipReady": {
+    "placeholders": {
+      "size": {}
+    }
+  },
   "logFilterTooltip": "筛选",
   "logSortNewestFirst": "最新在前",
   "logSortOldestFirst": "最早在前",

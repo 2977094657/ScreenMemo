@@ -3189,6 +3189,187 @@ class AppLocalizationsJa extends AppLocalizations {
   String get logNoMatchingLogs => '一致するログはありません';
 
   @override
+  String get logManagementTitle => 'ログ管理';
+
+  @override
+  String get logManagementSubtitle =>
+      'output/logs のフォルダー階層でログを参照します。現在のディレクトリだけを読み込み、フォルダーやファイルを個別に共有・削除できます。';
+
+  @override
+  String get logManagementRefreshTooltip => 'ログを更新';
+
+  @override
+  String get logManagementShareAll => 'すべてのログを共有';
+
+  @override
+  String get logManagementShareDay => 'この日を共有';
+
+  @override
+  String get logManagementDeleteDay => 'この日のログを削除';
+
+  @override
+  String get logManagementShareFolder => 'このフォルダーを共有';
+
+  @override
+  String get logManagementDeleteFolder => 'このフォルダーを削除';
+
+  @override
+  String get logManagementShareFile => 'このファイルを共有';
+
+  @override
+  String get logManagementDeleteFile => 'このファイルを削除';
+
+  @override
+  String get logManagementLoading => 'ログを読み込み中…';
+
+  @override
+  String get logManagementExporting => 'パッケージ中…';
+
+  @override
+  String get logManagementNoLogsTitle => '保存済みログはありません';
+
+  @override
+  String get logManagementNoLogsDesc =>
+      'ログを有効にしてしばらくアプリを使用すると、ここから保存済みログを共有できます。';
+
+  @override
+  String get logManagementEmptyFolderTitle => 'このフォルダーは空です';
+
+  @override
+  String get logManagementEmptyFolderDesc =>
+      'ここにはログファイルやサブフォルダーがありません。親フォルダーに戻って確認してください。';
+
+  @override
+  String get logManagementParentDirectory => '親フォルダーに戻る';
+
+  @override
+  String logManagementCurrentPath(Object path) {
+    return '現在の場所: $path';
+  }
+
+  @override
+  String get logManagementUnknownTime => '不明な時刻';
+
+  @override
+  String logManagementSummary(Object fileCount, Object size) {
+    return '$fileCount 件のファイル • $size';
+  }
+
+  @override
+  String logManagementDaySubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount 件のファイル • $size • 更新 $modified';
+  }
+
+  @override
+  String logManagementFileSubtitle(Object size, Object modified) {
+    return '$size • 更新 $modified';
+  }
+
+  @override
+  String logManagementFolderSubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount 件のファイル • $size • 更新 $modified';
+  }
+
+  @override
+  String get logManagementDeleteFileTitle => 'ログファイルを削除';
+
+  @override
+  String logManagementDeleteFileMessage(Object fileName) {
+    return '「$fileName」を削除しますか？この操作は元に戻せません。';
+  }
+
+  @override
+  String get logManagementDeleteDayTitle => '当日のログを削除';
+
+  @override
+  String logManagementDeleteDayMessage(
+    Object date,
+    Object fileCount,
+    Object size,
+  ) {
+    return '$date のログファイル $fileCount 件（$size）を削除しますか？この操作は元に戻せません。';
+  }
+
+  @override
+  String get logManagementDeleteFolderTitle => 'ログフォルダーを削除';
+
+  @override
+  String logManagementDeleteFolderMessage(
+    Object folderName,
+    Object fileCount,
+    Object size,
+  ) {
+    return '「$folderName」とその中のログファイル $fileCount 件（$size）を削除しますか？この操作は元に戻せません。';
+  }
+
+  @override
+  String get logManagementFileDeleted => 'ログファイルを削除しました';
+
+  @override
+  String get logManagementFileMissing => 'ログファイルは存在しません';
+
+  @override
+  String logManagementFolderDeleted(Object fileCount) {
+    return 'フォルダーとログファイル $fileCount 件を削除しました';
+  }
+
+  @override
+  String get logManagementFolderDeletedEmpty => 'ログフォルダーを削除しました';
+
+  @override
+  String get logManagementFolderMissing => 'ログフォルダーは存在しません';
+
+  @override
+  String logManagementDayDeleted(Object fileCount) {
+    return 'ログファイル $fileCount 件を削除しました';
+  }
+
+  @override
+  String get logManagementDayMissing => 'この日のログは存在しません';
+
+  @override
+  String logManagementDeleteFailed(Object error) {
+    return 'ログの削除に失敗しました: $error';
+  }
+
+  @override
+  String get logManagementShareEmpty => '共有できるログファイルがありません';
+
+  @override
+  String logManagementShareFailed(Object error) {
+    return '共有に失敗しました: $error';
+  }
+
+  @override
+  String logManagementLoadFailed(Object error) {
+    return 'ログの読み込みに失敗しました: $error';
+  }
+
+  @override
+  String get logManagementLargeExportTitle => 'ログのエクスポートが大きいです';
+
+  @override
+  String logManagementLargeExportMessage(Object size) {
+    return '選択したログは約 $size です。パッケージして共有しますか？';
+  }
+
+  @override
+  String get logManagementLargeExportConfirm => '続行';
+
+  @override
+  String logManagementZipReady(Object size) {
+    return 'ログ ZIP の準備ができました: $size';
+  }
+
+  @override
   String get logFilterTooltip => 'フィルター';
 
   @override

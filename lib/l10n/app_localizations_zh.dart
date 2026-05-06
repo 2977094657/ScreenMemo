@@ -3159,6 +3159,185 @@ class AppLocalizationsZh extends AppLocalizations {
   String get logNoMatchingLogs => '没有匹配的日志';
 
   @override
+  String get logManagementTitle => '日志管理';
+
+  @override
+  String get logManagementSubtitle =>
+      '按 output/logs 的文件夹层级浏览日志，每次只加载当前目录，文件夹和文件都可单独分享或删除。';
+
+  @override
+  String get logManagementRefreshTooltip => '刷新日志';
+
+  @override
+  String get logManagementShareAll => '分享所有日志';
+
+  @override
+  String get logManagementShareDay => '分享这一天';
+
+  @override
+  String get logManagementDeleteDay => '删除这一天';
+
+  @override
+  String get logManagementShareFolder => '分享此文件夹';
+
+  @override
+  String get logManagementDeleteFolder => '删除此文件夹';
+
+  @override
+  String get logManagementShareFile => '分享此文件';
+
+  @override
+  String get logManagementDeleteFile => '删除此文件';
+
+  @override
+  String get logManagementLoading => '正在加载日志…';
+
+  @override
+  String get logManagementExporting => '正在打包…';
+
+  @override
+  String get logManagementNoLogsTitle => '暂无已保存日志';
+
+  @override
+  String get logManagementNoLogsDesc => '开启日志并使用应用一段时间后，可回到这里分享已落盘的日志文件。';
+
+  @override
+  String get logManagementEmptyFolderTitle => '当前文件夹为空';
+
+  @override
+  String get logManagementEmptyFolderDesc => '这里没有可管理的日志文件或子文件夹，可以返回上一级继续查看。';
+
+  @override
+  String get logManagementParentDirectory => '返回上一级';
+
+  @override
+  String logManagementCurrentPath(Object path) {
+    return '当前位置：$path';
+  }
+
+  @override
+  String get logManagementUnknownTime => '未知时间';
+
+  @override
+  String logManagementSummary(Object fileCount, Object size) {
+    return '共 $fileCount 个文件 • $size';
+  }
+
+  @override
+  String logManagementDaySubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount 个文件 • $size • 更新于 $modified';
+  }
+
+  @override
+  String logManagementFileSubtitle(Object size, Object modified) {
+    return '$size • 更新于 $modified';
+  }
+
+  @override
+  String logManagementFolderSubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount 个文件 • $size • 更新于 $modified';
+  }
+
+  @override
+  String get logManagementDeleteFileTitle => '删除日志文件';
+
+  @override
+  String logManagementDeleteFileMessage(Object fileName) {
+    return '确定删除“$fileName”吗？此操作无法撤销。';
+  }
+
+  @override
+  String get logManagementDeleteDayTitle => '删除当天日志';
+
+  @override
+  String logManagementDeleteDayMessage(
+    Object date,
+    Object fileCount,
+    Object size,
+  ) {
+    return '确定删除 $date 的 $fileCount 个日志文件（$size）吗？此操作无法撤销。';
+  }
+
+  @override
+  String get logManagementDeleteFolderTitle => '删除日志文件夹';
+
+  @override
+  String logManagementDeleteFolderMessage(
+    Object folderName,
+    Object fileCount,
+    Object size,
+  ) {
+    return '确定删除“$folderName”及其中的 $fileCount 个日志文件（$size）吗？此操作无法撤销。';
+  }
+
+  @override
+  String get logManagementFileDeleted => '日志文件已删除';
+
+  @override
+  String get logManagementFileMissing => '日志文件已不存在';
+
+  @override
+  String logManagementFolderDeleted(Object fileCount) {
+    return '已删除文件夹和 $fileCount 个日志文件';
+  }
+
+  @override
+  String get logManagementFolderDeletedEmpty => '日志文件夹已删除';
+
+  @override
+  String get logManagementFolderMissing => '日志文件夹已不存在';
+
+  @override
+  String logManagementDayDeleted(Object fileCount) {
+    return '已删除 $fileCount 个日志文件';
+  }
+
+  @override
+  String get logManagementDayMissing => '当天日志已不存在';
+
+  @override
+  String logManagementDeleteFailed(Object error) {
+    return '删除日志失败：$error';
+  }
+
+  @override
+  String get logManagementShareEmpty => '没有可分享的日志文件';
+
+  @override
+  String logManagementShareFailed(Object error) {
+    return '分享失败：$error';
+  }
+
+  @override
+  String logManagementLoadFailed(Object error) {
+    return '加载日志失败：$error';
+  }
+
+  @override
+  String get logManagementLargeExportTitle => '日志文件较大';
+
+  @override
+  String logManagementLargeExportMessage(Object size) {
+    return '本次选择的日志约 $size，是否继续打包并分享？';
+  }
+
+  @override
+  String get logManagementLargeExportConfirm => '继续';
+
+  @override
+  String logManagementZipReady(Object size) {
+    return '日志 ZIP 已准备：$size';
+  }
+
+  @override
   String get logFilterTooltip => '筛选';
 
   @override

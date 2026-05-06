@@ -3273,6 +3273,187 @@ class AppLocalizationsEn extends AppLocalizations {
   String get logNoMatchingLogs => 'No matching logs';
 
   @override
+  String get logManagementTitle => 'Log management';
+
+  @override
+  String get logManagementSubtitle =>
+      'Browse logs by the output/logs folder hierarchy. Only the current directory is loaded, and folders or files can be shared or deleted individually.';
+
+  @override
+  String get logManagementRefreshTooltip => 'Refresh logs';
+
+  @override
+  String get logManagementShareAll => 'Share all logs';
+
+  @override
+  String get logManagementShareDay => 'Share this day';
+
+  @override
+  String get logManagementDeleteDay => 'Delete this day';
+
+  @override
+  String get logManagementShareFolder => 'Share this folder';
+
+  @override
+  String get logManagementDeleteFolder => 'Delete this folder';
+
+  @override
+  String get logManagementShareFile => 'Share this file';
+
+  @override
+  String get logManagementDeleteFile => 'Delete this file';
+
+  @override
+  String get logManagementLoading => 'Loading logs…';
+
+  @override
+  String get logManagementExporting => 'Packaging…';
+
+  @override
+  String get logManagementNoLogsTitle => 'No saved logs';
+
+  @override
+  String get logManagementNoLogsDesc =>
+      'Enable logging and use the app for a while, then return here to share saved log files.';
+
+  @override
+  String get logManagementEmptyFolderTitle => 'This folder is empty';
+
+  @override
+  String get logManagementEmptyFolderDesc =>
+      'There are no log files or subfolders here. Go back to the parent folder to continue browsing.';
+
+  @override
+  String get logManagementParentDirectory => 'Back to parent folder';
+
+  @override
+  String logManagementCurrentPath(Object path) {
+    return 'Current path: $path';
+  }
+
+  @override
+  String get logManagementUnknownTime => 'Unknown time';
+
+  @override
+  String logManagementSummary(Object fileCount, Object size) {
+    return '$fileCount files • $size';
+  }
+
+  @override
+  String logManagementDaySubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount files • $size • Updated $modified';
+  }
+
+  @override
+  String logManagementFileSubtitle(Object size, Object modified) {
+    return '$size • Updated $modified';
+  }
+
+  @override
+  String logManagementFolderSubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '$fileCount files • $size • Updated $modified';
+  }
+
+  @override
+  String get logManagementDeleteFileTitle => 'Delete log file';
+
+  @override
+  String logManagementDeleteFileMessage(Object fileName) {
+    return 'Delete “$fileName”? This action cannot be undone.';
+  }
+
+  @override
+  String get logManagementDeleteDayTitle => 'Delete day logs';
+
+  @override
+  String logManagementDeleteDayMessage(
+    Object date,
+    Object fileCount,
+    Object size,
+  ) {
+    return 'Delete $fileCount log files ($size) from $date? This action cannot be undone.';
+  }
+
+  @override
+  String get logManagementDeleteFolderTitle => 'Delete log folder';
+
+  @override
+  String logManagementDeleteFolderMessage(
+    Object folderName,
+    Object fileCount,
+    Object size,
+  ) {
+    return 'Delete “$folderName” and its $fileCount log files ($size)? This action cannot be undone.';
+  }
+
+  @override
+  String get logManagementFileDeleted => 'Log file deleted';
+
+  @override
+  String get logManagementFileMissing => 'Log file no longer exists';
+
+  @override
+  String logManagementFolderDeleted(Object fileCount) {
+    return 'Deleted folder and $fileCount log files';
+  }
+
+  @override
+  String get logManagementFolderDeletedEmpty => 'Log folder deleted';
+
+  @override
+  String get logManagementFolderMissing => 'Log folder no longer exists';
+
+  @override
+  String logManagementDayDeleted(Object fileCount) {
+    return 'Deleted $fileCount log files';
+  }
+
+  @override
+  String get logManagementDayMissing => 'Logs for this day no longer exist';
+
+  @override
+  String logManagementDeleteFailed(Object error) {
+    return 'Failed to delete log: $error';
+  }
+
+  @override
+  String get logManagementShareEmpty => 'No log files to share';
+
+  @override
+  String logManagementShareFailed(Object error) {
+    return 'Share failed: $error';
+  }
+
+  @override
+  String logManagementLoadFailed(Object error) {
+    return 'Failed to load logs: $error';
+  }
+
+  @override
+  String get logManagementLargeExportTitle => 'Large log export';
+
+  @override
+  String logManagementLargeExportMessage(Object size) {
+    return 'The selected logs are about $size. Continue packaging and sharing?';
+  }
+
+  @override
+  String get logManagementLargeExportConfirm => 'Continue';
+
+  @override
+  String logManagementZipReady(Object size) {
+    return 'Log ZIP ready: $size';
+  }
+
+  @override
   String get logFilterTooltip => 'Filter';
 
   @override

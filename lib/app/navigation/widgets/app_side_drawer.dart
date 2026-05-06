@@ -11,7 +11,6 @@ import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/app/navigation/navigation_service.dart';
-import 'package:screen_memo/features/diagnostics/presentation/pages/log_console_page.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
 class AppSideDrawer extends StatelessWidget {
@@ -72,18 +71,6 @@ class AppSideDrawer extends StatelessWidget {
                       },
                     );
                   },
-                );
-              },
-            ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.receipt_long_outlined,
-              title: t.logPanelTitle,
-              isFirst: false,
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LogConsolePage()),
                 );
               },
             ),

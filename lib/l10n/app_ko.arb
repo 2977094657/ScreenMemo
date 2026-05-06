@@ -1687,6 +1687,135 @@
   "logClearFailed": "로그 지우기 실패",
   "logNoLogs": "아직 로그가 없습니다",
   "logNoMatchingLogs": "일치하는 로그가 없습니다",
+  "logManagementTitle": "로그 관리",
+  "logManagementSubtitle": "output/logs 폴더 계층으로 로그를 탐색합니다. 현재 디렉터리만 불러오며, 폴더와 파일을 개별적으로 공유하거나 삭제할 수 있습니다.",
+  "logManagementRefreshTooltip": "로그 새로고침",
+  "logManagementShareAll": "모든 로그 공유",
+  "logManagementShareDay": "이 날짜 공유",
+  "logManagementDeleteDay": "이 날짜 삭제",
+  "logManagementShareFolder": "이 폴더 공유",
+  "logManagementDeleteFolder": "이 폴더 삭제",
+  "logManagementShareFile": "이 파일 공유",
+  "logManagementDeleteFile": "이 파일 삭제",
+  "logManagementLoading": "로그를 불러오는 중…",
+  "logManagementExporting": "패키징 중…",
+  "logManagementNoLogsTitle": "저장된 로그가 없습니다",
+  "logManagementNoLogsDesc": "로그를 켜고 앱을 잠시 사용한 뒤 여기에서 저장된 로그 파일을 공유할 수 있습니다.",
+  "logManagementEmptyFolderTitle": "현재 폴더가 비어 있습니다",
+  "logManagementEmptyFolderDesc": "여기에는 로그 파일이나 하위 폴더가 없습니다. 상위 폴더로 돌아가 계속 확인하세요.",
+  "logManagementParentDirectory": "상위 폴더로 돌아가기",
+  "logManagementCurrentPath": "현재 위치: {path}",
+  "@logManagementCurrentPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "logManagementUnknownTime": "알 수 없는 시간",
+  "logManagementSummary": "파일 {fileCount}개 • {size}",
+  "@logManagementSummary": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDaySubtitle": "파일 {fileCount}개 • {size} • 업데이트 {modified}",
+  "@logManagementDaySubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFileSubtitle": "{size} • 업데이트 {modified}",
+  "@logManagementFileSubtitle": {
+    "placeholders": {
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFolderSubtitle": "파일 {fileCount}개 • {size} • 업데이트 {modified}",
+  "@logManagementFolderSubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementDeleteFileTitle": "로그 파일 삭제",
+  "logManagementDeleteFileMessage": "“{fileName}” 파일을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "@logManagementDeleteFileMessage": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "logManagementDeleteDayTitle": "해당 날짜 로그 삭제",
+  "logManagementDeleteDayMessage": "{date}의 로그 파일 {fileCount}개({size})를 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "@logManagementDeleteDayMessage": {
+    "placeholders": {
+      "date": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDeleteFolderTitle": "로그 폴더 삭제",
+  "logManagementDeleteFolderMessage": "“{folderName}” 폴더와 그 안의 로그 파일 {fileCount}개({size})를 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "@logManagementDeleteFolderMessage": {
+    "placeholders": {
+      "folderName": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementFileDeleted": "로그 파일을 삭제했습니다",
+  "logManagementFileMissing": "로그 파일이 더 이상 없습니다",
+  "logManagementFolderDeleted": "폴더와 로그 파일 {fileCount}개를 삭제했습니다",
+  "@logManagementFolderDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementFolderDeletedEmpty": "로그 폴더를 삭제했습니다",
+  "logManagementFolderMissing": "로그 폴더가 더 이상 없습니다",
+  "logManagementDayDeleted": "로그 파일 {fileCount}개를 삭제했습니다",
+  "@logManagementDayDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementDayMissing": "해당 날짜의 로그가 더 이상 없습니다",
+  "logManagementDeleteFailed": "로그 삭제 실패: {error}",
+  "@logManagementDeleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementShareEmpty": "공유할 로그 파일이 없습니다",
+  "logManagementShareFailed": "공유 실패: {error}",
+  "@logManagementShareFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLoadFailed": "로그 불러오기 실패: {error}",
+  "@logManagementLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLargeExportTitle": "로그 내보내기 용량이 큽니다",
+  "logManagementLargeExportMessage": "선택한 로그는 약 {size}입니다. 패키징하고 공유할까요?",
+  "@logManagementLargeExportMessage": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "logManagementLargeExportConfirm": "계속",
+  "logManagementZipReady": "로그 ZIP 준비 완료: {size}",
+  "@logManagementZipReady": {
+    "placeholders": {
+      "size": {}
+    }
+  },
   "logFilterTooltip": "필터",
   "logSortNewestFirst": "최신순",
   "logSortOldestFirst": "오래된순",

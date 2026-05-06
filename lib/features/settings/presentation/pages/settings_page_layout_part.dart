@@ -19,6 +19,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
       title = 'App 运行状态';
     } else if (_subPage == _SettingsSubPage.dataBackup) {
       title = l10n.dataBackupSectionTitle;
+    } else if (_subPage == _SettingsSubPage.logManagement) {
+      title = l10n.logManagementTitle;
     } else if (_subPage == _SettingsSubPage.advanced) {
       title = l10n.advancedSectionTitle;
     } else if (_subPage == _SettingsSubPage.about) {
@@ -40,7 +42,11 @@ extension _SettingsLayoutPart on _SettingsPageState {
                 : const SizedBox.shrink())
           : IconButton(
               icon: const Icon(Icons.arrow_back),
-              onPressed: () => _switchSubPage(_SettingsSubPage.home),
+              onPressed:
+                  _subPage == _SettingsSubPage.logManagement &&
+                      !_isLogDirectoryRoot
+                  ? _goUpLogDirectory
+                  : () => _switchSubPage(_SettingsSubPage.home),
             ),
       titleSpacing: 0,
       title: Padding(
@@ -70,8 +76,26 @@ extension _SettingsLayoutPart on _SettingsPageState {
             onPressed: () => _loadAppHealthStatus(refresh: true),
             tooltip: '刷新状态',
           ),
+        if (_subPage == _SettingsSubPage.logManagement)
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _logManagementLoading ? null : _loadLogDirectory,
+            tooltip: l10n.logManagementRefreshTooltip,
+          ),
+        if (_subPage == _SettingsSubPage.logManagement)
+          IconButton(
+            icon: const Icon(Icons.ios_share_outlined),
+            onPressed:
+                (_logDirectoryListing?.fileCount ?? 0) <= 0 ||
+                    _logManagementSharing ||
+                    _logManagementDeleting
+                ? null
+                : _shareAllLogs,
+            tooltip: l10n.logManagementShareAll,
+          ),
         if (_subPage != _SettingsSubPage.permissions &&
-            _subPage != _SettingsSubPage.appHealth)
+            _subPage != _SettingsSubPage.appHealth &&
+            _subPage != _SettingsSubPage.logManagement)
           const SizedBox(width: kToolbarHeight),
       ],
     );
@@ -140,9 +164,17 @@ extension _SettingsLayoutPart on _SettingsPageState {
                   context: context,
                   icon: Icons.storage_outlined,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
-                  showBottomBorder: false,
+                  showBottomBorder: true,
                   isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.dataBackup),
+                ),
+                _buildNavItem(
+                  context: context,
+                  icon: Icons.receipt_long_outlined,
+                  title: AppLocalizations.of(context).logManagementTitle,
+                  showBottomBorder: false,
+                  isRootPageItem: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.logManagement),
                 ),
               ],
             ),
@@ -268,6 +300,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
             ),
           ],
         );
+      case _SettingsSubPage.logManagement:
+        return _buildLogManagementPage(context);
       case _SettingsSubPage.advanced:
         return ListView(
           padding: _settingsListPadding(),

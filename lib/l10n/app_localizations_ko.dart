@@ -3189,6 +3189,187 @@ class AppLocalizationsKo extends AppLocalizations {
   String get logNoMatchingLogs => '일치하는 로그가 없습니다';
 
   @override
+  String get logManagementTitle => '로그 관리';
+
+  @override
+  String get logManagementSubtitle =>
+      'output/logs 폴더 계층으로 로그를 탐색합니다. 현재 디렉터리만 불러오며, 폴더와 파일을 개별적으로 공유하거나 삭제할 수 있습니다.';
+
+  @override
+  String get logManagementRefreshTooltip => '로그 새로고침';
+
+  @override
+  String get logManagementShareAll => '모든 로그 공유';
+
+  @override
+  String get logManagementShareDay => '이 날짜 공유';
+
+  @override
+  String get logManagementDeleteDay => '이 날짜 삭제';
+
+  @override
+  String get logManagementShareFolder => '이 폴더 공유';
+
+  @override
+  String get logManagementDeleteFolder => '이 폴더 삭제';
+
+  @override
+  String get logManagementShareFile => '이 파일 공유';
+
+  @override
+  String get logManagementDeleteFile => '이 파일 삭제';
+
+  @override
+  String get logManagementLoading => '로그를 불러오는 중…';
+
+  @override
+  String get logManagementExporting => '패키징 중…';
+
+  @override
+  String get logManagementNoLogsTitle => '저장된 로그가 없습니다';
+
+  @override
+  String get logManagementNoLogsDesc =>
+      '로그를 켜고 앱을 잠시 사용한 뒤 여기에서 저장된 로그 파일을 공유할 수 있습니다.';
+
+  @override
+  String get logManagementEmptyFolderTitle => '현재 폴더가 비어 있습니다';
+
+  @override
+  String get logManagementEmptyFolderDesc =>
+      '여기에는 로그 파일이나 하위 폴더가 없습니다. 상위 폴더로 돌아가 계속 확인하세요.';
+
+  @override
+  String get logManagementParentDirectory => '상위 폴더로 돌아가기';
+
+  @override
+  String logManagementCurrentPath(Object path) {
+    return '현재 위치: $path';
+  }
+
+  @override
+  String get logManagementUnknownTime => '알 수 없는 시간';
+
+  @override
+  String logManagementSummary(Object fileCount, Object size) {
+    return '파일 $fileCount개 • $size';
+  }
+
+  @override
+  String logManagementDaySubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '파일 $fileCount개 • $size • 업데이트 $modified';
+  }
+
+  @override
+  String logManagementFileSubtitle(Object size, Object modified) {
+    return '$size • 업데이트 $modified';
+  }
+
+  @override
+  String logManagementFolderSubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  ) {
+    return '파일 $fileCount개 • $size • 업데이트 $modified';
+  }
+
+  @override
+  String get logManagementDeleteFileTitle => '로그 파일 삭제';
+
+  @override
+  String logManagementDeleteFileMessage(Object fileName) {
+    return '“$fileName” 파일을 삭제할까요? 이 작업은 되돌릴 수 없습니다.';
+  }
+
+  @override
+  String get logManagementDeleteDayTitle => '해당 날짜 로그 삭제';
+
+  @override
+  String logManagementDeleteDayMessage(
+    Object date,
+    Object fileCount,
+    Object size,
+  ) {
+    return '$date의 로그 파일 $fileCount개($size)를 삭제할까요? 이 작업은 되돌릴 수 없습니다.';
+  }
+
+  @override
+  String get logManagementDeleteFolderTitle => '로그 폴더 삭제';
+
+  @override
+  String logManagementDeleteFolderMessage(
+    Object folderName,
+    Object fileCount,
+    Object size,
+  ) {
+    return '“$folderName” 폴더와 그 안의 로그 파일 $fileCount개($size)를 삭제할까요? 이 작업은 되돌릴 수 없습니다.';
+  }
+
+  @override
+  String get logManagementFileDeleted => '로그 파일을 삭제했습니다';
+
+  @override
+  String get logManagementFileMissing => '로그 파일이 더 이상 없습니다';
+
+  @override
+  String logManagementFolderDeleted(Object fileCount) {
+    return '폴더와 로그 파일 $fileCount개를 삭제했습니다';
+  }
+
+  @override
+  String get logManagementFolderDeletedEmpty => '로그 폴더를 삭제했습니다';
+
+  @override
+  String get logManagementFolderMissing => '로그 폴더가 더 이상 없습니다';
+
+  @override
+  String logManagementDayDeleted(Object fileCount) {
+    return '로그 파일 $fileCount개를 삭제했습니다';
+  }
+
+  @override
+  String get logManagementDayMissing => '해당 날짜의 로그가 더 이상 없습니다';
+
+  @override
+  String logManagementDeleteFailed(Object error) {
+    return '로그 삭제 실패: $error';
+  }
+
+  @override
+  String get logManagementShareEmpty => '공유할 로그 파일이 없습니다';
+
+  @override
+  String logManagementShareFailed(Object error) {
+    return '공유 실패: $error';
+  }
+
+  @override
+  String logManagementLoadFailed(Object error) {
+    return '로그 불러오기 실패: $error';
+  }
+
+  @override
+  String get logManagementLargeExportTitle => '로그 내보내기 용량이 큽니다';
+
+  @override
+  String logManagementLargeExportMessage(Object size) {
+    return '선택한 로그는 약 $size입니다. 패키징하고 공유할까요?';
+  }
+
+  @override
+  String get logManagementLargeExportConfirm => '계속';
+
+  @override
+  String logManagementZipReady(Object size) {
+    return '로그 ZIP 준비 완료: $size';
+  }
+
+  @override
   String get logFilterTooltip => '필터';
 
   @override

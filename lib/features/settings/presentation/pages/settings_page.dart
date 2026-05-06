@@ -5,8 +5,11 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:intl/intl.dart' as intl;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
+import 'package:screen_memo/core/utils/byte_formatter.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/features/onboarding/presentation/pages/onboarding_page.dart';
@@ -25,6 +28,7 @@ import 'package:screen_memo/features/storage_analysis/presentation/pages/storage
 import 'package:screen_memo/features/backup/presentation/pages/import_diagnostics_page.dart';
 import 'package:screen_memo/features/backup/presentation/pages/export_backup_page.dart';
 import 'package:screen_memo/features/daily_summary/application/daily_summary_service.dart';
+import 'package:screen_memo/features/diagnostics/application/log_export_service.dart';
 import 'package:screen_memo/features/nsfw/application/nsfw_preference_service.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/app_health/application/app_health_service.dart';
@@ -41,6 +45,7 @@ part 'settings_page_screenshot_part.dart';
 part 'settings_page_nsfw_part.dart';
 part 'settings_page_daily_notify_part.dart';
 part 'settings_page_app_health_part.dart';
+part 'settings_page_logs_part.dart';
 
 enum _ImportMode { overwrite, merge }
 
@@ -53,6 +58,7 @@ enum _SettingsSubPage {
   dailyReminder,
   appHealth,
   dataBackup,
+  logManagement,
   advanced,
   about,
 }
@@ -165,6 +171,11 @@ class _SettingsPageState extends State<SettingsPage>
   Duration _appHealthSlotSize = AppHealthService.defaultSlotSize;
   Timer? _appHealthWindowDebounce;
   bool _appHealthReloadQueued = false;
+  LogDirectoryListing? _logDirectoryListing;
+  String _logDirectoryRelativePath = '';
+  bool _logManagementLoading = false;
+  bool _logManagementSharing = false;
+  bool _logManagementDeleting = false;
   late final Future<PackageInfo> _packageInfoFuture =
       PackageInfo.fromPlatform();
   int _aboutVersionTapCount = 0;
@@ -272,6 +283,9 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadAppHealthStatus(refresh: true));
         break;
       case _SettingsSubPage.dataBackup:
+        break;
+      case _SettingsSubPage.logManagement:
+        unawaited(_loadLogDirectory());
         break;
       case _SettingsSubPage.advanced:
         unawaited(_loadLoggingEnabled());

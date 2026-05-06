@@ -1687,6 +1687,135 @@
   "logClearFailed": "ログのクリアに失敗しました",
   "logNoLogs": "ログはまだありません",
   "logNoMatchingLogs": "一致するログはありません",
+  "logManagementTitle": "ログ管理",
+  "logManagementSubtitle": "output/logs のフォルダー階層でログを参照します。現在のディレクトリだけを読み込み、フォルダーやファイルを個別に共有・削除できます。",
+  "logManagementRefreshTooltip": "ログを更新",
+  "logManagementShareAll": "すべてのログを共有",
+  "logManagementShareDay": "この日を共有",
+  "logManagementDeleteDay": "この日のログを削除",
+  "logManagementShareFolder": "このフォルダーを共有",
+  "logManagementDeleteFolder": "このフォルダーを削除",
+  "logManagementShareFile": "このファイルを共有",
+  "logManagementDeleteFile": "このファイルを削除",
+  "logManagementLoading": "ログを読み込み中…",
+  "logManagementExporting": "パッケージ中…",
+  "logManagementNoLogsTitle": "保存済みログはありません",
+  "logManagementNoLogsDesc": "ログを有効にしてしばらくアプリを使用すると、ここから保存済みログを共有できます。",
+  "logManagementEmptyFolderTitle": "このフォルダーは空です",
+  "logManagementEmptyFolderDesc": "ここにはログファイルやサブフォルダーがありません。親フォルダーに戻って確認してください。",
+  "logManagementParentDirectory": "親フォルダーに戻る",
+  "logManagementCurrentPath": "現在の場所: {path}",
+  "@logManagementCurrentPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "logManagementUnknownTime": "不明な時刻",
+  "logManagementSummary": "{fileCount} 件のファイル • {size}",
+  "@logManagementSummary": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDaySubtitle": "{fileCount} 件のファイル • {size} • 更新 {modified}",
+  "@logManagementDaySubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFileSubtitle": "{size} • 更新 {modified}",
+  "@logManagementFileSubtitle": {
+    "placeholders": {
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFolderSubtitle": "{fileCount} 件のファイル • {size} • 更新 {modified}",
+  "@logManagementFolderSubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementDeleteFileTitle": "ログファイルを削除",
+  "logManagementDeleteFileMessage": "「{fileName}」を削除しますか？この操作は元に戻せません。",
+  "@logManagementDeleteFileMessage": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "logManagementDeleteDayTitle": "当日のログを削除",
+  "logManagementDeleteDayMessage": "{date} のログファイル {fileCount} 件（{size}）を削除しますか？この操作は元に戻せません。",
+  "@logManagementDeleteDayMessage": {
+    "placeholders": {
+      "date": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDeleteFolderTitle": "ログフォルダーを削除",
+  "logManagementDeleteFolderMessage": "「{folderName}」とその中のログファイル {fileCount} 件（{size}）を削除しますか？この操作は元に戻せません。",
+  "@logManagementDeleteFolderMessage": {
+    "placeholders": {
+      "folderName": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementFileDeleted": "ログファイルを削除しました",
+  "logManagementFileMissing": "ログファイルは存在しません",
+  "logManagementFolderDeleted": "フォルダーとログファイル {fileCount} 件を削除しました",
+  "@logManagementFolderDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementFolderDeletedEmpty": "ログフォルダーを削除しました",
+  "logManagementFolderMissing": "ログフォルダーは存在しません",
+  "logManagementDayDeleted": "ログファイル {fileCount} 件を削除しました",
+  "@logManagementDayDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementDayMissing": "この日のログは存在しません",
+  "logManagementDeleteFailed": "ログの削除に失敗しました: {error}",
+  "@logManagementDeleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementShareEmpty": "共有できるログファイルがありません",
+  "logManagementShareFailed": "共有に失敗しました: {error}",
+  "@logManagementShareFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLoadFailed": "ログの読み込みに失敗しました: {error}",
+  "@logManagementLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLargeExportTitle": "ログのエクスポートが大きいです",
+  "logManagementLargeExportMessage": "選択したログは約 {size} です。パッケージして共有しますか？",
+  "@logManagementLargeExportMessage": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "logManagementLargeExportConfirm": "続行",
+  "logManagementZipReady": "ログ ZIP の準備ができました: {size}",
+  "@logManagementZipReady": {
+    "placeholders": {
+      "size": {}
+    }
+  },
   "logFilterTooltip": "フィルター",
   "logSortNewestFirst": "新しい順",
   "logSortOldestFirst": "古い順",

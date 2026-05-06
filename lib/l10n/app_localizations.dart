@@ -5808,6 +5808,286 @@ abstract class AppLocalizations {
   /// **'No matching logs'**
   String get logNoMatchingLogs;
 
+  /// No description provided for @logManagementTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Log management'**
+  String get logManagementTitle;
+
+  /// No description provided for @logManagementSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse logs by the output/logs folder hierarchy. Only the current directory is loaded, and folders or files can be shared or deleted individually.'**
+  String get logManagementSubtitle;
+
+  /// No description provided for @logManagementRefreshTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh logs'**
+  String get logManagementRefreshTooltip;
+
+  /// No description provided for @logManagementShareAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Share all logs'**
+  String get logManagementShareAll;
+
+  /// No description provided for @logManagementShareDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this day'**
+  String get logManagementShareDay;
+
+  /// No description provided for @logManagementDeleteDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this day'**
+  String get logManagementDeleteDay;
+
+  /// No description provided for @logManagementShareFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this folder'**
+  String get logManagementShareFolder;
+
+  /// No description provided for @logManagementDeleteFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this folder'**
+  String get logManagementDeleteFolder;
+
+  /// No description provided for @logManagementShareFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this file'**
+  String get logManagementShareFile;
+
+  /// No description provided for @logManagementDeleteFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this file'**
+  String get logManagementDeleteFile;
+
+  /// No description provided for @logManagementLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading logs…'**
+  String get logManagementLoading;
+
+  /// No description provided for @logManagementExporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Packaging…'**
+  String get logManagementExporting;
+
+  /// No description provided for @logManagementNoLogsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved logs'**
+  String get logManagementNoLogsTitle;
+
+  /// No description provided for @logManagementNoLogsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable logging and use the app for a while, then return here to share saved log files.'**
+  String get logManagementNoLogsDesc;
+
+  /// No description provided for @logManagementEmptyFolderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder is empty'**
+  String get logManagementEmptyFolderTitle;
+
+  /// No description provided for @logManagementEmptyFolderDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no log files or subfolders here. Go back to the parent folder to continue browsing.'**
+  String get logManagementEmptyFolderDesc;
+
+  /// No description provided for @logManagementParentDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to parent folder'**
+  String get logManagementParentDirectory;
+
+  /// No description provided for @logManagementCurrentPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Current path: {path}'**
+  String logManagementCurrentPath(Object path);
+
+  /// No description provided for @logManagementUnknownTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown time'**
+  String get logManagementUnknownTime;
+
+  /// No description provided for @logManagementSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{fileCount} files • {size}'**
+  String logManagementSummary(Object fileCount, Object size);
+
+  /// No description provided for @logManagementDaySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{fileCount} files • {size} • Updated {modified}'**
+  String logManagementDaySubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  );
+
+  /// No description provided for @logManagementFileSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} • Updated {modified}'**
+  String logManagementFileSubtitle(Object size, Object modified);
+
+  /// No description provided for @logManagementFolderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{fileCount} files • {size} • Updated {modified}'**
+  String logManagementFolderSubtitle(
+    Object fileCount,
+    Object size,
+    Object modified,
+  );
+
+  /// No description provided for @logManagementDeleteFileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete log file'**
+  String get logManagementDeleteFileTitle;
+
+  /// No description provided for @logManagementDeleteFileMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{fileName}”? This action cannot be undone.'**
+  String logManagementDeleteFileMessage(Object fileName);
+
+  /// No description provided for @logManagementDeleteDayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete day logs'**
+  String get logManagementDeleteDayTitle;
+
+  /// No description provided for @logManagementDeleteDayMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {fileCount} log files ({size}) from {date}? This action cannot be undone.'**
+  String logManagementDeleteDayMessage(
+    Object date,
+    Object fileCount,
+    Object size,
+  );
+
+  /// No description provided for @logManagementDeleteFolderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete log folder'**
+  String get logManagementDeleteFolderTitle;
+
+  /// No description provided for @logManagementDeleteFolderMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{folderName}” and its {fileCount} log files ({size})? This action cannot be undone.'**
+  String logManagementDeleteFolderMessage(
+    Object folderName,
+    Object fileCount,
+    Object size,
+  );
+
+  /// No description provided for @logManagementFileDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Log file deleted'**
+  String get logManagementFileDeleted;
+
+  /// No description provided for @logManagementFileMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Log file no longer exists'**
+  String get logManagementFileMissing;
+
+  /// No description provided for @logManagementFolderDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted folder and {fileCount} log files'**
+  String logManagementFolderDeleted(Object fileCount);
+
+  /// No description provided for @logManagementFolderDeletedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Log folder deleted'**
+  String get logManagementFolderDeletedEmpty;
+
+  /// No description provided for @logManagementFolderMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Log folder no longer exists'**
+  String get logManagementFolderMissing;
+
+  /// No description provided for @logManagementDayDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {fileCount} log files'**
+  String logManagementDayDeleted(Object fileCount);
+
+  /// No description provided for @logManagementDayMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs for this day no longer exist'**
+  String get logManagementDayMissing;
+
+  /// No description provided for @logManagementDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete log: {error}'**
+  String logManagementDeleteFailed(Object error);
+
+  /// No description provided for @logManagementShareEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No log files to share'**
+  String get logManagementShareEmpty;
+
+  /// No description provided for @logManagementShareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Share failed: {error}'**
+  String logManagementShareFailed(Object error);
+
+  /// No description provided for @logManagementLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load logs: {error}'**
+  String logManagementLoadFailed(Object error);
+
+  /// No description provided for @logManagementLargeExportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Large log export'**
+  String get logManagementLargeExportTitle;
+
+  /// No description provided for @logManagementLargeExportMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected logs are about {size}. Continue packaging and sharing?'**
+  String logManagementLargeExportMessage(Object size);
+
+  /// No description provided for @logManagementLargeExportConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get logManagementLargeExportConfirm;
+
+  /// No description provided for @logManagementZipReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Log ZIP ready: {size}'**
+  String logManagementZipReady(Object size);
+
   /// No description provided for @logFilterTooltip.
   ///
   /// In en, this message translates to:

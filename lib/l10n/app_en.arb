@@ -1687,6 +1687,135 @@
   "logClearFailed": "Failed to clear logs",
   "logNoLogs": "No logs yet",
   "logNoMatchingLogs": "No matching logs",
+  "logManagementTitle": "Log management",
+  "logManagementSubtitle": "Browse logs by the output/logs folder hierarchy. Only the current directory is loaded, and folders or files can be shared or deleted individually.",
+  "logManagementRefreshTooltip": "Refresh logs",
+  "logManagementShareAll": "Share all logs",
+  "logManagementShareDay": "Share this day",
+  "logManagementDeleteDay": "Delete this day",
+  "logManagementShareFolder": "Share this folder",
+  "logManagementDeleteFolder": "Delete this folder",
+  "logManagementShareFile": "Share this file",
+  "logManagementDeleteFile": "Delete this file",
+  "logManagementLoading": "Loading logs…",
+  "logManagementExporting": "Packaging…",
+  "logManagementNoLogsTitle": "No saved logs",
+  "logManagementNoLogsDesc": "Enable logging and use the app for a while, then return here to share saved log files.",
+  "logManagementEmptyFolderTitle": "This folder is empty",
+  "logManagementEmptyFolderDesc": "There are no log files or subfolders here. Go back to the parent folder to continue browsing.",
+  "logManagementParentDirectory": "Back to parent folder",
+  "logManagementCurrentPath": "Current path: {path}",
+  "@logManagementCurrentPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "logManagementUnknownTime": "Unknown time",
+  "logManagementSummary": "{fileCount} files • {size}",
+  "@logManagementSummary": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDaySubtitle": "{fileCount} files • {size} • Updated {modified}",
+  "@logManagementDaySubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFileSubtitle": "{size} • Updated {modified}",
+  "@logManagementFileSubtitle": {
+    "placeholders": {
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementFolderSubtitle": "{fileCount} files • {size} • Updated {modified}",
+  "@logManagementFolderSubtitle": {
+    "placeholders": {
+      "fileCount": {},
+      "size": {},
+      "modified": {}
+    }
+  },
+  "logManagementDeleteFileTitle": "Delete log file",
+  "logManagementDeleteFileMessage": "Delete “{fileName}”? This action cannot be undone.",
+  "@logManagementDeleteFileMessage": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "logManagementDeleteDayTitle": "Delete day logs",
+  "logManagementDeleteDayMessage": "Delete {fileCount} log files ({size}) from {date}? This action cannot be undone.",
+  "@logManagementDeleteDayMessage": {
+    "placeholders": {
+      "date": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementDeleteFolderTitle": "Delete log folder",
+  "logManagementDeleteFolderMessage": "Delete “{folderName}” and its {fileCount} log files ({size})? This action cannot be undone.",
+  "@logManagementDeleteFolderMessage": {
+    "placeholders": {
+      "folderName": {},
+      "fileCount": {},
+      "size": {}
+    }
+  },
+  "logManagementFileDeleted": "Log file deleted",
+  "logManagementFileMissing": "Log file no longer exists",
+  "logManagementFolderDeleted": "Deleted folder and {fileCount} log files",
+  "@logManagementFolderDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementFolderDeletedEmpty": "Log folder deleted",
+  "logManagementFolderMissing": "Log folder no longer exists",
+  "logManagementDayDeleted": "Deleted {fileCount} log files",
+  "@logManagementDayDeleted": {
+    "placeholders": {
+      "fileCount": {}
+    }
+  },
+  "logManagementDayMissing": "Logs for this day no longer exist",
+  "logManagementDeleteFailed": "Failed to delete log: {error}",
+  "@logManagementDeleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementShareEmpty": "No log files to share",
+  "logManagementShareFailed": "Share failed: {error}",
+  "@logManagementShareFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLoadFailed": "Failed to load logs: {error}",
+  "@logManagementLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "logManagementLargeExportTitle": "Large log export",
+  "logManagementLargeExportMessage": "The selected logs are about {size}. Continue packaging and sharing?",
+  "@logManagementLargeExportMessage": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "logManagementLargeExportConfirm": "Continue",
+  "logManagementZipReady": "Log ZIP ready: {size}",
+  "@logManagementZipReady": {
+    "placeholders": {
+      "size": {}
+    }
+  },
   "logFilterTooltip": "Filter",
   "logSortNewestFirst": "Newest first",
   "logSortOldestFirst": "Oldest first",
