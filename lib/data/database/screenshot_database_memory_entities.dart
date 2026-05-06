@@ -425,13 +425,33 @@ extension ScreenshotDatabaseMemoryEntitiesExt on ScreenshotDatabase {
       'CREATE INDEX IF NOT EXISTS idx_memory_entity_batch_runs_status ON memory_entity_batch_runs(status, created_at DESC)',
     );
 
-    await db.execute('''
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_entity_search_fts
-      USING fts5(
-        entity_id UNINDEXED,
-        search_text,
-        tokenize = 'unicode61 remove_diacritics 2'
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_entity_search_fts
+        USING fts5(
+          entity_id UNINDEXED,
+          search_text,
+          tokenize = 'unicode61 remove_diacritics 2'
+        )
+      ''');
+    } catch (e) {
+      // 部分 Android SQLite 构建不包含 FTS5。记忆检索可降级为普通 LIKE，
+      // 但数据库初始化不能因为可选索引不可用而失败。
+      try {
+        await FlutterLogger.nativeWarn(
+          'DB',
+          'FTS5（memory_entity_search）不支持，使用普通表降级：$e',
+        );
+      } catch (_) {}
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS memory_entity_search_fts (
+          entity_id TEXT PRIMARY KEY,
+          search_text TEXT NOT NULL DEFAULT ''
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_memory_entity_search_plain_entity ON memory_entity_search_fts(entity_id)',
+      );
+    }
   }
 }

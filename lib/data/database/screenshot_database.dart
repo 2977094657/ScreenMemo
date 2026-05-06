@@ -663,7 +663,7 @@ class ScreenshotDatabase {
   Future<void> _onCreate(Database db, int version) async {
     // 新架构：应用注册表，记录所有已创建的应用表
     await db.execute('''
-      CREATE TABLE app_registry (
+      CREATE TABLE IF NOT EXISTS app_registry (
         app_package_name TEXT PRIMARY KEY,
         app_name TEXT NOT NULL,
         table_name TEXT NOT NULL,
@@ -673,7 +673,7 @@ class ScreenshotDatabase {
 
     // 聚合统计表（每个应用一行，避免首页实时 SUM/COUNT）
     await db.execute('''
-      CREATE TABLE app_stats (
+      CREATE TABLE IF NOT EXISTS app_stats (
         app_package_name TEXT PRIMARY KEY,
         app_name TEXT NOT NULL,
         total_count INTEGER NOT NULL DEFAULT 0,
@@ -683,12 +683,12 @@ class ScreenshotDatabase {
       )
     ''');
     await db.execute(
-      'CREATE INDEX idx_app_stats_last ON app_stats(last_capture_time)',
+      'CREATE INDEX IF NOT EXISTS idx_app_stats_last ON app_stats(last_capture_time)',
     );
 
     // 分库注册表（记录已存在的分库文件）
     await db.execute('''
-      CREATE TABLE shard_registry (
+      CREATE TABLE IF NOT EXISTS shard_registry (
         app_package_name TEXT NOT NULL,
         year INTEGER NOT NULL,
         db_path TEXT NOT NULL,
@@ -699,7 +699,7 @@ class ScreenshotDatabase {
 
     // 全局汇总统计表（单行记录，固定ID=1）
     await db.execute('''
-      CREATE TABLE totals (
+      CREATE TABLE IF NOT EXISTS totals (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         app_count INTEGER NOT NULL DEFAULT 0,
         screenshot_count INTEGER NOT NULL DEFAULT 0,

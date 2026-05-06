@@ -22,6 +22,7 @@ class MemoryEntityStore {
 
   Future<void> resetAll() async {
     final Database db = await _db.database;
+    await _ensureMemoryEntitySearchTable(db);
     await db.transaction((txn) async {
       await txn.delete('memory_entity_batch_runs');
       await txn.delete('memory_entity_review_queue');
@@ -1194,6 +1195,48 @@ class MemoryEntityStore {
     return rows.isNotEmpty;
   }
 
+  Future<void> _ensureMemoryEntitySearchTable(DatabaseExecutor db) async {
+    if (await _tableExists(db, 'memory_entity_search_fts')) return;
+    try {
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_entity_search_fts
+        USING fts5(
+          entity_id UNINDEXED,
+          search_text,
+          tokenize = 'unicode61 remove_diacritics 2'
+        )
+      ''');
+    } catch (_) {
+      // FTS5 不可用时降级为普通表，保证数据库初始化与记忆维护不中断。
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS memory_entity_search_fts (
+          entity_id TEXT PRIMARY KEY,
+          search_text TEXT NOT NULL DEFAULT ''
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_memory_entity_search_plain_entity ON memory_entity_search_fts(entity_id)',
+      );
+    }
+  }
+
+  Future<bool> _isMemoryEntitySearchFts5(DatabaseExecutor db) async {
+    try {
+      final List<Map<String, Object?>> rows = await db.query(
+        'sqlite_master',
+        columns: const <String>['sql'],
+        where: 'type = ? AND name = ?',
+        whereArgs: const <Object?>['table', 'memory_entity_search_fts'],
+        limit: 1,
+      );
+      if (rows.isEmpty) return false;
+      final String sql = (rows.first['sql'] ?? '').toString().toLowerCase();
+      return sql.contains('virtual table') && sql.contains('using fts5');
+    } catch (_) {
+      return false;
+    }
+  }
+
   String _humanizeLeafFromUri(String uri) {
     final String leaf = _mem.parseUri(uri).path.split('/').last;
     return leaf.replaceAll(RegExp(r'[_-]+'), ' ').trim();
@@ -1329,22 +1372,67 @@ class MemoryEntityStore {
       visualSignatureNorm: visualNorm,
     );
     if (ftsQuery.isNotEmpty) {
-      final List<Map<String, Object?>> ftsRows = await db.rawQuery(
-        '''
-        SELECT f.entity_id, bm25(memory_entity_search_fts) AS rank
-        FROM memory_entity_search_fts f
-        INNER JOIN memory_entities e ON e.entity_id = f.entity_id
-        WHERE e.root_uri = ?
-          AND e.entity_type = ?
-          AND memory_entity_search_fts MATCH ?
-        ORDER BY rank ASC
-        LIMIT 32
-        ''',
-        <Object?>[normalizedRoot, normalizedType, ftsQuery],
-      );
-      for (int index = 0; index < ftsRows.length; index += 1) {
-        final double bonus = math.max(1.2, 4.6 - (index * 0.12));
-        addCandidate((ftsRows[index]['entity_id'] ?? '').toString(), bonus);
+      bool matchedByFts = false;
+      if (await _isMemoryEntitySearchFts5(db)) {
+        try {
+          final List<Map<String, Object?>> ftsRows = await db.rawQuery(
+            '''
+            SELECT f.entity_id, bm25(memory_entity_search_fts) AS rank
+            FROM memory_entity_search_fts f
+            INNER JOIN memory_entities e ON e.entity_id = f.entity_id
+            WHERE e.root_uri = ?
+              AND e.entity_type = ?
+              AND memory_entity_search_fts MATCH ?
+            ORDER BY rank ASC
+            LIMIT 32
+            ''',
+            <Object?>[normalizedRoot, normalizedType, ftsQuery],
+          );
+          for (int index = 0; index < ftsRows.length; index += 1) {
+            final double bonus = math.max(1.2, 4.6 - (index * 0.12));
+            addCandidate((ftsRows[index]['entity_id'] ?? '').toString(), bonus);
+          }
+          matchedByFts = true;
+        } catch (_) {
+          matchedByFts = false;
+        }
+      }
+      if (!matchedByFts) {
+        final List<String> plainTerms = _buildPlainSearchTerms(
+          preferredNameNorm: normalizedName,
+          aliasNorms: aliasNorms,
+          canonicalNorm: canonicalNorm,
+          visualSignatureNorm: visualNorm,
+        );
+        if (plainTerms.isNotEmpty) {
+          final String likeWhere = List<String>.filled(
+            plainTerms.length,
+            'f.search_text LIKE ?',
+          ).join(' OR ');
+          final List<Map<String, Object?>> plainRows = await db.rawQuery(
+            '''
+            SELECT f.entity_id
+            FROM memory_entity_search_fts f
+            INNER JOIN memory_entities e ON e.entity_id = f.entity_id
+            WHERE e.root_uri = ?
+              AND e.entity_type = ?
+              AND ($likeWhere)
+            LIMIT 32
+            ''',
+            <Object?>[
+              normalizedRoot,
+              normalizedType,
+              ...plainTerms.map((term) => '%$term%'),
+            ],
+          );
+          for (int index = 0; index < plainRows.length; index += 1) {
+            final double bonus = math.max(0.8, 3.2 - (index * 0.08));
+            addCandidate(
+              (plainRows[index]['entity_id'] ?? '').toString(),
+              bonus,
+            );
+          }
+        }
       }
     }
 
@@ -1521,6 +1609,7 @@ class MemoryEntityStore {
 
   Future<void> _ensureSearchIndexSynced({bool force = false}) async {
     final Database db = await _db.database;
+    await _ensureMemoryEntitySearchTable(db);
     final int entityCount =
         Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) AS c FROM memory_entities'),
@@ -1710,6 +1799,45 @@ class MemoryEntityStore {
       if (terms.length >= 10) break;
     }
     return terms.join(' OR ');
+  }
+
+  List<String> _buildPlainSearchTerms({
+    required String preferredNameNorm,
+    required Set<String> aliasNorms,
+    required String canonicalNorm,
+    required String visualSignatureNorm,
+  }) {
+    final LinkedHashSet<String> terms = LinkedHashSet<String>();
+
+    void addTerm(String value) {
+      final String normalized = value.trim();
+      if (normalized.length >= 2) {
+        terms.add(normalized);
+      }
+    }
+
+    if (preferredNameNorm.isNotEmpty) {
+      addTerm(preferredNameNorm);
+      for (final String token in preferredNameNorm.split(' ')) {
+        addTerm(token);
+      }
+    }
+    for (final String alias in aliasNorms) {
+      addTerm(alias);
+      for (final String token in alias.split(' ')) {
+        addTerm(token);
+      }
+    }
+    if (canonicalNorm.isNotEmpty) {
+      addTerm(canonicalNorm);
+    }
+    for (final String token in visualSignatureNorm.split(' ')) {
+      if (token.length >= 3) {
+        addTerm(token);
+      }
+      if (terms.length >= 10) break;
+    }
+    return terms.take(10).toList(growable: false);
   }
 
   String deriveCanonicalKey({
