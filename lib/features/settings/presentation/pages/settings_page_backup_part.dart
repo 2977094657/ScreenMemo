@@ -9,6 +9,14 @@ extension _SettingsBackupPart on _SettingsPageState {
       _recalculatingAll = true;
     });
 
+    final ValueNotifier<ScreenshotRecomputeProgress> progressNotifier =
+        ValueNotifier<ScreenshotRecomputeProgress>(
+          const ScreenshotRecomputeProgress(
+            phase: 'prepare',
+            current: 0,
+            total: 0,
+          ),
+        );
     final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
     bool dialogClosed = false;
     showGeneralDialog<void>(
@@ -28,25 +36,52 @@ extension _SettingsBackupPart on _SettingsPageState {
                 elevation: 8,
                 child: Padding(
                   padding: const EdgeInsets.all(AppTheme.spacing4),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        t.recalculateAllProgress,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: AppTheme.spacing3),
-                      const Center(
-                        child: SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-                    ],
+                  child: ValueListenableBuilder<ScreenshotRecomputeProgress>(
+                    valueListenable: progressNotifier,
+                    builder: (_, ScreenshotRecomputeProgress progress, __) {
+                      final double? value = progress.value;
+                      final String? percent = value == null
+                          ? null
+                          : '${(value * 100).clamp(0, 100).round()}%';
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t.recalculateAllProgress,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                          UIProgress(value: value, height: 4),
+                          const SizedBox(height: AppTheme.spacing2),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _formatRecalculateProgressDetail(progress),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (percent != null) ...[
+                                const SizedBox(width: AppTheme.spacing2),
+                                Text(
+                                  percent,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -57,7 +92,13 @@ extension _SettingsBackupPart on _SettingsPageState {
     );
 
     try {
-      await ScreenshotService.instance.recomputeAllAppStats();
+      await ScreenshotService.instance.recomputeAllAppStats(
+        onProgress: (ScreenshotRecomputeProgress progress) {
+          if (!dialogClosed) {
+            progressNotifier.value = progress;
+          }
+        },
+      );
       if (mounted) {
         if (!dialogClosed) {
           try {
@@ -99,7 +140,39 @@ extension _SettingsBackupPart on _SettingsPageState {
           _recalculatingAll = false;
         });
       }
+      progressNotifier.dispose();
     }
+  }
+
+  String _formatRecalculateProgressDetail(
+    ScreenshotRecomputeProgress progress,
+  ) {
+    final String phaseLabel = switch (progress.phase) {
+      'scan_prepare' => 'Preparing scan',
+      'scan_files' => 'Scanning screenshot files',
+      'recompute_app' => 'Recomputing app statistics',
+      'recalculate_totals' => 'Recalculating totals',
+      'refresh_cache' => 'Refreshing cache',
+      'refresh_days' => 'Refreshing timeline days',
+      'done' => 'Done',
+      _ => 'Preparing',
+    };
+    final List<String> parts = <String>[phaseLabel];
+    if (progress.total > 0) {
+      parts.add(
+        '${progress.current.clamp(0, progress.total)}/${progress.total}',
+      );
+    }
+    if (progress.packageName != null && progress.packageName!.isNotEmpty) {
+      parts.add(progress.packageName!);
+    }
+    if (progress.processedFiles > 0) {
+      parts.add('files ${progress.processedFiles}');
+    }
+    if (progress.inserted > 0) {
+      parts.add('repaired +${progress.inserted}');
+    }
+    return parts.join(' · ');
   }
 
   Future<void> _showMergeResultDialog(MergeReport report) async {

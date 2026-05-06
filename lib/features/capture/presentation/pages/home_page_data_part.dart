@@ -165,6 +165,8 @@ extension _HomePageDataPart on _HomePageState {
 
       // 首次加载时重新计算汇总统计（确保数据完整性）
       await ScreenshotService.instance.recalculateTotals();
+      // 重算可能修正旧缓存中的 0 计数，立即用数据库新值刷新首页。
+      await _loadStatsFresh();
       await _loadTotals(); // 同时加载汇总统计
 
       // 根据排序模式排序应用

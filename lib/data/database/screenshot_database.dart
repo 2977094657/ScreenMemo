@@ -248,9 +248,10 @@ class ScreenshotDatabase {
   }
 
   Future<Directory?> _getShardsRootDir() async {
-    final base =
-        await PathService.getInternalAppDir(null) ??
-        await _getInternalFilesDirFallback();
+    final base = _desktopBasePath != null
+        ? Directory(_desktopBasePath!)
+        : await PathService.getInternalAppDir(null) ??
+              await _getInternalFilesDirFallback();
     if (base == null) return null;
     final dir = Directory(join(base.path, _shardsDirRelative));
     if (!await dir.exists()) {
@@ -274,7 +275,11 @@ class ScreenshotDatabase {
     return join(pkgDir.path, fileName);
   }
 
-  Future<Database?> _openShardDb(String package, int year) async {
+  Future<Database?> _openShardDb(
+    String package,
+    int year, {
+    DatabaseExecutor? masterExecutor,
+  }) async {
     final key = _shardDbKey(package, year);
     if (_shardDbCache.containsKey(key)) return _shardDbCache[key];
     final path = await _resolveShardDbPath(package, year);
@@ -283,7 +288,7 @@ class ScreenshotDatabase {
     _shardDbCache[key] = db;
     // 记录到主库的 shard_registry
     try {
-      final master = await database;
+      final master = masterExecutor ?? await database;
       await master.execute(
         'INSERT OR REPLACE INTO shard_registry(app_package_name, year, db_path) VALUES(?, ?, ?)',
         [package, year, path],
@@ -457,18 +462,43 @@ class ScreenshotDatabase {
     String appName,
   ) async {
     try {
+      String resolvedAppName = appName.trim().isEmpty
+          ? packageName
+          : appName.trim();
+      if (resolvedAppName == packageName) {
+        try {
+          final existing = await db.query(
+            'app_registry',
+            columns: ['app_name'],
+            where: 'app_package_name = ?',
+            whereArgs: [packageName],
+            limit: 1,
+          );
+          if (existing.isNotEmpty) {
+            final oldName = (existing.first['app_name'] as String?)?.trim();
+            if (oldName != null &&
+                oldName.isNotEmpty &&
+                oldName != packageName) {
+              resolvedAppName = oldName;
+            }
+          }
+        } catch (_) {}
+      }
       await db.execute(
         'INSERT OR REPLACE INTO app_registry(app_package_name, app_name, table_name) VALUES(?, ?, ?)',
-        [packageName, appName, 'sharded'],
+        [packageName, resolvedAppName, 'sharded'],
       );
     } catch (e) {
       print('注册应用失败: $e');
     }
   }
 
-  Future<List<int>> _listShardYearsForApp(String packageName) async {
+  Future<List<int>> _listShardYearsForApp(
+    String packageName, {
+    DatabaseExecutor? masterExecutor,
+  }) async {
     try {
-      final master = await database;
+      final master = masterExecutor ?? await database;
       final rows = await master.query(
         'shard_registry',
         columns: ['year'],
@@ -1371,14 +1401,18 @@ class ScreenshotDatabase {
   Future<int?> insertScreenshotIfNotExists(ScreenshotRecord record) async {
     final db = await database; // 主库
     try {
-      await db.transaction((txn) async {
+      return await db.transaction<int?>((txn) async {
         // 主库注册应用
         await _registerAppIfNeeded(txn, record.appPackageName, record.appName);
 
         final ts = record.captureTime.millisecondsSinceEpoch;
         final year = _yearFromMillis(ts);
         final month = _monthFromMillis(ts);
-        final shardDb = await _openShardDb(record.appPackageName, year);
+        final shardDb = await _openShardDb(
+          record.appPackageName,
+          year,
+          masterExecutor: txn,
+        );
         if (shardDb == null) throw Exception('open shard db failed');
 
         // 月表建表
@@ -1401,6 +1435,10 @@ class ScreenshotDatabase {
         final file = File(record.filePath);
         final actualFileSize = await file.exists() ? await file.length() : 0;
         final recordWithSize = record.copyWith(fileSize: actualFileSize);
+        final bool isNewAppStat = await _isAppStatMissing(
+          txn,
+          recordWithSize.appPackageName,
+        );
 
         // 插入分库月表
         final map = {...recordWithSize.toMap()};
@@ -1418,10 +1456,11 @@ class ScreenshotDatabase {
         );
 
         // 更新汇总统计
-        await this.updateTotalsOnInsert(
-          [recordWithSize.appPackageName],
-          1,
-          actualFileSize,
+        await _updateTotalsOnInsertWithExecutor(
+          txn,
+          newAppCount: isNewAppStat ? 1 : 0,
+          screenshotCount: 1,
+          totalSizeBytes: actualFileSize,
         );
 
         final gid = _encodeGid(year, month, localId);
@@ -1453,6 +1492,7 @@ class ScreenshotDatabase {
     int inserted = 0;
     final Map<String, int> packageCounts = {};
     final Map<String, int> packageSizes = {};
+    final Set<String> newPackages = <String>{};
 
     try {
       await db.transaction((txn) async {
@@ -1465,7 +1505,11 @@ class ScreenshotDatabase {
           final ts = record.captureTime.millisecondsSinceEpoch;
           final year = _yearFromMillis(ts);
           final month = _monthFromMillis(ts);
-          final shardDb = await _openShardDb(record.appPackageName, year);
+          final shardDb = await _openShardDb(
+            record.appPackageName,
+            year,
+            masterExecutor: txn,
+          );
           if (shardDb == null) continue;
           await _ensureMonthTable(shardDb, year, month);
           final tableName = _monthTableName(year, month);
@@ -1486,6 +1530,10 @@ class ScreenshotDatabase {
           map.remove('app_package_name');
           map.remove('app_name');
           await shardDb.insert(tableName, map);
+          if (!packageCounts.containsKey(recordWithSize.appPackageName) &&
+              await _isAppStatMissing(txn, recordWithSize.appPackageName)) {
+            newPackages.add(recordWithSize.appPackageName);
+          }
           await _upsertAppStatOnInsert(
             txn,
             recordWithSize.appPackageName,
@@ -1503,7 +1551,6 @@ class ScreenshotDatabase {
 
         // 批量更新汇总统计
         if (inserted > 0) {
-          final packageNames = packageCounts.keys.toList();
           final totalScreenshots = packageCounts.values.fold(
             0,
             (sum, count) => sum + count,
@@ -1512,10 +1559,11 @@ class ScreenshotDatabase {
             0,
             (sum, size) => sum + size,
           );
-          await this.updateTotalsOnInsert(
-            packageNames,
-            totalScreenshots,
-            totalSize,
+          await _updateTotalsOnInsertWithExecutor(
+            txn,
+            newAppCount: newPackages.length,
+            screenshotCount: totalScreenshots,
+            totalSizeBytes: totalSize,
           );
         }
       });
@@ -1535,6 +1583,7 @@ class ScreenshotDatabase {
     int totalInserted = 0;
     final Map<String, int> packageCounts = {};
     final Map<String, int> packageSizes = {};
+    final Set<String> newPackages = <String>{};
 
     try {
       // 按包分组（减少表切换开销）
@@ -1567,7 +1616,11 @@ class ScreenshotDatabase {
             final int key = ym.key;
             final int year = key ~/ 100;
             final int month = key % 100;
-            final shardDb = await _openShardDb(packageName, year);
+            final shardDb = await _openShardDb(
+              packageName,
+              year,
+              masterExecutor: txn,
+            );
             if (shardDb == null) continue;
             await _ensureMonthTable(shardDb, year, month);
             final String tableName = _monthTableName(year, month);
@@ -1587,25 +1640,26 @@ class ScreenshotDatabase {
               noResult: true,
               continueOnError: true,
             );
-            if (batchResult != null) {
-              totalInserted += batchResult.length;
-            }
+            totalInserted += batchResult.length;
 
             // 重算该应用聚合一次（按包维度即可）
+            if (!packageCounts.containsKey(packageName) &&
+                await _isAppStatMissing(txn, packageName)) {
+              newPackages.add(packageName);
+            }
             await _recomputeAppStatForPackage(txn, packageName);
 
             // 累计统计数据
             packageCounts[packageName] =
-                (packageCounts[packageName] ?? 0) + list.length;
+                (packageCounts[packageName] ?? 0) + ym.value.length;
             packageSizes[packageName] =
                 (packageSizes[packageName] ?? 0) +
-                list.fold(0, (sum, r) => sum + r.fileSize);
+                ym.value.fold(0, (sum, r) => sum + r.fileSize);
           }
         }
 
         // 批量更新汇总统计
         if (totalInserted > 0) {
-          final packageNames = packageCounts.keys.toList();
           final totalScreenshots = packageCounts.values.fold(
             0,
             (sum, count) => sum + count,
@@ -1614,10 +1668,11 @@ class ScreenshotDatabase {
             0,
             (sum, size) => sum + size,
           );
-          await this.updateTotalsOnInsert(
-            packageNames,
-            totalScreenshots,
-            totalSize,
+          await _updateTotalsOnInsertWithExecutor(
+            txn,
+            newAppCount: newPackages.length,
+            screenshotCount: totalScreenshots,
+            totalSizeBytes: totalSize,
           );
         }
       });
@@ -1669,14 +1724,14 @@ class ScreenshotDatabase {
   ) async {
     try {
       // 聚合所有分库月表
-      final master = await database;
+      final master = db;
       int totalCount = 0;
       int totalSize = 0;
       int lastCapture = 0;
 
-      final years = await _listShardYearsForApp(package);
+      final years = await _listShardYearsForApp(package, masterExecutor: db);
       for (final y in years) {
-        final shardDb = await _openShardDb(package, y);
+        final shardDb = await _openShardDb(package, y, masterExecutor: db);
         if (shardDb == null) continue;
         for (int m = 1; m <= 12; m++) {
           final t = _monthTableName(y, m);
@@ -1932,44 +1987,71 @@ class ScreenshotDatabase {
     final db = await database;
     try {
       await db.transaction((txn) async {
-        int newAppCount = 0;
-
-        // 检查哪些应用是首次出现（在app_stats中不存在）
-        for (final packageName in packageNames) {
-          final existing = await txn.query(
-            'app_stats',
-            columns: ['app_package_name'],
-            where: 'app_package_name = ?',
-            whereArgs: [packageName],
-            limit: 1,
-          );
-          if (existing.isEmpty) {
-            newAppCount++;
-          }
-        }
-
-        // 更新汇总表
-        await txn.execute(
-          '''
-          INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
-          VALUES (1,
-            COALESCE((SELECT app_count FROM totals WHERE id = 1), 0) + ?,
-            COALESCE((SELECT screenshot_count FROM totals WHERE id = 1), 0) + ?,
-            COALESCE((SELECT total_size_bytes FROM totals WHERE id = 1), 0) + ?,
-            ?
-          )
-        ''',
-          [
-            newAppCount,
-            screenshotCount,
-            totalSizeBytes,
-            DateTime.now().millisecondsSinceEpoch,
-          ],
+        final int newAppCount = await _countMissingAppStats(txn, packageNames);
+        await _updateTotalsOnInsertWithExecutor(
+          txn,
+          newAppCount: newAppCount,
+          screenshotCount: screenshotCount,
+          totalSizeBytes: totalSizeBytes,
         );
       });
     } catch (e) {
       print('更新汇总统计失败: $e');
     }
+  }
+
+  Future<bool> _isAppStatMissing(
+    DatabaseExecutor db,
+    String packageName,
+  ) async {
+    final existing = await db.query(
+      'app_stats',
+      columns: ['app_package_name'],
+      where: 'app_package_name = ?',
+      whereArgs: [packageName],
+      limit: 1,
+    );
+    return existing.isEmpty;
+  }
+
+  Future<int> _countMissingAppStats(
+    DatabaseExecutor db,
+    Iterable<String> packageNames,
+  ) async {
+    int newAppCount = 0;
+    for (final packageName in packageNames.toSet()) {
+      if (await _isAppStatMissing(db, packageName)) {
+        newAppCount++;
+      }
+    }
+    return newAppCount;
+  }
+
+  Future<void> _updateTotalsOnInsertWithExecutor(
+    DatabaseExecutor db, {
+    required int newAppCount,
+    required int screenshotCount,
+    required int totalSizeBytes,
+  }) async {
+    // 更新汇总表。调用方若已经在事务中，必须传入同一个 txn，避免 sqflite
+    // 在事务未提交时再次通过主库开新事务导致数据库锁等待。
+    await db.execute(
+      '''
+      INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
+      VALUES (1,
+        COALESCE((SELECT app_count FROM totals WHERE id = 1), 0) + ?,
+        COALESCE((SELECT screenshot_count FROM totals WHERE id = 1), 0) + ?,
+        COALESCE((SELECT total_size_bytes FROM totals WHERE id = 1), 0) + ?,
+        ?
+      )
+    ''',
+      [
+        newAppCount,
+        screenshotCount,
+        totalSizeBytes,
+        DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
   }
 
   /// 从现有数据重新计算汇总统计（用于数据迁移或修复）

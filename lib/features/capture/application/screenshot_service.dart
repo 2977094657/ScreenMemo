@@ -25,6 +25,29 @@ class ScreenshotServiceException implements Exception {
   String toString() => message;
 }
 
+class ScreenshotRecomputeProgress {
+  final String phase;
+  final int current;
+  final int total;
+  final int inserted;
+  final int processedFiles;
+  final String? packageName;
+
+  const ScreenshotRecomputeProgress({
+    required this.phase,
+    required this.current,
+    required this.total,
+    this.inserted = 0,
+    this.processedFiles = 0,
+    this.packageName,
+  });
+
+  double? get value {
+    if (total <= 0) return null;
+    return current.clamp(0, total).toDouble() / total;
+  }
+}
+
 /// 截屏服务管理类
 class ScreenshotService {
   static ScreenshotService? _instance;
@@ -679,18 +702,91 @@ class ScreenshotService {
   /// 重新计算汇总统计（用于数据迁移或修复）
   Future<void> recalculateTotals() async {
     await _database.recalculateTotals();
+    await _refreshStatsCache(force: true);
   }
 
   /// 重新计算所有应用的统计信息，然后刷新全局统计与缓存
-  Future<void> recomputeAllAppStats() async {
+  Future<void> recomputeAllAppStats({
+    void Function(ScreenshotRecomputeProgress progress)? onProgress,
+  }) async {
+    onProgress?.call(
+      const ScreenshotRecomputeProgress(
+        phase: 'scan_prepare',
+        current: 0,
+        total: 0,
+      ),
+    );
+    final int repaired = await syncMissingScreenshotsFromFiles(
+      refreshAfter: false,
+      onProgress: onProgress,
+    );
     final List<String> packages = await _database.listRegisteredPackages();
+    final int totalSteps = packages.length + 3;
+    int step = 0;
     for (final String pkg in packages) {
+      onProgress?.call(
+        ScreenshotRecomputeProgress(
+          phase: 'recompute_app',
+          current: step,
+          total: totalSteps,
+          inserted: repaired,
+          packageName: pkg,
+        ),
+      );
       await _database.recomputeAppStatsForPackage(pkg);
+      step++;
+      onProgress?.call(
+        ScreenshotRecomputeProgress(
+          phase: 'recompute_app',
+          current: step,
+          total: totalSteps,
+          inserted: repaired,
+          packageName: pkg,
+        ),
+      );
     }
+    onProgress?.call(
+      ScreenshotRecomputeProgress(
+        phase: 'recalculate_totals',
+        current: step,
+        total: totalSteps,
+        inserted: repaired,
+      ),
+    );
     await _database.recalculateTotals();
+    step++;
+    onProgress?.call(
+      ScreenshotRecomputeProgress(
+        phase: 'refresh_cache',
+        current: step,
+        total: totalSteps,
+        inserted: repaired,
+      ),
+    );
     await _refreshStatsCache(force: true);
+    step++;
     invalidateAvailableDayCountCache();
+    onProgress?.call(
+      ScreenshotRecomputeProgress(
+        phase: 'refresh_days',
+        current: step,
+        total: totalSteps,
+        inserted: repaired,
+      ),
+    );
     await _refreshDayCount();
+    step++;
+    onProgress?.call(
+      ScreenshotRecomputeProgress(
+        phase: 'done',
+        current: step,
+        total: totalSteps,
+        inserted: repaired,
+      ),
+    );
+    if (repaired > 0) {
+      _screenshotStreamController.add(null);
+    }
   }
 
   /// 获取最新统计（不使用统计缓存，可选择强制全量文件同步）
@@ -1657,80 +1753,142 @@ class ScreenshotService {
     }
   }
 
-  /// 扫描本地截图目录，将未入库的图片补录到数据库
-  // 已移除：全量扫描文件系统并补录到DB的逻辑
+  /// 扫描本地截图目录，将未入库的图片补录到数据库。
+  ///
+  /// 主要用于“重新统计所有数据”修复：如果截图文件已经落盘，但之前因为
+  /// 数据库锁等原因没有写入分库，这里会按文件路径去重后补录。
+  Future<int> syncMissingScreenshotsFromFiles({
+    bool refreshAfter = true,
+    void Function(ScreenshotRecomputeProgress progress)? onProgress,
+  }) async {
+    int inserted = 0;
+    final Set<String> affectedPackages = <String>{};
+    try {
+      final Directory? screenRoot = await PathService.getInternalAppDir(
+        'output/screen',
+      );
+      if (screenRoot == null || !await screenRoot.exists()) {
+        return 0;
+      }
+
+      final List<Directory> appDirs =
+          (await screenRoot.list(followLinks: false).toList())
+              .whereType<Directory>()
+              .toList(growable: false);
+      onProgress?.call(
+        ScreenshotRecomputeProgress(
+          phase: 'scan_files',
+          current: 0,
+          total: appDirs.length,
+        ),
+      );
+      for (int i = 0; i < appDirs.length; i++) {
+        final Directory entity = appDirs[i];
+        final String packageName = p.basename(entity.path).trim();
+        if (packageName.isEmpty) continue;
+        onProgress?.call(
+          ScreenshotRecomputeProgress(
+            phase: 'scan_files',
+            current: i,
+            total: appDirs.length,
+            inserted: inserted,
+            packageName: packageName,
+          ),
+        );
+        final int count = await _scanAppDirectory(
+          entity,
+          packageName,
+          packageIndex: i,
+          packageTotal: appDirs.length,
+          insertedBefore: inserted,
+          onProgress: onProgress,
+        );
+        if (count > 0) {
+          inserted += count;
+          affectedPackages.add(packageName);
+        }
+        onProgress?.call(
+          ScreenshotRecomputeProgress(
+            phase: 'scan_files',
+            current: i + 1,
+            total: appDirs.length,
+            inserted: inserted,
+            packageName: packageName,
+          ),
+        );
+      }
+
+      if (refreshAfter && inserted > 0) {
+        for (final String packageName in affectedPackages) {
+          await _database.recomputeAppStatsForPackage(packageName);
+        }
+        await _database.recalculateTotals();
+        await _refreshStatsCache(force: true);
+        invalidateAvailableDayCountCache();
+        await _refreshDayCount();
+        _screenshotStreamController.add(null);
+      }
+
+      if (inserted > 0) {
+        // ignore: unawaited_futures
+        FlutterLogger.log('本地截图补录完成：inserted=$inserted');
+      }
+      return inserted;
+    } catch (e) {
+      print('本地截图补录失败: $e');
+      return inserted;
+    }
+  }
 
   /// 递归扫描应用目录（包含年月/日期子目录）
-  Future<int> _scanAppDirectory(Directory appDir, String packageName) async {
+  Future<int> _scanAppDirectory(
+    Directory appDir,
+    String packageName, {
+    int packageIndex = 0,
+    int packageTotal = 0,
+    int insertedBefore = 0,
+    void Function(ScreenshotRecomputeProgress progress)? onProgress,
+  }) async {
     int inserted = 0;
+    int processedFiles = 0;
 
     try {
-      final entities = await appDir.list(followLinks: false).toList();
+      await for (final FileSystemEntity entity in appDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File || !_isSupportedScreenshotFile(entity.path)) {
+          continue;
+        }
+        processedFiles++;
+        if (processedFiles == 1 || processedFiles % 25 == 0) {
+          onProgress?.call(
+            ScreenshotRecomputeProgress(
+              phase: 'scan_files',
+              current: packageIndex,
+              total: packageTotal,
+              inserted: insertedBefore + inserted,
+              processedFiles: processedFiles,
+              packageName: packageName,
+            ),
+          );
+        }
+        try {
+          final FileStat stat = await entity.stat();
+          if (stat.size <= 0) continue;
+          final record = ScreenshotRecord(
+            appPackageName: packageName,
+            appName: packageName, // 无法可靠获取时用包名占位；已有应用名不会被覆盖
+            filePath: entity.path, // 数据库存绝对路径
+            captureTime:
+                _inferCaptureTimeFromPath(entity.path) ?? stat.modified,
+            fileSize: stat.size,
+          );
 
-      for (final entity in entities) {
-        if (entity is Directory) {
-          // 这是年月目录（如 2024-01）
-          final yearMonthEntities = await entity
-              .list(followLinks: false)
-              .toList();
-
-          for (final dayEntity in yearMonthEntities) {
-            if (dayEntity is Directory) {
-              // 这是日期目录（如 15）
-              final files = await dayEntity
-                  .list(followLinks: false)
-                  .where(
-                    (e) =>
-                        e is File &&
-                        (e.path.toLowerCase().endsWith('.jpg') ||
-                            e.path.toLowerCase().endsWith('.png')),
-                  )
-                  .toList();
-
-              for (final fileEntity in files) {
-                final file = fileEntity as File;
-                final absolutePath = file.path;
-                final exists = await _database.isFilePathExists(absolutePath);
-                if (exists) continue;
-
-                final stat = await file.stat();
-                final record = ScreenshotRecord(
-                  appPackageName: packageName,
-                  appName: packageName, // 无法可靠获取时用包名占位
-                  filePath: absolutePath, // 数据库存绝对路径
-                  captureTime: stat.modified,
-                  fileSize: stat.size,
-                );
-
-                final id = await _database.insertScreenshotIfNotExists(record);
-                if (id != null) {
-                  inserted++;
-                }
-              }
-            }
-          }
-        } else if (entity is File) {
-          // 兼容旧的扁平结构文件
-          if (entity.path.toLowerCase().endsWith('.jpg') ||
-              entity.path.toLowerCase().endsWith('.png')) {
-            final absolutePath = entity.path;
-            final exists = await _database.isFilePathExists(absolutePath);
-            if (!exists) {
-              final stat = await entity.stat();
-              final record = ScreenshotRecord(
-                appPackageName: packageName,
-                appName: packageName,
-                filePath: absolutePath,
-                captureTime: stat.modified,
-                fileSize: stat.size,
-              );
-
-              final id = await _database.insertScreenshotIfNotExists(record);
-              if (id != null) {
-                inserted++;
-              }
-            }
-          }
+          final id = await _database.insertScreenshotIfNotExists(record);
+          if (id != null) inserted++;
+        } catch (e) {
+          print('补录截图文件失败: ${entity.path}, 错误: $e');
         }
       }
     } catch (e) {
@@ -1738,6 +1896,40 @@ class ScreenshotService {
     }
 
     return inserted;
+  }
+
+  DateTime? _inferCaptureTimeFromPath(String filePath) {
+    try {
+      final String day = p.basename(p.dirname(filePath));
+      final String yearMonth = p.basename(p.dirname(p.dirname(filePath)));
+      final RegExpMatch? ym = RegExp(
+        r'^(\d{4})-(\d{2})$',
+      ).firstMatch(yearMonth);
+      final RegExpMatch? d = RegExp(r'^(\d{1,2})$').firstMatch(day);
+      final RegExpMatch? time = RegExp(
+        r'^(\d{2})(\d{2})(\d{2})(?:_(\d{1,3}))?',
+      ).firstMatch(p.basenameWithoutExtension(filePath));
+      if (ym == null || d == null || time == null) return null;
+      return DateTime(
+        int.parse(ym.group(1)!),
+        int.parse(ym.group(2)!),
+        int.parse(d.group(1)!),
+        int.parse(time.group(1)!),
+        int.parse(time.group(2)!),
+        int.parse(time.group(3)!),
+        int.parse((time.group(4) ?? '0').padRight(3, '0')),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isSupportedScreenshotFile(String filePath) {
+    final lower = filePath.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
   }
 
   // ===== 统计缓存实现 =====
