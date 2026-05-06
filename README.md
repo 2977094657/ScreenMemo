@@ -251,6 +251,8 @@ flutter run --dart-define=FORCE_ONBOARDING=true
    flutter run -d <device_id>
    ```
 
+更多维护者开发说明见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
+
 ### 开发与验证命令
 
 ```bash
@@ -269,6 +271,10 @@ flutter build apk --debug
 # Release APK（按 ABI 拆分）
 flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
 ```
+
+> 本地开发构建如果没有显式传入 `--build-name`，会使用 `pubspec.yaml` 中的默认版本 `999.999.999+1`。
+> 这样可避免自构建包因为低于 GitHub Releases 最新版本而触发云端更新提示。
+> 正式发布工作流会从 Git tag 解析真实版本，并通过 `--build-name` / `--build-number` 覆盖该默认值。
 
 Android 原生 JVM 单元测试：
 
