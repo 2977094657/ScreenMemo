@@ -179,12 +179,45 @@ jobs:
             cp build/app/outputs/mapping/release/mapping.txt "dist/mapping-${{ steps.version.outputs.tag }}.txt"
           fi
 
+      - name: Generate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.version.outputs.tag }}"
+          tag_commit="$(git rev-list -n 1 "$tag")"
+          previous_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${tag_commit}^" 2>/dev/null || true)"
+          notes_file="dist/release-notes.md"
+
+          if [[ -n "$previous_tag" ]]; then
+            range="$previous_tag..$tag"
+          else
+            range="$tag"
+          fi
+
+          mapfile -t commits < <(git log --reverse --no-merges --pretty=format:'%s' "$range")
+
+          {
+            if (( ${#commits[@]} == 0 )); then
+              echo "- Maintenance update"
+            else
+              for commit in "${commits[@]}"; do
+                commit="${commit//$'\r'/ }"
+                commit="${commit//$'\n'/ }"
+                commit="$(printf '%s' "$commit" | sed 's/^[[:space:]-]*//')"
+                if [[ -n "$commit" ]]; then
+                  printf -- "- %s\n" "$commit"
+                fi
+              done
+            fi
+          } > "$notes_file"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
+          body_path: dist/release-notes.md
           fail_on_unmatched_files: true
           files: |
             dist/*.apk
