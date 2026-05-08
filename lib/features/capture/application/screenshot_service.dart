@@ -1974,36 +1974,72 @@ class ScreenshotService {
   }
 
   /// 删除截屏记录
-  Future<bool> deleteScreenshot(int id, String packageName) async {
+  ///
+  /// [filePath] 用于删除返回 false 或后续缓存刷新异常时做读回校验：
+  /// 只要数据库里已经查不到这张图，就应视为删除成功，避免 UI 误报失败。
+  Future<bool> deleteScreenshot(
+    int id,
+    String packageName, {
+    String? filePath,
+  }) async {
     try {
       // ignore: unawaited_futures
       FlutterLogger.info('SERVICE.deleteScreenshot 开始 id=$id 包名=$packageName');
       // ignore: unawaited_futures
-      FlutterLogger.nativeInfo(
-        'SERVICE',
-        'deleteScreenshot 开始 id=' + id.toString(),
-      );
-      final ok = await _database.deleteScreenshot(id, packageName);
-      if (ok) {
-        // 先快速刷新统计缓存（DB-only），再通知监听者
-        invalidateAvailableDayCountCache();
-        await _refreshStatsCacheQuick();
-        _screenshotStreamController.add(null);
-        // 后台触发可能的全量同步（不等待）
-        // ignore: unawaited_futures
-        _refreshStatsCache(force: true);
-        // ignore: unawaited_futures
-        FlutterLogger.info(
-          'SERVICE.deleteScreenshot 成功 id=$id 包名=$packageName',
+      FlutterLogger.nativeInfo('SERVICE', 'deleteScreenshot 开始 id=$id');
+      final bool dbOk = await _database.deleteScreenshot(id, packageName);
+      bool ok = dbOk;
+
+      // 某些清理/统计链路可能在记录已删除后仍返回 false。
+      // 读回确认记录不存在时，将本次操作修正为成功，避免“刷新后已删除但提示失败”。
+      if (!ok) {
+        ok = await _isScreenshotGoneAfterDelete(
+          id,
+          packageName,
+          filePath: filePath,
         );
-        // ignore: unawaited_futures
-        FlutterLogger.nativeInfo(
-          'SERVICE',
-          'deleteScreenshot 成功 id=' + id.toString(),
-        );
+        if (ok) {
+          // ignore: unawaited_futures
+          FlutterLogger.warn(
+            'SERVICE.deleteScreenshot 数据已不存在，修正为成功 id=$id 包名=$packageName',
+          );
+          // ignore: unawaited_futures
+          FlutterLogger.nativeWarn(
+            'SERVICE',
+            'deleteScreenshot readback missing, treat as success id=$id',
+          );
+        }
       }
-      return ok;
+
+      if (!ok) {
+        return false;
+      }
+
+      await _notifyScreenshotDataChangedAfterDelete();
+      // ignore: unawaited_futures
+      FlutterLogger.info('SERVICE.deleteScreenshot 成功 id=$id 包名=$packageName');
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('SERVICE', 'deleteScreenshot 成功 id=$id');
+      return true;
     } catch (e) {
+      final bool actuallyGone = await _isScreenshotGoneAfterDelete(
+        id,
+        packageName,
+        filePath: filePath,
+      );
+      if (actuallyGone) {
+        await _notifyScreenshotDataChangedAfterDelete();
+        // ignore: unawaited_futures
+        FlutterLogger.warn(
+          'SERVICE.deleteScreenshot 异常后读回确认已删除，修正为成功 id=$id 包名=$packageName 异常=$e',
+        );
+        // ignore: unawaited_futures
+        FlutterLogger.nativeWarn(
+          'SERVICE',
+          'deleteScreenshot exception but record missing id=$id',
+        );
+        return true;
+      }
       print('删除截屏记录失败: $e');
       // ignore: unawaited_futures
       FlutterLogger.error('SERVICE.deleteScreenshot 异常: $e');
@@ -2011,6 +2047,48 @@ class ScreenshotService {
       FlutterLogger.nativeError('SERVICE', 'deleteScreenshot 异常: $e');
       return false;
     }
+  }
+
+  Future<bool> _isScreenshotGoneAfterDelete(
+    int id,
+    String packageName, {
+    String? filePath,
+  }) async {
+    try {
+      final String normalizedPath = (filePath ?? '').trim();
+      if (normalizedPath.isNotEmpty) {
+        final byPath = await _database.getScreenshotByPath(normalizedPath);
+        return byPath == null;
+      }
+      final byId = await _database.getScreenshotById(id, packageName);
+      return byId == null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _notifyScreenshotDataChangedAfterDelete() async {
+    try {
+      invalidateAvailableDayCountCache();
+    } catch (e) {
+      // ignore: unawaited_futures
+      FlutterLogger.warn('SERVICE.deleteScreenshot 失效日期缓存失败: $e');
+    }
+    try {
+      await _refreshStatsCacheQuick();
+    } catch (e) {
+      // ignore: unawaited_futures
+      FlutterLogger.warn('SERVICE.deleteScreenshot 快速刷新统计缓存失败: $e');
+    }
+    try {
+      _screenshotStreamController.add(null);
+    } catch (e) {
+      // ignore: unawaited_futures
+      FlutterLogger.warn('SERVICE.deleteScreenshot 通知截图变更失败: $e');
+    }
+    // 后台触发可能的全量同步（不等待），不能影响删除结果。
+    // ignore: unawaited_futures
+    _refreshStatsCache(force: true);
   }
 
   /// 批量删除截屏记录：避免逐条重算与多次缓存刷新

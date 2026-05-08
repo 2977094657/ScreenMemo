@@ -6,7 +6,6 @@ import 'package:screen_memo/models/favorite_record.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/models/app_info.dart';
 import 'package:screen_memo/features/favorites/application/favorite_service.dart';
-import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/features/capture/application/screenshot_service.dart';
 import 'package:screen_memo/data/platform/path_service.dart';
 import 'package:screen_memo/features/apps/application/app_selection_service.dart';
@@ -92,8 +91,10 @@ class _FavoritesPageState extends State<FavoritesPage>
 
       _baseDir = dir;
 
-      // 获取所有收藏
-      final favList = await ScreenshotDatabase.instance.getAllFavorites();
+      // 获取所有收藏。通过服务层按 gid 精确回填截图，并顺手清理孤儿收藏，
+      // 避免收藏页出现“操作失败但刷新后消失”的状态不一致。
+      final favoriteRows = await FavoriteService.instance
+          .getFavoritesWithScreenshots();
       final List<_FavoriteItem> items = [];
 
       // 获取所有应用信息，先加载历史身份缓存，再用当前已安装信息覆盖。
@@ -105,56 +106,29 @@ class _FavoritesPageState extends State<FavoritesPage>
         _appInfoCache[app.packageName] = app;
       }
 
-      for (final favMap in favList) {
-        final screenshotId = favMap['screenshot_id'] as int;
-        final appPackageName = favMap['app_package_name'] as String;
-
+      for (final row in favoriteRows) {
         try {
-          // 优先：通过全局ID(gid)精确获取
-          final screenshot = await ScreenshotService.instance.getScreenshotById(
-            screenshotId,
-            appPackageName,
+          final favorite = row['favorite'] as FavoriteRecord;
+          final screenshot = row['screenshot'] as ScreenshotRecord;
+          final updatedAt =
+              row['updatedAt'] as DateTime? ?? favorite.favoriteTime;
+          final appPackageName = screenshot.appPackageName.isNotEmpty
+              ? screenshot.appPackageName
+              : favorite.appPackageName;
+          items.add(
+            _FavoriteItem(
+              favorite: favorite,
+              screenshot: screenshot,
+              updatedAt: updatedAt,
+              appInfo: _appInfoCache[appPackageName],
+            ),
           );
-          if (screenshot != null) {
-            items.add(
-              _FavoriteItem(
-                favorite: FavoriteRecord.fromMap(favMap),
-                screenshot: screenshot,
-                updatedAt: DateTime.fromMillisecondsSinceEpoch(
-                  (favMap['updated_at'] as int?) ??
-                      (favMap['created_at'] as int?) ??
-                      favMap['favorite_time'] as int,
-                ),
-                appInfo: _appInfoCache[appPackageName],
-              ),
-            );
-            continue;
-          }
-          // 兜底：旧逻辑按应用分页查找（防止少量边缘数据）
-          final screenshots = await ScreenshotService.instance
-              .getScreenshotsByApp(appPackageName, limit: 800, offset: 0);
-          for (final s in screenshots) {
-            if (s.id == screenshotId) {
-              items.add(
-                _FavoriteItem(
-                  favorite: FavoriteRecord.fromMap(favMap),
-                  screenshot: s,
-                  updatedAt: DateTime.fromMillisecondsSinceEpoch(
-                    (favMap['updated_at'] as int?) ??
-                        (favMap['created_at'] as int?) ??
-                        favMap['favorite_time'] as int,
-                  ),
-                  appInfo: _appInfoCache[appPackageName],
-                ),
-              );
-              break;
-            }
-          }
         } catch (e) {
-          print('获取截图失败 id=$screenshotId: $e');
+          print('获取收藏截图失败: $e');
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _favorites
           ..clear()
@@ -162,6 +136,7 @@ class _FavoritesPageState extends State<FavoritesPage>
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = AppLocalizations.of(
           context,
@@ -387,15 +362,24 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
   void _viewScreenshot() {
     // 打开查看器前收起键盘，避免返回时键盘误弹
     FocusScope.of(context).unfocus();
+    final screenshot = widget.item.screenshot;
+    final appInfo =
+        widget.item.appInfo ??
+        AppInfo(
+          packageName: screenshot.appPackageName,
+          appName: screenshot.appName,
+          icon: null,
+          version: '',
+          isSystemApp: false,
+        );
     Navigator.pushNamed(
       context,
       '/screenshot_viewer',
       arguments: {
-        'screenshots': [widget.item.screenshot],
+        'screenshots': [screenshot],
         'initialIndex': 0,
-        'appName':
-            widget.item.appInfo?.appName ?? widget.item.screenshot.appName,
-        'appInfo': widget.item.appInfo,
+        'appName': appInfo.appName,
+        'appInfo': appInfo,
       },
     );
   }

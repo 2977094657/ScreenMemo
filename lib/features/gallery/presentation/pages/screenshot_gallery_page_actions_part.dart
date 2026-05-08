@@ -257,22 +257,23 @@ extension _ScreenshotGalleryActionsPart on _ScreenshotGalleryPageState {
       // 记录UI层删除请求日志（文件与原生）
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'UI.删除单图-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}',
+        'UI.删除单图-发起 id=${screenshot.id} 包=${screenshot.appPackageName} 路径=${screenshot.filePath}',
       );
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo(
         'UI',
-        '删除截图 id=${screenshot.id} 包名=${_appInfo.packageName}',
+        '删除截图 id=${screenshot.id} 包名=${screenshot.appPackageName}',
       );
       try {
         final success = await ScreenshotService.instance.deleteScreenshot(
           screenshot.id!,
-          _appInfo.packageName,
+          screenshot.appPackageName,
+          filePath: screenshot.filePath,
         );
         if (success) {
           // ignore: unawaited_futures
           FlutterLogger.info(
-            'UI.删除单图-成功 id=${screenshot.id} 包=${_appInfo.packageName}',
+            'UI.删除单图-成功 id=${screenshot.id} 包=${screenshot.appPackageName}',
           );
           // ignore: unawaited_futures
           FlutterLogger.nativeInfo('UI', '删除截图成功 id=${screenshot.id}');
@@ -302,7 +303,7 @@ extension _ScreenshotGalleryActionsPart on _ScreenshotGalleryPageState {
         } else {
           // ignore: unawaited_futures
           FlutterLogger.warn(
-            'UI.删除单图-失败 id=${screenshot.id} 包=${_appInfo.packageName}',
+            'UI.删除单图-失败 id=${screenshot.id} 包=${screenshot.appPackageName}',
           );
           // ignore: unawaited_futures
           FlutterLogger.nativeWarn('UI', '删除截图失败 id=${screenshot.id}');

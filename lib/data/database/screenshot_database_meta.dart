@@ -1676,9 +1676,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       final int month = decoded[1];
       final int localId = decoded[2];
       final shardDb = await _openShardDb(packageName, year);
-      if (shardDb == null) return false;
+      if (shardDb == null) {
+        await _deleteFavoriteRowsForScreenshots(db, packageName, <int>[id]);
+        return true;
+      }
       final tableName = _monthTableName(year, month);
-      if (!await _tableExists(shardDb, tableName)) return false;
+      if (!await _tableExists(shardDb, tableName)) {
+        await _deleteFavoriteRowsForScreenshots(db, packageName, <int>[id]);
+        return true;
+      }
       final maps = await shardDb.query(
         tableName,
         columns: ['file_path'],
@@ -1686,7 +1692,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         whereArgs: [localId],
         limit: 1,
       );
-      if (maps.isEmpty) return false;
+      if (maps.isEmpty) {
+        await _deleteFavoriteRowsForScreenshots(db, packageName, <int>[id]);
+        return true;
+      }
       final filePath = maps.first['file_path'] as String;
       final result = await shardDb.delete(
         tableName,
@@ -1703,6 +1712,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       } catch (e) {
         FlutterLogger.nativeWarn('FS', '删除文件失败：' + e.toString());
       }
+      await _deleteFavoriteRowsForScreenshots(db, packageName, <int>[id]);
       await _recomputeAppStatForPackage(db, packageName);
       FlutterLogger.nativeInfo('DB', '删除后重算统计 gid=' + id.toString());
       return true;
@@ -1772,6 +1782,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       await _recomputeAppStatForPackage(db, packageName);
+      await _deleteFavoriteRowsForScreenshots(db, packageName, ids);
       await _deleteFilesConcurrently(filePaths, maxConcurrent: 6);
 
       sw.stop();
@@ -1780,6 +1791,96 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     } catch (e) {
       print('批量删除截屏记录失败: $e');
       return 0;
+    }
+  }
+
+  Future<void> _deleteFavoriteRowsForScreenshots(
+    DatabaseExecutor db,
+    String appPackageName,
+    Iterable<int> screenshotIds,
+  ) async {
+    final List<int> ids = screenshotIds
+        .where((int id) => id > 0)
+        .toSet()
+        .toList(growable: false);
+    if (ids.isEmpty) return;
+
+    const int chunkSize = 900;
+    for (int i = 0; i < ids.length; i += chunkSize) {
+      final List<int> chunk = ids.sublist(
+        i,
+        i + chunkSize > ids.length ? ids.length : i + chunkSize,
+      );
+      final String placeholders = List.filled(chunk.length, '?').join(',');
+      try {
+        await db.delete(
+          'favorites',
+          where: 'app_package_name = ? AND screenshot_id IN ($placeholders)',
+          whereArgs: <Object>[appPackageName, ...chunk],
+        );
+      } catch (e) {
+        print('删除截图关联收藏失败: $e');
+      }
+
+      for (final int id in chunk) {
+        try {
+          await deleteSearchDoc(
+            _favoriteNoteDocKey(appPackageName, id),
+            exec: db,
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _deleteAllFavoriteRowsForApp(
+    DatabaseExecutor db,
+    String appPackageName,
+  ) async {
+    try {
+      await db.delete(
+        'favorites',
+        where: 'app_package_name = ?',
+        whereArgs: <Object>[appPackageName],
+      );
+    } catch (e) {
+      print('删除应用关联收藏失败: $e');
+    }
+    try {
+      await db.delete(
+        'search_docs',
+        where: 'doc_type = ? AND doc_key LIKE ?',
+        whereArgs: <Object>[
+          kSearchDocTypeFavoriteNote,
+          'fav_note:${appPackageName.trim().toLowerCase()}:%',
+        ],
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _deleteFavoriteRowsExceptScreenshots(
+    DatabaseExecutor db,
+    String appPackageName,
+    Iterable<int> keepScreenshotIds,
+  ) async {
+    final Set<int> keep = keepScreenshotIds.where((int id) => id > 0).toSet();
+    try {
+      final List<Map<String, Object?>> rows = await db.query(
+        'favorites',
+        columns: const <String>['screenshot_id'],
+        where: 'app_package_name = ?',
+        whereArgs: <Object>[appPackageName],
+      );
+      final List<int> deleteIds = <int>[];
+      for (final Map<String, Object?> row in rows) {
+        final int id = (row['screenshot_id'] as int?) ?? 0;
+        if (id > 0 && !keep.contains(id)) {
+          deleteIds.add(id);
+        }
+      }
+      await _deleteFavoriteRowsForScreenshots(db, appPackageName, deleteIds);
+    } catch (e) {
+      print('清理非保留截图收藏失败: $e');
     }
   }
 
@@ -1850,6 +1951,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         where: 'app_package_name = ?',
         whereArgs: [appPackageName],
       );
+      await _deleteAllFavoriteRowsForApp(db, appPackageName);
 
       print('已删除应用 $appPackageName 的 $total 条记录');
       return total;
@@ -1932,6 +2034,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       await _recomputeAppStatForPackage(db, packageName);
+      await _deleteFavoriteRowsExceptScreenshots(db, packageName, keepIds);
       return deletedTotal;
     } catch (e) {
       print('删除非保留记录失败: $e');

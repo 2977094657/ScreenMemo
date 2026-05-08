@@ -211,8 +211,30 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       } else {
         _screenshots = args['screenshots'] as List<ScreenshotRecord>;
         _currentIndex = args['initialIndex'] as int;
-        _appName = args['appName'] as String;
-        _appInfo = args['appInfo'] as AppInfo;
+        final ScreenshotRecord firstScreenshot = _screenshots.isNotEmpty
+            ? _screenshots[_currentIndex >= 0 &&
+                      _currentIndex < _screenshots.length
+                  ? _currentIndex
+                  : 0]
+            : ScreenshotRecord(
+                id: null,
+                appPackageName: 'unknown',
+                appName: 'Unknown',
+                filePath: '',
+                captureTime: DateTime.now(),
+                fileSize: 0,
+              );
+        final AppInfo? appInfoArg = args['appInfo'] as AppInfo?;
+        _appInfo =
+            appInfoArg ??
+            AppInfo(
+              packageName: firstScreenshot.appPackageName,
+              appName: firstScreenshot.appName,
+              icon: null,
+              version: '',
+              isSystemApp: false,
+            );
+        _appName = (args['appName'] as String?) ?? _appInfo.appName;
       }
       _pageController = PageController(initialPage: _currentIndex);
       _initialized = true;
@@ -1337,14 +1359,15 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       // 记录UI删除操作日志
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'UI.查看器-删除当前-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}',
+        'UI.查看器-删除当前-发起 id=${screenshot.id} 包=${screenshot.appPackageName} 路径=${screenshot.filePath}',
       );
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo('UI', '查看器删除开始 id=${screenshot.id}');
       try {
         final success = await ScreenshotService.instance.deleteScreenshot(
           screenshot.id!,
-          _appInfo.packageName,
+          screenshot.appPackageName,
+          filePath: screenshot.filePath,
         );
         if (success) {
           // ignore: unawaited_futures

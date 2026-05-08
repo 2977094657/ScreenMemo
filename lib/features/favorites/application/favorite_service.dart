@@ -67,17 +67,10 @@ class FavoriteService {
 
       bool success;
       if (isFav) {
-        success = await _db.removeFavorite(
+        success = await removeFavorite(
           screenshotId: screenshotId,
           appPackageName: appPackageName,
         );
-        if (success) {
-          _notifyChange(
-            screenshotId,
-            appPackageName,
-            FavoriteChangeType.removed,
-          );
-        }
       } else {
         success = await _db.addOrUpdateFavorite(
           screenshotId: screenshotId,
@@ -117,10 +110,21 @@ class FavoriteService {
     required int screenshotId,
     required String appPackageName,
   }) async {
-    final success = await _db.removeFavorite(
+    bool success = await _db.removeFavorite(
       screenshotId: screenshotId,
       appPackageName: appPackageName,
     );
+    if (!success) {
+      // 删除动作按幂等处理：如果记录已经不存在，说明目标状态已经达成，
+      // 不应向用户误报失败。
+      try {
+        final stillFavorite = await _db.isFavorite(
+          screenshotId: screenshotId,
+          appPackageName: appPackageName,
+        );
+        success = !stillFavorite;
+      } catch (_) {}
+    }
     if (success) {
       _notifyChange(screenshotId, appPackageName, FavoriteChangeType.removed);
     }
@@ -164,27 +168,28 @@ class FavoriteService {
 
         // 获取对应的截图记录
         try {
-          final screenshots = await ScreenshotService.instance
-              .getScreenshotsByApp(appPackageName, limit: 1, offset: 0);
-
-          ScreenshotRecord? screenshot;
-          for (final s in screenshots) {
-            if (s.id == screenshotId) {
-              screenshot = s;
-              break;
-            }
-          }
-
-          // 如果在首页没找到，尝试通过ID直接获取
+          final ScreenshotRecord? screenshot = await ScreenshotService.instance
+              .getScreenshotById(screenshotId, appPackageName);
           if (screenshot == null) {
-            // 这里需要添加一个通过ID获取单个截图的方法
-            // 暂时跳过未找到的截图
+            // 收藏引用的截图已被删除时，顺手清理孤儿收藏，避免刷新后
+            // 计数和实际列表不一致。
+            unawaited(
+              _db.removeFavorite(
+                screenshotId: screenshotId,
+                appPackageName: appPackageName,
+              ),
+            );
             continue;
           }
 
           result.add({
             'favorite': FavoriteRecord.fromMap(fav),
             'screenshot': screenshot,
+            'updatedAt': DateTime.fromMillisecondsSinceEpoch(
+              (fav['updated_at'] as int?) ??
+                  (fav['created_at'] as int?) ??
+                  (fav['favorite_time'] as int? ?? 0),
+            ),
           });
         } catch (e) {
           print('获取截图记录失败 (id=$screenshotId): $e');
