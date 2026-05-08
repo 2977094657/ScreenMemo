@@ -32,7 +32,7 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
   bool _recomputingStats = false;
 
   // 质量设置
-  String _imageFormat = 'webp_lossless';
+  String _imageFormat = 'webp_lossy';
   int _imageQuality = 90;
   bool _useTargetSize = false;
   int _targetSizeKb = 50;

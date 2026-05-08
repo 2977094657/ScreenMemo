@@ -53,6 +53,9 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.timer
 import android.os.IBinder
 import com.google.mlkit.vision.text.TextRecognition
@@ -84,6 +87,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var screenshotInterval: Int = 5 // 默认5秒
     private var isTimedScreenshotRunning = false
     @Volatile private var pausedByScreenOff: Boolean = false
+    private val screenshotSaveExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "ScreenMemoScreenshotSave").apply { isDaemon = true }
+    }
+    private val isScreenshotSaveInProgress = AtomicBoolean(false)
 
     // 段落推进心跳（无新截图时也能结束 collecting）
     private var segmentTickTimer: Timer? = null
@@ -171,8 +178,15 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var lastStableMonitoredApp: String? = null
     private var lastStableSeenAt: Long = 0L
     @Volatile private var isSelfForeground: Boolean = false
-    // 事件优先：记录最近一次 AccessibilityEvent 到达时间
-    @Volatile private var lastAccessibilityEventAt: Long = 0L
+    // 分离任意事件与真正窗口前台事件，避免 B 站等内容事件持续刷新后抑制兜底轮询
+    @Volatile private var lastAnyAccessibilityEventAt: Long = 0L
+    @Volatile private var lastAccessibilityWindowEventAt: Long = 0L
+
+    private data class CaptureValidationResult(
+        val allowed: Boolean,
+        val reason: String,
+        val visiblePackage: String? = null
+    )
 
     private fun isLauncherPackage(packageName: String?): Boolean {
         if (packageName.isNullOrBlank()) return false
@@ -301,26 +315,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return
         }
 
-        try {
-            if (!isImePackage(candidatePackage)
-                && !isAutomationSkipPackage(candidatePackage)
-                && !transientOverlayPackages.contains(candidatePackage)
-                && !isMiuiSystemApp(candidatePackage)
-            ) {
-                val cap = try {
-                    isTimedScreenshotRunning && isAppInMonitorList(candidatePackage)
-                } catch (_: Exception) {
-                    false
-                }
-                ScreenCaptureService.updateNotificationState(
-                    this,
-                    foregroundPackage = candidatePackage,
-                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
-                    captureEnabled = cap
-                )
-            }
-        } catch (_: Exception) {}
-
         // 本应用：置顶时仅暂停截屏，保留稳定目标以便离开后快速恢复
         if (candidatePackage == packageName) {
             if (!isSelfForeground) {
@@ -331,6 +325,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             isSelfForeground = true
             // 关键：同步清空当前前台缓存，避免 getCurrentForegroundApp() 兜底返回旧值
             currentForegroundApp = null
+            try {
+                ScreenCaptureService.updateNotificationState(
+                    this,
+                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                    captureEnabled = false,
+                    clearForegroundPackage = true
+                )
+            } catch (_: Exception) {}
             return
         }
 
@@ -371,6 +373,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             lastStableSeenAt = 0L
             // 同步清空当前前台缓存
             currentForegroundApp = null
+            try {
+                ScreenCaptureService.updateNotificationState(
+                    this,
+                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                    captureEnabled = false,
+                    clearForegroundPackage = true
+                )
+            } catch (_: Exception) {}
             return
         }
 
@@ -386,6 +396,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 非监控列表应用：完全忽略，不作为候选，不影响稳定目标/锁定
         if (!isAppInMonitorList(candidatePackage)) {
             FileLogger.d(TAG, "忽略非监控应用: $candidatePackage")
+            try {
+                ScreenCaptureService.updateNotificationState(
+                    this,
+                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                    captureEnabled = false,
+                    clearForegroundPackage = true
+                )
+            } catch (_: Exception) {}
             return
         }
 
@@ -393,6 +411,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         if (lastStableMonitoredApp == candidatePackage) {
             lastStableSeenAt = now
             FileLogger.d(TAG, "稳定前台应用保持: $lastStableMonitoredApp")
+            try {
+                ScreenCaptureService.updateNotificationState(
+                    this,
+                    foregroundPackage = candidatePackage,
+                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                    captureEnabled = isTimedScreenshotRunning
+                )
+            } catch (_: Exception) {}
             return
         }
 
@@ -400,6 +426,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         lastStableMonitoredApp = candidatePackage
         lastStableSeenAt = now
         FileLogger.i(TAG, "前台应用更新: $lastStableMonitoredApp")
+        try {
+            ScreenCaptureService.updateNotificationState(
+                this,
+                foregroundPackage = candidatePackage,
+                intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                captureEnabled = isTimedScreenshotRunning
+            )
+        } catch (_: Exception) {}
     }
 
 
@@ -606,6 +640,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 停止段落推进心跳
         stopSegmentTickTimer()
 
+        // 关闭截图保存队列，避免服务销毁后继续编码/写文件
+        try {
+            screenshotSaveExecutor.shutdownNow()
+        } catch (_: Exception) {}
+        isScreenshotSaveInProgress.set(false)
+
         // 释放WakeLock
         releaseWakeLock()
 
@@ -735,9 +775,17 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 处理无障碍事件，检测当前前台应用（含遮罩容错）
         event?.let {
-            lastAccessibilityEventAt = System.currentTimeMillis()
-            if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                val candidate = it.packageName?.toString()
+            val now = System.currentTimeMillis()
+            lastAnyAccessibilityEventAt = now
+            if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                it.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            ) {
+                lastAccessibilityWindowEventAt = now
+                val candidate = if (it.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+                    getCurrentForegroundApp() ?: it.packageName?.toString()
+                } else {
+                    it.packageName?.toString()
+                }
                 val eventAge = try { SystemClock.uptimeMillis() - it.eventTime } catch (_: Exception) { 0L }
                 if (eventAge > ACCESSIBILITY_EVENT_MAX_AGE_MS) {
                     FileLogger.d(TAG, "忽略过期的无障碍前台事件: $candidate, age=${eventAge}ms")
@@ -895,7 +943,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 使用无障碍服务截取屏幕
      */
-    private fun takeScreenshotUsingAccessibility(callback: (Boolean, String?) -> Unit) {
+    private fun takeScreenshotUsingAccessibility(targetPackage: String?, callback: (Boolean, String?) -> Unit) {
+        val apiStartMs = SystemClock.elapsedRealtime()
         try {
             // 在截屏前检查屏幕/锁屏状态，避免息屏状态下产生黑图
             if (shouldPauseForScreenState()) {
@@ -910,66 +959,28 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 return
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                FileLogger.d(TAG, "使用无障碍服务takeScreenshot API截屏")
-                // 截屏前短时获取WakeLock，避免在息屏边缘时CPU被挂起
+                val targetLabel = targetPackage ?: "auto"
+                FileLogger.d(TAG, "使用无障碍服务takeScreenshot API截屏, target=$targetLabel")
+                // 截屏前短时获取 WakeLock，避免在息屏边缘时 CPU 被挂起
                 acquireWakeLock()
                 takeScreenshot(
                     android.view.Display.DEFAULT_DISPLAY,
                     { runnable -> runnable.run() },
                     object : AccessibilityService.TakeScreenshotCallback {
                         override fun onSuccess(screenshotResult: AccessibilityService.ScreenshotResult) {
+                            var shouldReleaseWakeLock = true
                             try {
-                                FileLogger.d(TAG, "截屏成功，开始保存")
+                                val apiMs = SystemClock.elapsedRealtime() - apiStartMs
+                                val wrapStartMs = SystemClock.elapsedRealtime()
+                                FileLogger.d(TAG, "截屏成功，开始包装 Bitmap")
                                 val bitmap = Bitmap.wrapHardwareBuffer(
-                                    screenshotResult.hardwareBuffer, 
+                                    screenshotResult.hardwareBuffer,
                                     screenshotResult.colorSpace
                                 )
-                                
-                                if (bitmap != null) {
-                                    val targetApp = getScreenshotTargetApp() ?: "unknown"
+                                val wrapMs = SystemClock.elapsedRealtime() - wrapStartMs
 
-                                    // 保存前进行“自动裁剪系统栏 + dHash 去重”判断（仍保存完整图）
-                                    try {
-                                        if (isDuplicateScreenshot(bitmap, targetApp)) {
-                                            FileLogger.i(TAG, "检测到重复截图（裁剪系统栏后画面完全一致），已跳过保存: $targetApp")
-                                            try {
-                                                ScreenCaptureService.updateNotificationState(
-                                                    this@ScreenCaptureAccessibilityService,
-                                                    foregroundPackage = if (targetApp != "unknown") targetApp else null,
-                                                    intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
-                                                    lastScreenshotAt = System.currentTimeMillis(),
-                                                    captureEnabled = true
-                                                )
-                                            } catch (_: Exception) {}
-                                            // 视为成功但无新文件
-                                            callback(true, null)
-                                            return
-                                        }
-                                    } catch (e: Exception) {
-                                        FileLogger.w(TAG, "重复判定失败，忽略并继续保存: ${e.message}")
-                                    }
-
-                                    val savedPath = saveScreenshotBitmap(bitmap, targetApp)
-                                    try {
-                                        ScreenCaptureService.updateNotificationState(
-                                            this@ScreenCaptureAccessibilityService,
-                                            foregroundPackage = if (targetApp != "unknown") targetApp else null,
-                                            intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
-                                            lastScreenshotAt = System.currentTimeMillis(),
-                                            captureEnabled = true
-                                        )
-                                    } catch (_: Exception) {}
-                                    RuntimeDiagnostics.noteCaptureSuccess(
-                                        this@ScreenCaptureAccessibilityService,
-                                        TAG,
-                                        targetApp,
-                                        savedPath
-                                    )
-                                    // 释放WakeLock后再回调
-                                    releaseWakeLock()
-                                    callback(true, savedPath)
-                                } else {
-                                    FileLogger.e(TAG, "无法从截屏结果创建Bitmap")
+                                if (bitmap == null) {
+                                    FileLogger.e(TAG, "无法从截屏结果创建 Bitmap")
                                     RuntimeDiagnostics.noteCaptureFailure(
                                         this@ScreenCaptureAccessibilityService,
                                         TAG,
@@ -977,6 +988,143 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                     )
                                     releaseWakeLock()
                                     callback(false, null)
+                                    return
+                                }
+
+                                val lockedTarget = targetPackage ?: getScreenshotTargetApp() ?: "unknown"
+                                if (targetPackage != null && lockedTarget.isBlank()) {
+                                    FileLogger.d(TAG, "截图成功但没有有效锁定目标，丢弃本次图片")
+                                    try { bitmap.recycle() } catch (_: Exception) {}
+                                    releaseWakeLock()
+                                    callback(true, null)
+                                    return
+                                }
+
+                                if (targetPackage != null) {
+                                    val validation = validateCaptureStillBelongsToTarget(lockedTarget)
+                                    if (!validation.allowed) {
+                                        val visibleLabel = validation.visiblePackage ?: "-"
+                                        FileLogger.i(
+                                            TAG,
+                                            "截图保存前校验未通过，丢弃: reason=${validation.reason}, target=$lockedTarget, visible=$visibleLabel"
+                                        )
+                                        try {
+                                            ScreenCaptureService.updateNotificationState(
+                                                this@ScreenCaptureAccessibilityService,
+                                                intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                                                captureEnabled = false,
+                                                clearForegroundPackage = validation.reason == "discard_self_foreground" ||
+                                                    validation.reason == "discard_launcher_foreground" ||
+                                                    validation.reason == "discard_non_monitor_foreground"
+                                            )
+                                        } catch (_: Exception) {}
+                                        try { bitmap.recycle() } catch (_: Exception) {}
+                                        releaseWakeLock()
+                                        callback(true, null)
+                                        return
+                                    }
+                                    val visibleLabel = validation.visiblePackage ?: "-"
+                                    FileLogger.d(
+                                        TAG,
+                                        "截图保存前校验通过: reason=${validation.reason}, target=$lockedTarget, visible=$visibleLabel"
+                                    )
+                                }
+
+                                if (!isScreenshotSaveInProgress.compareAndSet(false, true)) {
+                                    FileLogger.w(TAG, "save_in_progress_skip: 上一张截图仍在编码/写入，跳过保存 target=$lockedTarget")
+                                    try {
+                                        ScreenCaptureService.updateNotificationState(
+                                            this@ScreenCaptureAccessibilityService,
+                                            foregroundPackage = lockedTarget,
+                                            intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                                            captureEnabled = true
+                                        )
+                                    } catch (_: Exception) {}
+                                    try { bitmap.recycle() } catch (_: Exception) {}
+                                    releaseWakeLock()
+                                    callback(true, null)
+                                    return
+                                }
+
+                                try {
+                                    screenshotSaveExecutor.execute {
+                                    try {
+                                        val workerStartMs = SystemClock.elapsedRealtime()
+                                        val duplicateStartMs = SystemClock.elapsedRealtime()
+                                        try {
+                                            if (isDuplicateScreenshot(bitmap, lockedTarget)) {
+                                                val duplicateMs = SystemClock.elapsedRealtime() - duplicateStartMs
+                                                FileLogger.i(TAG, "检测到重复截图（裁剪系统栏后画面完全一致），已跳过保存: $lockedTarget, duplicateMs=${duplicateMs}, apiMs=${apiMs}, wrapMs=${wrapMs}")
+                                                try {
+                                                    ScreenCaptureService.updateNotificationState(
+                                                        this@ScreenCaptureAccessibilityService,
+                                                        foregroundPackage = lockedTarget,
+                                                        intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                                                        lastScreenshotAt = System.currentTimeMillis(),
+                                                        captureEnabled = true
+                                                    )
+                                                } catch (_: Exception) {}
+                                                RuntimeDiagnostics.noteCaptureSuccess(
+                                                    this@ScreenCaptureAccessibilityService,
+                                                    TAG,
+                                                    lockedTarget,
+                                                    null
+                                                )
+                                                callback(true, null)
+                                                return@execute
+                                            }
+                                        } catch (e: Exception) {
+                                            FileLogger.w(TAG, "重复判定失败，忽略并继续保存: ${e.message}")
+                                        }
+                                        val duplicateMs = SystemClock.elapsedRealtime() - duplicateStartMs
+
+                                        val savedPath = saveScreenshotBitmap(bitmap, lockedTarget)
+                                        try {
+                                            ScreenCaptureService.updateNotificationState(
+                                                this@ScreenCaptureAccessibilityService,
+                                                foregroundPackage = lockedTarget,
+                                                intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                                                lastScreenshotAt = System.currentTimeMillis(),
+                                                captureEnabled = true
+                                            )
+                                        } catch (_: Exception) {}
+                                        RuntimeDiagnostics.noteCaptureSuccess(
+                                            this@ScreenCaptureAccessibilityService,
+                                            TAG,
+                                            lockedTarget,
+                                            savedPath
+                                        )
+                                        FileLogger.i(
+                                            TAG,
+                                            "截图链路耗时: target=$lockedTarget, apiMs=$apiMs, wrapMs=$wrapMs, duplicateMs=$duplicateMs, workerTotalMs=${SystemClock.elapsedRealtime() - workerStartMs}"
+                                        )
+                                        callback(true, savedPath)
+                                    } catch (e: Exception) {
+                                        FileLogger.e(TAG, "后台保存截图失败", e)
+                                        RuntimeDiagnostics.noteCaptureFailure(
+                                            this@ScreenCaptureAccessibilityService,
+                                            TAG,
+                                            "save_worker_exception",
+                                            extras = mapOf("message" to (e.message ?: "-"))
+                                        )
+                                        callback(false, null)
+                                    } finally {
+                                        try { bitmap.recycle() } catch (_: Exception) {}
+                                        isScreenshotSaveInProgress.set(false)
+                                        releaseWakeLock()
+                                    }
+                                }
+                                    shouldReleaseWakeLock = false
+                                } catch (e: Exception) {
+                                    isScreenshotSaveInProgress.set(false)
+                                    FileLogger.e(TAG, "提交后台保存任务失败", e)
+                                    RuntimeDiagnostics.noteCaptureFailure(
+                                        this@ScreenCaptureAccessibilityService,
+                                        TAG,
+                                        "save_executor_rejected",
+                                        extras = mapOf("message" to (e.message ?: "-"))
+                                    )
+                                    throw e
                                 }
                             } catch (e: Exception) {
                                 FileLogger.e(TAG, "处理截屏结果失败", e)
@@ -986,7 +1134,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                     "handle_result_exception",
                                     extras = mapOf("message" to (e.message ?: "-"))
                                 )
-                                releaseWakeLock()
+                                if (shouldReleaseWakeLock) {
+                                    releaseWakeLock()
+                                }
                                 callback(false, null)
                             }
                         }
@@ -1030,7 +1180,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 "take_screenshot_exception",
                 mapOf("message" to (e.message ?: "-"))
             )
-            // 出错时确保释放WakeLock（若已获取）
+            // 出错时确保释放 WakeLock（若已获取）
             releaseWakeLock()
             callback(false, null)
         }
@@ -1255,9 +1405,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
                 ScreenCaptureService.updateNotificationState(
                     this,
-                    foregroundPackage = fg,
+                    foregroundPackage = if (cap) fg else null,
                     intervalSeconds = screenshotInterval,
-                    captureEnabled = cap
+                    captureEnabled = cap,
+                    clearForegroundPackage = !cap
                 )
             } catch (_: Exception) {}
 
@@ -1451,8 +1602,13 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 )
             } catch (_: Exception) {}
 
+            if (isScreenshotSaveInProgress.get()) {
+                FileLogger.w(TAG, "save_in_progress_skip: 上一张截图仍在编码/写入，本轮不再调用截图 API target=$targetApp")
+                return
+            }
+
             // 使用无障碍服务截屏
-            takeScreenshotUsingAccessibility { success, filePath ->
+            takeScreenshotUsingAccessibility(targetApp) { success, filePath ->
                 if (success) {
                     if (filePath != null) {
                         FileLogger.i(TAG, "定时截屏成功：$filePath")
@@ -1531,7 +1687,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 "currentForegroundApp" to (currentForegroundApp ?: "-"),
                 "stableApp" to (lastStableMonitoredApp ?: "-"),
                 "sessionApp" to (currentSessionApp ?: "-"),
-                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityEventAt),
+                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAnyAccessibilityEventAt),
+                "sinceLastWindowAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityWindowEventAt),
                 "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
             ).apply { putAll(extras) },
             force = true,
@@ -1554,7 +1711,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 "currentForegroundApp" to (currentForegroundApp ?: "-"),
                 "stableApp" to (lastStableMonitoredApp ?: "-"),
                 "sessionApp" to (currentSessionApp ?: "-"),
-                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityEventAt),
+                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAnyAccessibilityEventAt),
+                "sinceLastWindowAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityWindowEventAt),
                 "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
             ),
             force = OEMCompatibilityHelper.isOnePlusDevice(),
@@ -1599,17 +1757,25 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun getScreenshotTargetApp(): String? {
         val now = System.currentTimeMillis()
 
-        // 稳定前台（仅在监控列表中才有效）
-        val stable = lastStableMonitoredApp
-        if (stable == null || !isAppInMonitorList(stable)) {
-            FileLogger.d(TAG, "无有效稳定前台或不在监控列表，暂停截屏")
-            return null
-        }
-
         // 当前可见顶层应用（尽量用UsageStats，其次窗口列表）
         // 偶尔刷新IME集合
         refreshImePackages(force = false)
         val visibleTop = getForegroundAppUsingUsageStats() ?: getCurrentForegroundApp()
+
+        // 稳定前台（仅在监控列表中才有效）
+        var stable = lastStableMonitoredApp
+        if (stable == null || !isAppInMonitorList(stable)) {
+            if (visibleTop != null && isAppInMonitorList(visibleTop)) {
+                FileLogger.i(TAG, "无稳定前台但顶层为监控应用($visibleTop)，建立稳定目标")
+                lastStableMonitoredApp = visibleTop
+                lastStableSeenAt = now
+                currentForegroundApp = visibleTop
+                stable = visibleTop
+            } else {
+                FileLogger.d(TAG, "无有效稳定前台或不在监控列表，暂停截屏")
+                return null
+            }
+        }
 
         if (visibleTop == packageName) {
             if (!isSelfForeground) {
@@ -1661,9 +1827,88 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 顶层为监控应用（可能与stable相同或不同），继续归属稳定前台
-        FileLogger.d(TAG, "顶层为监控应用($visibleTop)，归属稳定前台: $stable")
+        // 顶层为监控应用时，以当前可见顶层为准；若 stable 仍是旧应用，立即修正，避免错归属。
+        if (visibleTop != null && isAppInMonitorList(visibleTop)) {
+            if (visibleTop != stable) {
+                FileLogger.i(TAG, "顶层监控应用($visibleTop)与稳定前台($stable)不一致，修正稳定目标")
+                lastStableMonitoredApp = visibleTop
+                lastStableSeenAt = now
+                currentForegroundApp = visibleTop
+                try {
+                    ScreenCaptureService.updateNotificationState(
+                        this,
+                        foregroundPackage = visibleTop,
+                        intervalSeconds = if (screenshotInterval > 0) screenshotInterval else null,
+                        captureEnabled = isTimedScreenshotRunning
+                    )
+                } catch (_: Exception) {}
+            } else {
+                lastStableSeenAt = now
+            }
+            FileLogger.d(TAG, "顶层为监控应用($visibleTop)，归属当前顶层")
+            return visibleTop
+        }
+
+        FileLogger.d(TAG, "顶层未知，归属稳定前台: $stable")
         return stable
+    }
+
+    /**
+     * 截图 API 返回后、保存前做一次轻量校验，避免用户已切回屏忆/桌面/其他 App 时错入库。
+     */
+    private fun validateCaptureStillBelongsToTarget(targetPackage: String): CaptureValidationResult {
+        if (targetPackage.isBlank() || targetPackage == "unknown") {
+            return CaptureValidationResult(false, "discard_invalid_target")
+        }
+        return try {
+            refreshImePackages(force = false)
+            val visibleTop = getForegroundAppUsingUsageStats() ?: getCurrentForegroundApp()
+            when {
+                visibleTop == null -> CaptureValidationResult(true, "allow_visible_unknown", visibleTop)
+
+                visibleTop == packageName -> {
+                    isSelfForeground = true
+                    CaptureValidationResult(false, "discard_self_foreground", visibleTop)
+                }
+
+                transientOverlayPackages.contains(visibleTop) ||
+                    isMiuiSystemApp(visibleTop) ||
+                    isImePackage(visibleTop) ||
+                    isAutomationSkipPackage(visibleTop) -> {
+                    CaptureValidationResult(true, "allow_transient_overlay", visibleTop)
+                }
+
+                isLauncherPackage(visibleTop) -> {
+                    if (!isLauncherCurrentlyForeground(visibleTop)) {
+                        CaptureValidationResult(true, "allow_launcher_false_positive", visibleTop)
+                    } else {
+                        lastStableMonitoredApp = null
+                        lastStableSeenAt = 0L
+                        currentForegroundApp = null
+                        CaptureValidationResult(false, "discard_launcher_foreground", visibleTop)
+                    }
+                }
+
+                !isAppInMonitorList(visibleTop) -> {
+                    CaptureValidationResult(false, "discard_non_monitor_foreground", visibleTop)
+                }
+
+                visibleTop != targetPackage -> {
+                    lastStableMonitoredApp = visibleTop
+                    lastStableSeenAt = System.currentTimeMillis()
+                    currentForegroundApp = visibleTop
+                    CaptureValidationResult(false, "discard_target_changed", visibleTop)
+                }
+
+                else -> {
+                    lastStableSeenAt = System.currentTimeMillis()
+                    CaptureValidationResult(true, "allow_target_visible", visibleTop)
+                }
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "截图归属校验失败，保守允许保存: ${e.message}")
+            CaptureValidationResult(true, "allow_validation_exception")
+        }
     }
 
     /**
@@ -1680,7 +1925,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         var result: String? = null
         val lock = Object()
         
-        takeScreenshotUsingAccessibility { success, filePath ->
+        takeScreenshotUsingAccessibility(null) { success, filePath ->
             synchronized(lock) {
                 result = if (success) filePath else null
                 lock.notify()
@@ -1703,6 +1948,13 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      * 保存截图到指定目录
      */
     private fun saveScreenshotBitmap(bitmap: Bitmap, packageName: String): String? {
+        val saveTotalStartMs = SystemClock.elapsedRealtime()
+        var rotateMs = 0L
+        var encodeMs = 0L
+        var writeMs = 0L
+        var nativeDbMs = 0L
+        var segmentMs = 0L
+        var flutterNotifyMs = 0L
         return try {
             val appName = getAppName(packageName) ?: packageName
 
@@ -1729,6 +1981,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             var file = File(outputDir, baseName + "." + finalExt)
 
             // 纯图像维度与方向判定，避免依赖窗口API带来的不稳定
+            val rotateStartMs = SystemClock.elapsedRealtime()
             val rotatedOrOriginal = try {
                 val rotation = try {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -1777,9 +2030,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     }
                 } else swBitmap
             } catch (_: Exception) { bitmap }
+            rotateMs = SystemClock.elapsedRealtime() - rotateStartMs
 
             // 应用压缩设置（不改变分辨率，仅通过编码质量/格式控制大小；可选灰度）
-            val encodeResult = encodeToBytesAccordingToSettings(rotatedOrOriginal ?: bitmap)
+            val encodeStartMs = SystemClock.elapsedRealtime()
+            val encodeResult = encodeToBytesAccordingToSettings(rotatedOrOriginal ?: bitmap, packageName)
+            encodeMs = SystemClock.elapsedRealtime() - encodeStartMs
             val bytes = encodeResult.first
             finalExt = encodeResult.second
             if (bytes == null) {
@@ -1789,7 +2045,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             // 用实际后缀重建文件并写入
             file = File(outputDir, baseName + "." + finalExt)
             try {
+                val writeStartMs = SystemClock.elapsedRealtime()
                 FileOutputStream(file).use { it.write(bytes) }
+                writeMs = SystemClock.elapsedRealtime() - writeStartMs
             } catch (e: Exception) {
                 FileLogger.e(TAG, "写入文件失败", e)
                 return null
@@ -1822,6 +2080,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             // 先在原生侧实时入库（Flutter未就绪时也能写入）
             try {
+                val nativeDbStartMs = SystemClock.elapsedRealtime()
                 ScreenshotDatabaseHelper.insertIfNotExists(
                     this@ScreenCaptureAccessibilityService,
                     packageName,
@@ -1830,12 +2089,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     System.currentTimeMillis(),
                     pageUrl
                 )
+                nativeDbMs = SystemClock.elapsedRealtime() - nativeDbStartMs
             } catch (e: Exception) {
                 FileLogger.w(TAG, "原生侧入库失败: ${e.message}")
             }
 
             // 通知段落管理器（用于段落开始与采样调度）
             try {
+                val segmentStartMs = SystemClock.elapsedRealtime()
                 SegmentSummaryManager.onScreenshotSaved(
                     this@ScreenCaptureAccessibilityService,
                     packageName,
@@ -1845,24 +2106,47 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 )
                     // 在每次截图后，后台补齐未完成的段落直到最新可完整时段
                     try { SegmentSummaryManager.backfillToLatest(this@ScreenCaptureAccessibilityService) } catch (_: Exception) {}
+                segmentMs = SystemClock.elapsedRealtime() - segmentStartMs
             } catch (e: Exception) {
                 FileLogger.w(TAG, "SegmentSummaryManager 调用失败: ${e.message}")
             }
 
-            // 在“原图（未压缩）”上执行 OCR，并将结果异步写回数据库
+            // 在“原图（未压缩）”上执行 OCR，并将结果异步写回数据库。
+            // 注意：截图保存 worker 结束时会释放 takeScreenshot 返回的原始 bitmap，
+            // 如果 OCR 需要沿用该对象，必须先复制一份，避免异步线程读到已释放位图。
             try {
-                val forOcr = rotatedOrOriginal ?: bitmap
-                runOcrAsyncAndPersist(forOcr, file.absolutePath)
+                val ocrSource = rotatedOrOriginal ?: bitmap
+                val needsOcrCopy = ocrSource === bitmap
+                val forOcr = if (needsOcrCopy) {
+                    try {
+                        ocrSource.copy(Bitmap.Config.ARGB_8888, false)
+                    } catch (e: Exception) {
+                        FileLogger.w(TAG, "OCR位图复制失败，跳过本次OCR以避免异步读取已释放位图: ${e.message}")
+                        null
+                    }
+                } else {
+                    ocrSource
+                }
+                if (forOcr != null) {
+                    runOcrAsyncAndPersist(forOcr, file.absolutePath, recycleSourceWhenDone = needsOcrCopy)
+                }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "启动OCR失败: ${e.message}")
             }
 
             // 通知Flutter端更新数据库（作为第二路径，方便UI即刻刷新）
             try {
+                val flutterNotifyStartMs = SystemClock.elapsedRealtime()
                 notifyScreenshotSaved(packageName, appName, relativePath, pageUrl)
+                flutterNotifyMs = SystemClock.elapsedRealtime() - flutterNotifyStartMs
             } catch (e: Exception) {
                 FileLogger.w(TAG, "通知Flutter更新数据库失败: ${e.message}")
             }
+
+            FileLogger.i(
+                TAG,
+                "截图保存耗时: app=$packageName rotateMs=$rotateMs encodeMs=$encodeMs writeMs=$writeMs nativeDbMs=$nativeDbMs segmentMs=$segmentMs flutterNotifyMs=$flutterNotifyMs saveTotalMs=${SystemClock.elapsedRealtime() - saveTotalStartMs}"
+            )
             
             relativePath // 返回相对路径
         } catch (e: Exception) {
@@ -1875,7 +2159,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      * 使用 ML Kit 中文文本识别在原始位图上执行 OCR，并将结果写入对应记录（按文件路径更新）。
      * 离线：模型将随依赖一起打包入 APK；无网络也可识别。
      */
-    private fun runOcrAsyncAndPersist(srcBitmap: Bitmap, absolutePath: String) {
+    private fun runOcrAsyncAndPersist(srcBitmap: Bitmap, absolutePath: String, recycleSourceWhenDone: Boolean = false) {
         try {
             val recognizer = ensureTextRecognizer()
             Thread {
@@ -1902,10 +2186,17 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     FileLogger.i(TAG, "OCR完成(切片=${portrait}), 长度=${finalText?.length ?: 0}")
                 } catch (e: Exception) {
                     FileLogger.w(TAG, "OCR线程异常: ${e.message}")
+                } finally {
+                    if (recycleSourceWhenDone) {
+                        try { srcBitmap.recycle() } catch (_: Exception) {}
+                    }
                 }
             }.start()
         } catch (e: Exception) {
             FileLogger.w(TAG, "启动OCR异常: ${e.message}")
+            if (recycleSourceWhenDone) {
+                try { srcBitmap.recycle() } catch (_: Exception) {}
+            }
         }
     }
 
@@ -2052,25 +2343,25 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 根据用户设置进行编码（格式/质量/目标大小/灰度），不改变分辨率。
      * FlutterSharedPreferences 键：
-     *  - flutter.image_format: jpeg | png | webp_lossy | webp_lossless (默认 webp_lossless)
+     *  - flutter.image_format: jpeg | png | webp_lossy | webp_lossless (默认 webp_lossy)
      *  - flutter.image_quality: Int 1..100（默认 90，仅对 lossy 生效）
      *  - flutter.use_target_size: Bool（默认 false，仅对 lossy 生效）
      *  - flutter.target_size_kb: Int（默认 50，仅对 lossy 生效）
      *  - flutter.grayscale: Bool（默认 false）
      */
     // 返回 Pair<字节数组, 扩展名>
-    private fun encodeToBytesAccordingToSettings(src: Bitmap): Pair<ByteArray?, String> {
+    private fun encodeToBytesAccordingToSettings(src: Bitmap, packageName: String?): Pair<ByteArray?, String> {
             val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             var format = (sp.getString("flutter.image_format", null)
             ?: (sp.all["flutter.image_format"] as? String)
-            ?: "webp_lossless")
+            ?: "webp_lossy")
             var quality = spGetIntCompat(sp, "flutter.image_quality", 90).coerceIn(1, 100)
             var useTarget = spGetBoolCompat(sp, "flutter.use_target_size", false)
             var targetKb = spGetIntCompat(sp, "flutter.target_size_kb", 50).coerceAtLeast(50)
 
             // 覆盖为每应用设置：从每应用 SQLite settings 读取（若 use_custom=true）
             try {
-                val per = PerAppSettingsBridge.readQualitySettingsIfCustom(this, getScreenshotTargetApp())
+                val per = PerAppSettingsBridge.readQualitySettingsIfCustom(this, packageName)
                 if (per != null) {
                     format = per.format ?: format
                     quality = per.quality ?: quality
@@ -2701,9 +2992,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun detectForegroundAppPeriodically() {
         try {
             val now = System.currentTimeMillis()
-            val elapsedSinceEvent = now - lastAccessibilityEventAt
-            // 事件优先：若最近2秒内收到过事件，则跳过本次轮询，降低轮询频率
-            if (elapsedSinceEvent <= 2000L) {
+            val elapsedSinceWindowEvent = now - lastAccessibilityWindowEventAt
+            // 事件优先但不被普通内容事件抑制：仅窗口事件后的极短窗口跳过一次轮询。
+            // B站等应用会持续产生内容事件，如果用任意事件时间会导致兜底检测长期不运行。
+            if (elapsedSinceWindowEvent in 0..750L) {
                 return
             }
             var candidate = getForegroundAppUsingUsageStats()
@@ -2718,8 +3010,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 updateAppSession(stable)
             }
 
-            // 兜底：若本次 UsageStats 无结果且当前尚未确认稳定前台，尝试长窗口事件与窗口列表
-            if (candidate == null && (lastStableMonitoredApp == null || lastStableMonitoredApp!!.isEmpty())) {
+            // 兜底：UsageStats 无结果时仍检查长窗口事件与窗口列表，即使已有旧 stable，
+            // 避免从 QQ 切到 B站后 stable 长时间停留在旧应用。
+            if (candidate == null) {
                 // 1) 长窗口 UsageEvents（例如 15 秒）
                 val longWindowPkg = getForegroundAppUsingUsageEventsLongWindow(15_000L)
                 if (longWindowPkg != null) {

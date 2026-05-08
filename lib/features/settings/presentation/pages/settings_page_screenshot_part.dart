@@ -1167,7 +1167,7 @@ extension _SettingsScreenshotPart on _SettingsPageState {
     try {
       final String? format = await UserSettingsService.instance.getString(
         UserSettingKeys.imageFormat,
-        defaultValue: 'webp_lossless',
+        defaultValue: 'webp_lossy',
         legacyPrefKeys: const <String>['image_format'],
       );
       final int quality = await UserSettingsService.instance.getInt(
@@ -1191,7 +1191,7 @@ extension _SettingsScreenshotPart on _SettingsPageState {
       );
       if (mounted) {
         _settingsSetState(() {
-          _imageFormat = format ?? 'webp_lossless';
+          _imageFormat = format ?? 'webp_lossy';
           _imageQuality = quality.clamp(1, 100);
           _useTargetSize = useTarget;
           _targetSizeKb = targetKb < 50 ? 50 : targetKb;
@@ -1288,8 +1288,8 @@ extension _SettingsScreenshotPart on _SettingsPageState {
 
   Future<void> _saveScreenshotQualitySettings() async {
     try {
-      // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
-      final String format = _useTargetSize ? 'webp_lossy' : 'webp_lossless';
+      // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->保留当前格式（默认 webp_lossy）
+      final String format = _useTargetSize ? 'webp_lossy' : _imageFormat;
       await UserSettingsService.instance.setString(
         UserSettingKeys.imageFormat,
         format,

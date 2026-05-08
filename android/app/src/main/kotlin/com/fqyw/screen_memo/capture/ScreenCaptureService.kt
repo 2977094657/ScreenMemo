@@ -53,7 +53,8 @@ class ScreenCaptureService : Service() {
             foregroundPackage: String? = null,
             intervalSeconds: Int? = null,
             lastScreenshotAt: Long? = null,
-            captureEnabled: Boolean? = null
+            captureEnabled: Boolean? = null,
+            clearForegroundPackage: Boolean = false
         ) {
             try {
                 val sp = context.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE)
@@ -61,10 +62,25 @@ class ScreenCaptureService : Service() {
                 val prevInterval = try { sp.getInt(KEY_INTERVAL_SECONDS, -1) } catch (_: Exception) { -1 }
                 val prevLastShot = try { sp.getLong(KEY_LAST_SCREENSHOT_AT, 0L) } catch (_: Exception) { 0L }
                 val prevCapture = try { sp.getBoolean(KEY_CAPTURE_ENABLED, false) } catch (_: Exception) { false }
+                val nextPkg = when {
+                    clearForegroundPackage -> null
+                    foregroundPackage != null -> foregroundPackage
+                    else -> prevPkg
+                }
+                val nextInterval = intervalSeconds ?: prevInterval
+                val nextLastShot = lastScreenshotAt ?: prevLastShot
+                val nextCapture = captureEnabled ?: prevCapture
 
                 val edit = sp.edit()
                 var changed = false
-                if (foregroundPackage != null) {
+                if (clearForegroundPackage) {
+                    if (!prevPkg.isNullOrBlank()) {
+                        edit.remove(KEY_FOREGROUND_PKG)
+                        cachedLargeIconPkg = null
+                        cachedLargeIconBitmap = null
+                        changed = true
+                    }
+                } else if (foregroundPackage != null) {
                     if (foregroundPackage != prevPkg) {
                         edit.putString(KEY_FOREGROUND_PKG, foregroundPackage)
                         changed = true
@@ -91,6 +107,12 @@ class ScreenCaptureService : Service() {
                 if (changed) {
                     edit.putLong(KEY_LAST_UPDATE_AT, System.currentTimeMillis())
                     edit.apply()
+                    FileLogger.i(
+                        TAG,
+                        "通知状态更新: pkg=${prevPkg ?: "-"}->${nextPkg ?: "-"}, " +
+                            "clearPkg=$clearForegroundPackage, interval=${prevInterval}->${nextInterval}, " +
+                            "capture=${prevCapture}->${nextCapture}, lastShot=${prevLastShot}->${nextLastShot}"
+                    )
                 }
 
                 if (!changed) {
