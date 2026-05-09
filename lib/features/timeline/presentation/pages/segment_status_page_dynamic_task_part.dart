@@ -478,7 +478,9 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       if (status.currentRangeLabel.isNotEmpty) status.currentRangeLabel,
     ].join(' · ');
     if (scope.isNotEmpty) {
-      final String prefix = status.isActive ? '当前正在重建' : '当前停留在';
+      final String prefix = status.isActive
+          ? (status.isBackfillMode ? '当前正在补全' : '当前正在重建')
+          : '当前停留在';
       return '$prefix：$scope';
     }
     if (status.timelineCutoffDayKey.trim().isNotEmpty) {
@@ -586,10 +588,14 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
 
   String _dynamicRebuildSerialHint(DynamicRebuildTaskStatus status) {
     if (status.isPreparing || status.isPending || status.isRunning) {
-      return '按天并发重建中：线程会先串行跑完当天全部动态，再领取下一个未完成日期。';
+      return status.isBackfillMode
+          ? '按天并发补全中：线程会先串行补完当天缺失动态，再领取下一个未完成日期。'
+          : '按天并发重建中：线程会先串行跑完当天全部动态，再领取下一个未完成日期。';
     }
     if (status.canContinue || status.isCompletedWithFailures) {
-      return '继续重建只会续跑未完成或失败待续的日期，不会重新清空已完成结果。';
+      return status.isBackfillMode
+          ? '继续补全只会续跑未完成或失败待续的日期，不会清空已有动态。'
+          : '继续重建只会续跑未完成或失败待续的日期，不会重新清空已完成结果。';
     }
     return '';
   }
@@ -607,6 +613,13 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
 
   Color _dynamicRebuildTaskColor(DynamicRebuildTaskStatus status) {
     final cs = Theme.of(context).colorScheme;
+    if (status.isBackfillMode &&
+        (status.isCompleted ||
+            status.isPreparing ||
+            status.isPending ||
+            status.isRunning)) {
+      return const Color(0xFF005B43);
+    }
     if (status.isCompleted) return cs.primary;
     if (status.isCompletedWithFailures) return cs.secondary;
     if (status.isPreparing || status.isPending || status.isRunning) {
@@ -784,19 +797,53 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
 
   Future<void> _confirmStartDynamicRebuild() async {
     if (_dynamicRebuildTaskStatus.isActive || _startingDynamicRebuild) return;
+    final bool continueExisting =
+        _dynamicRebuildTaskStatus.canContinue &&
+        _dynamicRebuildTaskStatus.isRebuildMode;
     final bool ok = await UIDialogs.showConfirm(
       context,
-      title: '重建动态',
-      message: '会立即清空当前动态，并从最老截图开始全量重建。确定继续吗？',
-      confirmText: '立即重建',
+      title: continueExisting ? '继续重建动态' : '重建动态',
+      message: continueExisting
+          ? '会从上次未完成或失败的日期继续重建，不会重新清空已完成结果。适合任务中断后继续处理。确定继续吗？'
+          : '重建会先清空当前动态、每日/每周总结与相关图片元数据，再从最老截图开始完整生成。适合需要彻底重跑全部动态的情况。确定继续吗？',
+      confirmText: continueExisting ? '继续重建' : '立即重建',
       cancelText: '取消',
-      destructive: true,
+      destructive: !continueExisting,
     );
     if (!ok || !mounted) return;
-    await _startDynamicRebuild();
+    if (continueExisting) {
+      await _continueDynamicRebuild();
+    } else {
+      await _startDynamicRebuild();
+    }
   }
 
-  Future<void> _startDynamicRebuild({bool resumeExisting = false}) async {
+  Future<void> _confirmStartDynamicBackfill() async {
+    if (_dynamicRebuildTaskStatus.isActive || _startingDynamicRebuild) return;
+    final bool continueExisting =
+        _dynamicRebuildTaskStatus.canContinue &&
+        _dynamicRebuildTaskStatus.isBackfillMode;
+    final bool ok = await UIDialogs.showConfirm(
+      context,
+      title: continueExisting ? '继续补全动态' : '补全动态',
+      message: continueExisting
+          ? '会继续处理未完成或失败待续的日期，只补齐缺失日期、缺失时间窗或缺失总结，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？'
+          : '补全会按截图时间扫描每一天，已被现有动态结果覆盖的窗口会跳过，只把缺失日期、缺失时间窗或缺失总结加入后台队列，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？',
+      confirmText: continueExisting ? '继续补全' : '开始补全',
+      cancelText: '取消',
+    );
+    if (!ok || !mounted) return;
+    if (continueExisting) {
+      await _continueDynamicRebuild();
+    } else {
+      await _startDynamicRebuild(taskMode: 'backfill');
+    }
+  }
+
+  Future<void> _startDynamicRebuild({
+    bool resumeExisting = false,
+    String taskMode = 'rebuild',
+  }) async {
     if (_startingDynamicRebuild) return;
     _segmentStatusSetState(() => _startingDynamicRebuild = true);
     _publishDynamicRebuildUiSnapshot();
@@ -805,6 +852,9 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       final status = await _db.startDynamicRebuildTask(
         resumeExisting: resumeExisting,
         dayConcurrency: _selectedDynamicRebuildDayConcurrency,
+        taskMode: resumeExisting
+            ? _dynamicRebuildTaskStatus.taskMode
+            : taskMode,
       );
       if (!mounted) return;
       _segmentStatusSetState(() {
@@ -820,7 +870,9 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       if (status.isCompleted && status.totalSegments == 0) {
         UINotifier.info(
           context,
-          AppLocalizations.of(context).dynamicRebuildNoSegments,
+          status.isBackfillMode
+              ? '未发现需要补全的动态'
+              : AppLocalizations.of(context).dynamicRebuildNoSegments,
         );
         await _refresh(triggerSegmentTick: false);
       } else if (status.isActive && resumeExisting) {
@@ -837,20 +889,24 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       } else if (status.isActive && !previous.isActive) {
         UINotifier.info(
           context,
-          AppLocalizations.of(context).dynamicRebuildStartedInBackground,
+          status.isBackfillMode
+              ? '已开始后台补全，可在通知栏查看进度'
+              : AppLocalizations.of(context).dynamicRebuildStartedInBackground,
         );
         await _refresh(triggerSegmentTick: false);
       } else if (status.isActive) {
         UINotifier.info(
           context,
-          AppLocalizations.of(context).dynamicRebuildTaskResumed,
+          status.isBackfillMode
+              ? '动态补全任务已恢复'
+              : AppLocalizations.of(context).dynamicRebuildTaskResumed,
         );
       }
     } catch (e) {
       if (mounted) {
         await UIDialogs.showInfo(
           context,
-          title: '动态重建失败',
+          title: taskMode == 'backfill' ? '动态补全失败' : '动态重建失败',
           message: e.toString(),
         );
       }

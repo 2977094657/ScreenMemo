@@ -9,6 +9,14 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final status = snapshot.status;
+    final bool hasTask = _hasVisibleDynamicTask(status);
+    final bool actualBackfill = hasTask && status.isBackfillMode;
+    final String sheetTitle = hasTask
+        ? '${status.isActive ? '当前后台任务' : '最近任务'}：${_dynamicTaskModeName(backfill: actualBackfill)}'
+        : '动态任务';
+    final String statusBadge = hasTask
+        ? '${_dynamicTaskModeShortName(backfill: actualBackfill)} · ${_dynamicRebuildTaskLabel(status)}'
+        : _dynamicRebuildTaskLabel(status);
     final int dayConcurrency = _effectiveDynamicRebuildDayConcurrency(snapshot);
     final Color statusColor = _dynamicRebuildTaskColor(status);
     final double? progressValue = status.totalSegments > 0
@@ -16,7 +24,9 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
         : (status.isCompleted ? 1 : null);
     final String progressText = status.totalSegments > 0
         ? '${status.processedSegments}/${status.totalSegments} (${status.progressPercent})'
-        : (status.isCompleted ? '无可重建动态' : '0/0 (${status.progressPercent})');
+        : (status.isCompleted
+              ? (status.isBackfillMode ? '无缺失动态' : '无可重建动态')
+              : '0/0 (${status.progressPercent})');
     final String summaryLine =
         '已完成 ${status.processedSegments}/${status.totalSegments} 条动态 · '
         '已完成 ${status.completedDays}/${status.totalDays} 天 · '
@@ -45,7 +55,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
           children: [
             Expanded(
               child: Text(
-                '动态重建任务',
+                sheetTitle,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
@@ -59,7 +69,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
                 border: Border.all(color: statusColor.withValues(alpha: 0.25)),
               ),
               child: Text(
-                _dynamicRebuildTaskLabel(status),
+                statusBadge,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: statusColor,
                   fontWeight: FontWeight.w700,
@@ -68,7 +78,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
           ],
         ),
-        const SizedBox(height: AppTheme.spacing3),
+        const SizedBox(height: AppTheme.spacing4),
         Text(
           progressText,
           style: theme.textTheme.bodyMedium?.copyWith(
@@ -76,7 +86,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
           ),
         ),
         const SizedBox(height: AppTheme.spacing2),
-        UIProgress(value: progressValue, height: 6),
+        UIProgress(
+          value: progressValue,
+          height: 6,
+          valueColor: actualBackfill ? _dynamicBackfillColor() : null,
+        ),
         Padding(
           padding: const EdgeInsets.only(top: AppTheme.spacing2),
           child: Text(
@@ -175,7 +189,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
           ),
         const SizedBox(height: AppTheme.spacing4),
-        _buildDynamicRebuildTaskActionRow(context, snapshot),
+        _buildDynamicTaskStartControls(context, snapshot),
         const SizedBox(height: AppTheme.spacing3),
         _buildDynamicRebuildDayConcurrencySection(context, snapshot),
         const SizedBox(height: AppTheme.spacing3),
@@ -194,77 +208,156 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
     );
   }
 
-  Widget _buildDynamicRebuildTaskActionRow(
+  Widget _buildDynamicTaskStartControls(
     BuildContext context,
     _DynamicRebuildUiSnapshot snapshot,
   ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
     final DynamicRebuildTaskStatus status = snapshot.status;
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final OutlinedBorder shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
     );
-    final Widget startButton = SizedBox(
-      height: 44,
-      child: FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: colorScheme.error,
-          foregroundColor: colorScheme.onError,
-          disabledBackgroundColor: colorScheme.surfaceContainerHigh,
-          disabledForegroundColor: colorScheme.onSurfaceVariant,
-          shape: shape,
-        ),
-        onPressed: (snapshot.starting || status.isActive)
-            ? null
-            : _confirmStartDynamicRebuild,
-        icon: const Icon(Icons.restart_alt),
-        label: Text(AppLocalizations.of(context).dynamicRebuildStart),
-      ),
-    );
+
     if (status.isActive) {
-      return Row(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: startButton),
-          const SizedBox(width: AppTheme.spacing2),
-          Expanded(
-            child: SizedBox(
-              height: 44,
-              child: OutlinedButton.icon(
-                style: ButtonStyle(
-                  shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
-                ),
-                onPressed: snapshot.stopping ? null : _cancelDynamicRebuild,
-                icon: const Icon(Icons.stop_circle_outlined),
-                label: Text(AppLocalizations.of(context).actionStop),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: cs.error,
+                foregroundColor: cs.onError,
+                disabledBackgroundColor: cs.surfaceContainerHigh,
+                disabledForegroundColor: cs.onSurfaceVariant,
+                shape: shape,
               ),
+              onPressed: snapshot.stopping ? null : _cancelDynamicRebuild,
+              icon: const Icon(Icons.stop_circle_outlined),
+              label: Text(snapshot.stopping ? '停止中...' : '停止任务'),
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            '当前${_dynamicTaskModeName(backfill: status.isBackfillMode)}任务运行中，启动按钮已切换为停止按钮。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.35,
             ),
           ),
         ],
       );
     }
-    if (status.canContinue) {
-      return Row(
-        children: [
-          Expanded(child: startButton),
-          const SizedBox(width: AppTheme.spacing2),
-          Expanded(
-            child: SizedBox(
-              height: 44,
-              child: FilledButton.icon(
-                style: ButtonStyle(
-                  shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
-                ),
-                onPressed: snapshot.starting ? null : _continueDynamicRebuild,
-                icon: const Icon(Icons.play_arrow),
-                label: Text(
-                  AppLocalizations.of(context).dynamicRebuildContinue,
+
+    Widget startButton({
+      required IconData icon,
+      required String label,
+      required String subtitle,
+      required Color backgroundColor,
+      required Color foregroundColor,
+      required VoidCallback onPressed,
+    }) {
+      final bool disabled = snapshot.starting;
+      final Color effectiveForeground = disabled
+          ? cs.onSurfaceVariant
+          : foregroundColor;
+      return SizedBox(
+        height: 58,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            disabledBackgroundColor: cs.surfaceContainerHigh,
+            disabledForegroundColor: cs.onSurfaceVariant,
+            shape: shape,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3),
+          ),
+          onPressed: disabled ? null : onPressed,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: AppTheme.spacing2),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: effectiveForeground,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: effectiveForeground.withValues(alpha: 0.82),
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       );
     }
-    return SizedBox(width: double.infinity, child: startButton);
+
+    return Row(
+      children: [
+        Expanded(
+          child: startButton(
+            icon: Icons.restart_alt,
+            label: '重建',
+            subtitle: '清空后全量重跑',
+            backgroundColor: cs.error,
+            foregroundColor: cs.onError,
+            onPressed: _confirmStartDynamicRebuild,
+          ),
+        ),
+        const SizedBox(width: AppTheme.spacing2),
+        Expanded(
+          child: startButton(
+            icon: Icons.fact_check_outlined,
+            label: '补全',
+            subtitle: '扫描缺漏并补齐',
+            backgroundColor: _dynamicBackfillColor(),
+            foregroundColor: _dynamicBackfillOnColor(),
+            onPressed: _confirmStartDynamicBackfill,
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool _hasVisibleDynamicTask(DynamicRebuildTaskStatus status) {
+    return !status.isIdle && status.taskId.trim().isNotEmpty;
+  }
+
+  String _dynamicTaskModeName({required bool backfill}) {
+    return backfill ? '动态补全' : '动态重建';
+  }
+
+  String _dynamicTaskModeShortName({required bool backfill}) {
+    return backfill ? '补全' : '重建';
+  }
+
+  Color _dynamicBackfillColor() {
+    return const Color(0xFF005B43);
+  }
+
+  Color _dynamicBackfillOnColor() {
+    return Colors.white;
   }
 
   Widget _buildDynamicRebuildDayConcurrencySection(
@@ -416,6 +509,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
                       context,
                       slotId,
                       workersBySlot[slotId],
+                      backfillMode: snapshot.status.isBackfillMode,
                     ),
                   ),
               ],
@@ -429,8 +523,9 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
   Widget _buildDynamicRebuildWorkerCard(
     BuildContext context,
     int slotId,
-    DynamicRebuildWorkerState? worker,
-  ) {
+    DynamicRebuildWorkerState? worker, {
+    required bool backfillMode,
+  }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final Color accent = _dynamicRebuildWorkerColor(context, worker);
@@ -502,7 +597,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
           ),
           const SizedBox(height: AppTheme.spacing1),
-          UIProgress(value: progressValue, height: 5),
+          UIProgress(
+            value: progressValue,
+            height: 5,
+            valueColor: backfillMode ? _dynamicBackfillColor() : null,
+          ),
           if (rangeLabel.isNotEmpty) ...[
             const SizedBox(height: AppTheme.spacing2),
             Text(
