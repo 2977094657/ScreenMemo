@@ -11,13 +11,10 @@ import com.fqyw.screen_memo.logging.FileLogger
 import com.fqyw.screen_memo.logging.OutputFileLogger
 
 import android.app.Application
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.FlutterEngineCache
 
 class ScreenMemoApplication : Application() {
     companion object {
         private const val TAG = "ScreenMemoApplication"
-        const val ENGINE_ID = "main_engine"
     }
 
     override fun onCreate() {
@@ -27,18 +24,12 @@ class ScreenMemoApplication : Application() {
         try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
         RuntimeDiagnostics.logProcessStart(this, TAG, "application_onCreate", force = true)
 
-        // 暂不执行 Dart 入口，避免在 Activity 尚未完成通道注册前出现 MissingPluginException。
-        // 如需预热引擎，可在此处仅创建并缓存 FlutterEngine（不执行 Dart）。
-        try {
-                val cached = FlutterEngineCache.getInstance().get(ENGINE_ID)
-            if (cached == null) {
-                val engine = FlutterEngine(this)
-                FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
-                FileLogger.i(TAG, "FlutterEngine 已缓存（未执行 Dart）：$ENGINE_ID")
-            }
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "缓存 FlutterEngine 失败", e)
-        }
+        // 不再在 Application 级别缓存 FlutterEngine。
+        // 前台采集服务会让进程长时间存活，复用同一个 Engine 会把上一次 Activity 的
+        // Navigator/页面状态一并保留下来。若更新安装器取消、任务被划掉或页面处于异常状态，
+        // 再次打开时可能直接复用旧的黑屏/查看器状态，只有强停才能恢复。
+        // 让 MainActivity 使用默认 Engine 生命周期，可以在每次用户可见启动时重建干净的 Flutter UI。
+        FileLogger.i(TAG, "FlutterEngine pre-cache disabled; MainActivity will use a standalone Engine")
 
         // 应用启动时恢复每日提醒调度（读取 SharedPreferences 中的上次设置）
         try {

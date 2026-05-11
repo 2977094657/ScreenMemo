@@ -3,7 +3,6 @@ package com.fqyw.screen_memo.service
 import com.fqyw.screen_memo.capture.ScreenCaptureAccessibilityService
 import com.fqyw.screen_memo.capture.ScreenCaptureService
 import com.fqyw.screen_memo.logging.FileLogger
-import com.fqyw.screen_memo.MainActivity
 import com.fqyw.screen_memo.segment.SegmentSummaryManager
 import android.app.job.JobParameters
 import android.app.job.JobService
@@ -54,16 +53,18 @@ class KeepAliveJobService : JobService() {
                     FileLogger.e(TAG, "启动前台服务失败", e)
                 }
                 
-                // 启动MainActivity以触发AccessibilityService重新连接
+                // 不再从后台 JobService 拉起可见 MainActivity。
+                // 更新安装失败/任务被划掉后，前台服务仍会保活进程；后台强行拉起 Activity
+                // 在部分 ROM 上会留下黑色任务窗口，并把旧 Flutter UI 状态继续复用。
+                // 改为只发送重启广播，让服务侧自检；需要用户交互时由通知/设置页引导。
                 try {
-                    val intent = Intent(this, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        putExtra("from_job_service", true)
+                    val restartIntent = Intent(this, RestartReceiver::class.java).apply {
+                        action = RestartReceiver.ACTION_RESTART_SERVICE
                     }
-                    startActivity(intent)
-                    FileLogger.e(TAG, "MainActivity启动成功")
+                    sendBroadcast(restartIntent)
+                    FileLogger.e(TAG, "Sent service restart broadcast; skipped background MainActivity launch")
                 } catch (e: Exception) {
-                    FileLogger.e(TAG, "启动MainActivity失败", e)
+                    FileLogger.e(TAG, "Failed to send service restart broadcast", e)
                 }
             }
             

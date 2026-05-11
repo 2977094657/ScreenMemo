@@ -43,7 +43,6 @@ import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.embedding.engine.FlutterEngineCache
 import android.view.View
 import android.graphics.Color
 import android.view.WindowInsets
@@ -549,8 +548,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
-        // 使用预热的引擎以缩短首帧时间
-        return FlutterEngineCache.getInstance().get(ScreenMemoApplication.ENGINE_ID)
+        // 使用 FlutterActivity 默认 Engine 生命周期。
+        // 不复用进程级缓存，避免前台服务保活时把旧 Navigator/异常页面状态带到下一次打开。
+        return null
     }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {

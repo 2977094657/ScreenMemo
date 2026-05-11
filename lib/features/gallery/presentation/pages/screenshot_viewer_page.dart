@@ -1335,6 +1335,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   }
 
   Future<void> _deleteCurrentImage() async {
+    if (_screenshots.isEmpty ||
+        _currentIndex < 0 ||
+        _currentIndex >= _screenshots.length) {
+      return;
+    }
     final screenshot = _screenshots[_currentIndex];
 
     final confirmed = await showUIDialog<bool>(
@@ -1374,17 +1379,25 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           FlutterLogger.info('UI.查看器-删除当前-成功 id=${screenshot.id}');
           // ignore: unawaited_futures
           FlutterLogger.nativeInfo('UI', '查看器删除成功 id=${screenshot.id}');
+          var shouldCloseViewer = false;
           setState(() {
             _screenshots.removeAt(_currentIndex);
 
             // 调整当前索引
             if (_screenshots.isEmpty) {
-              Navigator.of(context).pop(); // 没有图片了，返回上一页
+              shouldCloseViewer = true;
               return;
             } else if (_currentIndex >= _screenshots.length) {
               _currentIndex = _screenshots.length - 1;
             }
           });
+
+          if (!mounted) return;
+          if (shouldCloseViewer) {
+            // 不要在 setState 内执行导航，避免页面短暂进入空数据黑屏状态。
+            Navigator.of(context).maybePop();
+            return;
+          }
 
           if (mounted) {
             UINotifier.success(
@@ -1484,6 +1497,20 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_screenshots.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).maybePop();
+        }
+      });
+      return Scaffold(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? Theme.of(context).scaffoldBackgroundColor
+            : Colors.black,
+        body: const SizedBox.expand(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).brightness == Brightness.dark
           ? Theme.of(context).scaffoldBackgroundColor
