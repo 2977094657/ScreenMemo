@@ -59,7 +59,7 @@ class ScreenCaptureService : Service() {
             try {
                 val sp = context.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE)
                 val prevPkg = try { sp.getString(KEY_FOREGROUND_PKG, null) } catch (_: Exception) { null }
-                val prevInterval = try { sp.getInt(KEY_INTERVAL_SECONDS, -1) } catch (_: Exception) { -1 }
+                val prevInterval = spGetIntCompat(sp, KEY_INTERVAL_SECONDS, -1)
                 val prevLastShot = try { sp.getLong(KEY_LAST_SCREENSHOT_AT, 0L) } catch (_: Exception) { 0L }
                 val prevCapture = try { sp.getBoolean(KEY_CAPTURE_ENABLED, false) } catch (_: Exception) { false }
                 val nextPkg = when {
@@ -206,11 +206,11 @@ class ScreenCaptureService : Service() {
 
             val foregroundPkg = try { sp?.getString(KEY_FOREGROUND_PKG, null) } catch (_: Exception) { null }
             val intervalSeconds = try {
-                val iv = sp?.getInt(KEY_INTERVAL_SECONDS, -1) ?: -1
+                val iv = if (sp != null) spGetIntCompat(sp, KEY_INTERVAL_SECONDS, -1) else -1
                 if (iv > 0) iv else run {
                     val prefs = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                    val a = prefs.getInt("screenshot_interval", -1)
-                    val b = prefs.getInt("timed_screenshot_interval", -1)
+                    val a = spGetIntCompat(prefs, "screenshot_interval", -1)
+                    val b = spGetIntCompat(prefs, "timed_screenshot_interval", -1)
                     when {
                         a > 0 -> a
                         b > 0 -> b
@@ -302,6 +302,26 @@ class ScreenCaptureService : Service() {
             }
 
             return builder.build()
+        }
+
+        private fun spGetIntCompat(sp: android.content.SharedPreferences, key: String, def: Int): Int {
+            return try {
+                val any = sp.all[key]
+                when (any) {
+                    is Int -> any
+                    is Long -> {
+                        if (any > Int.MAX_VALUE) Int.MAX_VALUE else if (any < Int.MIN_VALUE) Int.MIN_VALUE else any.toInt()
+                    }
+                    is Float -> any.toInt()
+                    is Double -> {
+                        if (any > Int.MAX_VALUE) Int.MAX_VALUE else if (any < Int.MIN_VALUE) Int.MIN_VALUE else any.toInt()
+                    }
+                    is String -> any.toDoubleOrNull()?.toInt() ?: def
+                    else -> try { sp.getInt(key, def) } catch (_: Exception) { def }
+                }
+            } catch (_: Exception) {
+                def
+            }
         }
 
         private fun loadAppIconBitmap(context: Context, packageName: String): Bitmap? {

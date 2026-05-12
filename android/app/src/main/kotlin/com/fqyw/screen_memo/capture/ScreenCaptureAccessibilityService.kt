@@ -100,10 +100,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun persistTimedScreenshotRunningState() {
         try {
             val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+            val normalizedInterval = normalizeScreenshotIntervalSeconds(baseScreenshotInterval)
             sharedPrefs.edit().apply {
                 putBoolean("timed_screenshot_was_running", true)
                 // 这里只保存“全局基础间隔”用于服务重启恢复，不能保存每应用临时生效间隔。
-                putInt("timed_screenshot_interval", baseScreenshotInterval)
+                putInt("timed_screenshot_interval", normalizedInterval)
+                putInt("screenshot_interval", normalizedInterval)
                 apply()
             }
         } catch (e: Exception) {
@@ -679,9 +681,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                         val wasRunning = sharedPrefs.getBoolean("timed_screenshot_was_running", false)
                         // 多键兜底恢复，避免某些路径只写了其一
                         val lastInterval = run {
-                            val a = sharedPrefs.getInt("timed_screenshot_interval", -1)
-                            val b = sharedPrefs.getInt("screenshot_interval", -1)
-                            if (a != -1) a else if (b != -1) b else 5
+                            val a = spGetIntCompat(sharedPrefs, "timed_screenshot_interval", -1)
+                            val b = spGetIntCompat(sharedPrefs, "screenshot_interval", -1)
+                            normalizeScreenshotIntervalSeconds(if (a != -1) a else if (b != -1) b else 5)
                         }
                         if (wasRunning && !isTimedScreenshotRunning) {
                             FileLogger.e(TAG, "检测到定时截屏之前在运行，自动恢复，间隔: ${lastInterval}秒")
@@ -2773,7 +2775,11 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 is Long -> {
                     if (any > Int.MAX_VALUE) Int.MAX_VALUE else if (any < Int.MIN_VALUE) Int.MIN_VALUE else any.toInt()
                 }
-                is String -> any.toIntOrNull() ?: def
+                is Float -> any.toInt()
+                is Double -> {
+                    if (any > Int.MAX_VALUE) Int.MAX_VALUE else if (any < Int.MIN_VALUE) Int.MIN_VALUE else any.toInt()
+                }
+                is String -> any.toDoubleOrNull()?.toInt() ?: def
                 else -> try { sp.getInt(key, def) } catch (_: Exception) { def }
             }
         } catch (_: Exception) { def }
