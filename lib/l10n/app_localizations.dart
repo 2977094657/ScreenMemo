@@ -924,18 +924,6 @@ abstract class AppLocalizations {
   /// **'Current version'**
   String get aboutCurrentVersion;
 
-  /// No description provided for @aboutBuildNumber.
-  ///
-  /// In en, this message translates to:
-  /// **'Build number'**
-  String get aboutBuildNumber;
-
-  /// No description provided for @aboutPackageName.
-  ///
-  /// In en, this message translates to:
-  /// **'Package name'**
-  String get aboutPackageName;
-
   /// No description provided for @aboutPrivacyTitle.
   ///
   /// In en, this message translates to:

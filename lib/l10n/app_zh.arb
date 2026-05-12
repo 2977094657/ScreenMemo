@@ -187,8 +187,6 @@
   "aboutDescription": "本地运行的智能截屏备忘与检索工具，支持 OCR、语义搜索、AI 回顾和备份迁移。",
   "aboutVersionSectionTitle": "版本信息",
   "aboutCurrentVersion": "当前版本",
-  "aboutBuildNumber": "构建号",
-  "aboutPackageName": "包名",
   "aboutPrivacyTitle": "隐私说明",
   "aboutPrivacyDesc": "截图、OCR、索引、统计和大多数配置默认保存在本地。只有在你显式启用 AI 能力并配置提供商后，相关总结或对话请求才会发送到你配置的模型服务。",
   "aboutFeedbackTitle": "社区与反馈",

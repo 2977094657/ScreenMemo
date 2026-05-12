@@ -449,12 +449,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get aboutCurrentVersion => '현재 버전';
 
   @override
-  String get aboutBuildNumber => '빌드 번호';
-
-  @override
-  String get aboutPackageName => '패키지 이름';
-
-  @override
   String get aboutPrivacyTitle => '개인정보';
 
   @override

@@ -185,8 +185,6 @@
   "aboutDescription": "ローカルで動作するインテリジェントなスクリーンショットメモ・検索ツールです。OCR、セマンティック検索、AI 回顧、バックアップ移行に対応します。",
   "aboutVersionSectionTitle": "バージョン情報",
   "aboutCurrentVersion": "現在のバージョン",
-  "aboutBuildNumber": "ビルド番号",
-  "aboutPackageName": "パッケージ名",
   "aboutPrivacyTitle": "プライバシー",
   "aboutPrivacyDesc": "スクリーンショット、OCR、インデックス、統計、多くの設定は既定でローカルに保存されます。AI 機能を明示的に有効にし、プロバイダーを設定した場合のみ、要約やチャットのリクエストが設定先のモデルサービスへ送信されます。",
   "aboutFeedbackTitle": "コミュニティとフィードバック",

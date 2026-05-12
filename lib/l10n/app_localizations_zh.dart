@@ -439,12 +439,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutCurrentVersion => '当前版本';
 
   @override
-  String get aboutBuildNumber => '构建号';
-
-  @override
-  String get aboutPackageName => '包名';
-
-  @override
   String get aboutPrivacyTitle => '隐私说明';
 
   @override

@@ -466,12 +466,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutCurrentVersion => 'Current version';
 
   @override
-  String get aboutBuildNumber => 'Build number';
-
-  @override
-  String get aboutPackageName => 'Package name';
-
-  @override
   String get aboutPrivacyTitle => 'Privacy';
 
   @override

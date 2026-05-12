@@ -14,8 +14,6 @@ extension _SettingsAboutPart on _SettingsPageState {
       builder: (context, snapshot) {
         final info = snapshot.data;
         final String version = info?.version ?? '—';
-        final String buildNumber = info?.buildNumber ?? '—';
-        final String packageName = info?.packageName ?? '—';
 
         return ListView(
           padding: _settingsListPadding(),
@@ -79,20 +77,6 @@ extension _SettingsAboutPart on _SettingsPageState {
                   value: version,
                   showBottomBorder: true,
                   onTap: _onAboutVersionTap,
-                ),
-                _buildAboutInfoRow(
-                  context: context,
-                  icon: Icons.tag_outlined,
-                  label: l10n.aboutBuildNumber,
-                  value: buildNumber,
-                  showBottomBorder: true,
-                ),
-                _buildAboutInfoRow(
-                  context: context,
-                  icon: Icons.apps_outlined,
-                  label: l10n.aboutPackageName,
-                  value: packageName,
-                  showBottomBorder: true,
                 ),
                 _buildAboutInfoRow(
                   context: context,

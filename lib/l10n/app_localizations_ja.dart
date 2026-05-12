@@ -450,12 +450,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get aboutCurrentVersion => '現在のバージョン';
 
   @override
-  String get aboutBuildNumber => 'ビルド番号';
-
-  @override
-  String get aboutPackageName => 'パッケージ名';
-
-  @override
   String get aboutPrivacyTitle => 'プライバシー';
 
   @override

@@ -187,8 +187,6 @@
   "aboutDescription": "A local-first intelligent screenshot memo and retrieval tool with OCR, semantic search, AI review, and backup migration.",
   "aboutVersionSectionTitle": "Version",
   "aboutCurrentVersion": "Current version",
-  "aboutBuildNumber": "Build number",
-  "aboutPackageName": "Package name",
   "aboutPrivacyTitle": "Privacy",
   "aboutPrivacyDesc": "Screenshots, OCR, indexes, statistics, and most settings are stored locally by default. Summary or chat requests are sent only after you explicitly enable AI features and configure a provider.",
   "aboutFeedbackTitle": "Community & feedback",
