@@ -236,6 +236,14 @@ List<AIMessage> mergeCompletedTurnIntoHistory({
         : base.reasoningContent;
     final Duration? dur =
         assistantFinal.reasoningDuration ?? base.reasoningDuration;
+    final int? usagePrompt =
+        assistantFinal.usagePromptTokens ?? base.usagePromptTokens;
+    final int? usageCompletion =
+        assistantFinal.usageCompletionTokens ?? base.usageCompletionTokens;
+    final int? usageTotal =
+        assistantFinal.usageTotalTokens ?? base.usageTotalTokens;
+    final Duration? responseDuration =
+        assistantFinal.responseDuration ?? base.responseDuration;
 
     String? ui = pickBetterUiThinkingJson(
       base.uiThinkingJson,
@@ -250,6 +258,10 @@ List<AIMessage> mergeCompletedTurnIntoHistory({
       reasoningContent: reasoning,
       reasoningDuration: dur,
       uiThinkingJson: ui,
+      usagePromptTokens: usagePrompt,
+      usageCompletionTokens: usageCompletion,
+      usageTotalTokens: usageTotal,
+      responseDuration: responseDuration,
     );
   }
 

@@ -115,7 +115,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 48,
+          version: 50,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -153,7 +153,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 48,
+          version: 50,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -186,7 +186,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 48,
+          version: 50,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -213,7 +213,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 48,
+        version: 50,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -776,6 +776,12 @@ class ScreenshotDatabase {
     }
     if (oldVersion < 48) {
       await _createDayStatsTables(db);
+    }
+    if (oldVersion < 49) {
+      await _createAiToolCallDetailsTable(db);
+    }
+    if (oldVersion < 50) {
+      await _ensureAiMessageUsageColumns(db);
     }
     if (oldVersion < 2) {
       await _createAiTables(db);

@@ -94,9 +94,38 @@ class AIEndpoint {
   });
 }
 
+/// RikkaHub 风格的推理/思考等级。
+///
+/// `auto` 保持默认，由模型/提供商自行决定；其他等级会尽量映射到各家接口的
+/// reasoning/thinking 参数。不是所有兼容接口都支持这些字段，网关会在失败时回退。
+enum AIReasoningLevel {
+  off('off', 0, 'none'),
+  auto('auto', -1, 'auto'),
+  low('low', 1000, 'low'),
+  medium('medium', 2000, 'medium'),
+  high('high', 8000, 'high'),
+  xhigh('xhigh', 16000, 'xhigh');
+
+  const AIReasoningLevel(this.storageValue, this.budgetTokens, this.effort);
+
+  final String storageValue;
+  final int budgetTokens;
+  final String effort;
+
+  bool get isEnabled => this != AIReasoningLevel.off;
+
+  static AIReasoningLevel fromStorage(String? value) {
+    final String raw = (value ?? '').trim().toLowerCase();
+    for (final AIReasoningLevel level in AIReasoningLevel.values) {
+      if (level.storageValue == raw || level.name == raw) return level;
+    }
+    return AIReasoningLevel.auto;
+  }
+}
+
 /// AI 设置与会话持久化服务
 /// - 支持分组多站点，失败自动切换
-/// - 会话历史按分组隔离（conversation_id = 'group:<id>' 或 'default'）
+/// - 会话历史按分组隔离（conversation_id = `group:<id>` 或 `default`）
 class AISettingsService {
   AISettingsService._internal();
   static final AISettingsService instance = AISettingsService._internal();
@@ -136,6 +165,7 @@ class AISettingsService {
   static const String _keyApiKey = 'api_key';
   static const String _keyModel = 'model';
   static const String _keyStreamEnabled = 'stream_enabled';
+  static const String _keyChatReasoningLevel = 'chat_reasoning_level';
   static const String _keyRenderImagesDuringStreaming =
       'render_images_during_streaming';
   // 是否显示 AIChat 页面的性能日志悬浮窗（UiPerfOverlay）。默认关闭。
@@ -177,6 +207,17 @@ class AISettingsService {
   Future<void> setStreamEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyStreamEnabled, enabled ? '1' : '0');
+  }
+
+  Future<AIReasoningLevel> getChatReasoningLevel() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyChatReasoningLevel);
+    return AIReasoningLevel.fromStorage(v);
+  }
+
+  Future<void> setChatReasoningLevel(AIReasoningLevel level) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyChatReasoningLevel, level.storageValue);
   }
 
   // 是否在流式期间实时渲染图片（默认 false：为提升性能，完成后再统一渲染）
@@ -1011,6 +1052,12 @@ class AISettingsService {
             ? Duration(milliseconds: (e['reasoning_duration_ms'] as int))
             : null,
         uiThinkingJson: (e['ui_thinking_json'] as String?),
+        usagePromptTokens: e['usage_prompt_tokens'] as int?,
+        usageCompletionTokens: e['usage_completion_tokens'] as int?,
+        usageTotalTokens: e['usage_total_tokens'] as int?,
+        responseDuration: ((e['response_duration_ms'] as int?) != null)
+            ? Duration(milliseconds: (e['response_duration_ms'] as int))
+            : null,
       );
     }).toList();
   }
@@ -1061,6 +1108,14 @@ class AISettingsService {
             if (m.reasoningDuration != null)
               'reasoning_duration_ms': m.reasoningDuration!.inMilliseconds,
             if (m.uiThinkingJson != null) 'ui_thinking_json': m.uiThinkingJson,
+            if (m.usagePromptTokens != null)
+              'usage_prompt_tokens': m.usagePromptTokens,
+            if (m.usageCompletionTokens != null)
+              'usage_completion_tokens': m.usageCompletionTokens,
+            if (m.usageTotalTokens != null)
+              'usage_total_tokens': m.usageTotalTokens,
+            if (m.responseDuration != null)
+              'response_duration_ms': m.responseDuration!.inMilliseconds,
             'created_at': m.createdAt.millisecondsSinceEpoch,
           });
         }
@@ -1076,6 +1131,21 @@ class AISettingsService {
           );
         } catch (_) {}
       });
+    } catch (_) {}
+  }
+
+  Future<void> truncateConversationAfterCreatedAt(
+    String conversationCid,
+    int cutoffCreatedAtMs,
+  ) async {
+    final String cid = conversationCid.trim();
+    if (cid.isEmpty || cutoffCreatedAtMs <= 0) return;
+    await ScreenshotDatabase.instance.truncateAiConversationAfterCreatedAt(
+      cid,
+      cutoffCreatedAtMs,
+    );
+    try {
+      _ctxChangedController.add('chat:history');
     } catch (_) {}
   }
 
@@ -1173,6 +1243,11 @@ class AIMessage {
   final Duration? reasoningDuration;
   // UI-only: persist thinking timeline blocks/events for stable restore.
   final String? uiThinkingJson;
+  // UI stats: token usage and end-to-end assistant response duration.
+  final int? usagePromptTokens;
+  final int? usageCompletionTokens;
+  final int? usageTotalTokens;
+  final Duration? responseDuration;
   // —— 以下字段仅用于上行请求（不参与本地持久化）——
   // 多模态/结构化 content：如 [{type:'text',text:'..'},{type:'image_url',image_url:{url:'data:...'}}]
   final Object? apiContent;
@@ -1187,6 +1262,10 @@ class AIMessage {
     this.reasoningContent,
     this.reasoningDuration,
     this.uiThinkingJson,
+    this.usagePromptTokens,
+    this.usageCompletionTokens,
+    this.usageTotalTokens,
+    this.responseDuration,
     this.apiContent,
     this.toolCalls,
     this.toolCallId,
@@ -1219,6 +1298,39 @@ class AIMessage {
         (json['created_at'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
       ),
       // 注意：fromJson 仅用于与上游 API 的消息互转，不含 reasoning 字段
+    );
+  }
+
+  AIMessage copyWith({
+    String? role,
+    String? content,
+    DateTime? createdAt,
+    String? reasoningContent,
+    Duration? reasoningDuration,
+    String? uiThinkingJson,
+    int? usagePromptTokens,
+    int? usageCompletionTokens,
+    int? usageTotalTokens,
+    Duration? responseDuration,
+    Object? apiContent,
+    List<Map<String, dynamic>>? toolCalls,
+    String? toolCallId,
+  }) {
+    return AIMessage(
+      role: role ?? this.role,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
+      reasoningDuration: reasoningDuration ?? this.reasoningDuration,
+      uiThinkingJson: uiThinkingJson ?? this.uiThinkingJson,
+      usagePromptTokens: usagePromptTokens ?? this.usagePromptTokens,
+      usageCompletionTokens:
+          usageCompletionTokens ?? this.usageCompletionTokens,
+      usageTotalTokens: usageTotalTokens ?? this.usageTotalTokens,
+      responseDuration: responseDuration ?? this.responseDuration,
+      apiContent: apiContent ?? this.apiContent,
+      toolCalls: toolCalls ?? this.toolCalls,
+      toolCallId: toolCallId ?? this.toolCallId,
     );
   }
 }

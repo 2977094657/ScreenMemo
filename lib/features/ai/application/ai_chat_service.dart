@@ -73,6 +73,7 @@ class AIChatService {
   final AIRequestGateway _gateway = AIRequestGateway.instance;
   final ChatContextService _chatContext = ChatContextService.instance;
   int _textToolCallSeq = 0;
+  final Map<String, int> _conversationPersistBlockedBeforeMs = <String, int>{};
 
   // Marker protocol is disabled. We accept plain text/JSON and parse as needed.
   static const String responseStartMarker = '';

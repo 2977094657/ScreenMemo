@@ -518,6 +518,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         reasoning_content TEXT,
         reasoning_duration_ms INTEGER,
         ui_thinking_json TEXT,
+        usage_prompt_tokens INTEGER,
+        usage_completion_tokens INTEGER,
+        usage_total_tokens INTEGER,
+        response_duration_ms INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
@@ -612,6 +616,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_prompt_usage_events_conv ON ai_prompt_usage_events(conversation_id, id)',
     );
+    await _createAiToolCallDetailsTable(db);
 
     // Context/compaction diagnostics (lightweight rollout log).
     await db.execute('''
@@ -1141,6 +1146,131 @@ ORDER BY day ASC
     }
   }
 
+  Future<void> _createAiToolCallDetailsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_tool_call_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        assistant_created_at INTEGER NOT NULL,
+        call_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        arguments_json TEXT,
+        result_json TEXT,
+        result_text TEXT,
+        result_summary TEXT,
+        duration_ms INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        UNIQUE(conversation_id, assistant_created_at, call_id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_tool_call_details_lookup ON ai_tool_call_details(conversation_id, assistant_created_at, call_id)',
+    );
+  }
+
+  Future<void> _ensureAiMessageUsageColumns(DatabaseExecutor db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN usage_prompt_tokens INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN usage_completion_tokens INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN usage_total_tokens INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN response_duration_ms INTEGER',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> upsertAiToolCallDetail({
+    required String conversationId,
+    required int assistantCreatedAt,
+    required String callId,
+    required String toolName,
+    String? argumentsJson,
+    String? resultJson,
+    String? resultText,
+    String? resultSummary,
+    int? durationMs,
+    bool clearResult = false,
+  }) async {
+    final String cid = conversationId.trim();
+    final String id = callId.trim();
+    final String name = toolName.trim();
+    if (cid.isEmpty || assistantCreatedAt <= 0 || id.isEmpty || name.isEmpty) {
+      return;
+    }
+    try {
+      final db = await database;
+      await _createAiToolCallDetailsTable(db);
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert('ai_tool_call_details', <String, Object?>{
+        'conversation_id': cid,
+        'assistant_created_at': assistantCreatedAt,
+        'call_id': id,
+        'tool_name': name,
+        if (argumentsJson != null) 'arguments_json': argumentsJson,
+        if (resultJson != null) 'result_json': resultJson,
+        if (resultText != null) 'result_text': resultText,
+        if (resultSummary != null) 'result_summary': resultSummary,
+        if (durationMs != null) 'duration_ms': durationMs,
+        'created_at': now,
+        'updated_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.update(
+        'ai_tool_call_details',
+        <String, Object?>{
+          'tool_name': name,
+          if (argumentsJson != null) 'arguments_json': argumentsJson,
+          if (clearResult || resultJson != null) 'result_json': resultJson,
+          if (clearResult || resultText != null) 'result_text': resultText,
+          if (clearResult || resultSummary != null)
+            'result_summary': resultSummary,
+          if (clearResult || durationMs != null) 'duration_ms': durationMs,
+          'updated_at': now,
+        },
+        where:
+            'conversation_id = ? AND assistant_created_at = ? AND call_id = ?',
+        whereArgs: <Object?>[cid, assistantCreatedAt, id],
+      );
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?> getAiToolCallDetail({
+    required String conversationId,
+    required int assistantCreatedAt,
+    required String callId,
+  }) async {
+    final String cid = conversationId.trim();
+    final String id = callId.trim();
+    if (cid.isEmpty || assistantCreatedAt <= 0 || id.isEmpty) return null;
+    try {
+      final db = await database;
+      await _createAiToolCallDetailsTable(db);
+      final rows = await db.query(
+        'ai_tool_call_details',
+        where:
+            'conversation_id = ? AND assistant_created_at = ? AND call_id = ?',
+        whereArgs: <Object?>[cid, assistantCreatedAt, id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return Map<String, dynamic>.from(rows.first);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Fetch the persisted `ui_thinking_json` for a specific assistant message.
   ///
   /// We identify the message by (conversation_id, role='assistant', created_at)
@@ -1203,6 +1333,10 @@ ORDER BY day ASC
     String? reasoningContent,
     int? reasoningDurationMs,
     String? uiThinkingJson,
+    int? usagePromptTokens,
+    int? usageCompletionTokens,
+    int? usageTotalTokens,
+    int? responseDurationMs,
   }) async {
     try {
       final db = await database;
@@ -1224,6 +1358,12 @@ ORDER BY day ASC
         if (reasoningDurationMs != null)
           'reasoning_duration_ms': reasoningDurationMs,
         if (uiThinkingJson != null) 'ui_thinking_json': uiThinkingJson,
+        if (usagePromptTokens != null) 'usage_prompt_tokens': usagePromptTokens,
+        if (usageCompletionTokens != null)
+          'usage_completion_tokens': usageCompletionTokens,
+        if (usageTotalTokens != null) 'usage_total_tokens': usageTotalTokens,
+        if (responseDurationMs != null)
+          'response_duration_ms': responseDurationMs,
         if (createdAt != null) 'created_at': createdAt,
       });
 
@@ -1283,6 +1423,67 @@ ORDER BY day ASC
             'ai_prompt_usage_events',
             where: 'conversation_id = ?',
             whereArgs: <Object?>[conversationId],
+          );
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  Future<void> truncateAiConversationAfterCreatedAt(
+    String conversationId,
+    int cutoffCreatedAtMs,
+  ) async {
+    final String cid = conversationId.trim();
+    if (cid.isEmpty || cutoffCreatedAtMs <= 0) return;
+    try {
+      final db = await database;
+      await db.transaction((txn) async {
+        try {
+          await txn.delete(
+            'ai_messages',
+            where: 'conversation_id = ? AND created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_messages_full',
+            where: 'conversation_id = ? AND created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_messages_raw',
+            where: 'conversation_id = ? AND created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_context_events',
+            where: 'conversation_id = ? AND created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_prompt_usage_events',
+            where: 'conversation_id = ? AND created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_tool_call_details',
+            where: 'conversation_id = ? AND assistant_created_at >= ?',
+            whereArgs: <Object?>[cid, cutoffCreatedAtMs],
+          );
+        } catch (_) {}
+        try {
+          await txn.execute(
+            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL, last_prompt_breakdown_json = NULL, updated_at = ? WHERE cid = ?',
+            <Object?>[DateTime.now().millisecondsSinceEpoch, cid],
           );
         } catch (_) {}
       });

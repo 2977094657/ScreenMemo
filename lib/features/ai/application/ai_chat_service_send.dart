@@ -4,9 +4,11 @@ class _ToolUiThinkingPersister {
   _ToolUiThinkingPersister({
     required this.cid,
     required this.displayUserMessage,
+    required this.turnCreatedAtMs,
     required this.assistantCreatedAtMs,
     required this.toolsTitle,
     required this.settings,
+    required this.isPersistenceBlocked,
     String? seededUiThinkingJson,
   }) : uiThinkingJson = ((seededUiThinkingJson ?? '').trim().isNotEmpty)
            ? seededUiThinkingJson!.trim()
@@ -14,9 +16,12 @@ class _ToolUiThinkingPersister {
 
   final String cid;
   final String displayUserMessage;
+  final int turnCreatedAtMs;
   final int assistantCreatedAtMs;
   final String toolsTitle;
   final AISettingsService settings;
+  final bool Function({required String cid, required int createdAtMs})
+  isPersistenceBlocked;
 
   String? uiThinkingJson;
 
@@ -25,6 +30,12 @@ class _ToolUiThinkingPersister {
   Future<void> _flushChain = Future<void>.value();
   bool _fallbackInserted = false;
   bool _disposed = false;
+  int _reasoningLength = 0;
+  bool _finished = false;
+  Duration? _finishedReasoningDuration;
+
+  bool get _blocked =>
+      isPersistenceBlocked(cid: cid, createdAtMs: turnCreatedAtMs);
 
   Map<String, dynamic>? _tryDecodePayload(String raw) {
     final String t = raw.trim();
@@ -37,7 +48,26 @@ class _ToolUiThinkingPersister {
   }
 
   void handle(AIStreamEvent event) {
-    if (_disposed) return;
+    if (_disposed || _blocked) return;
+    if (event.kind == 'reasoning') {
+      final String data = event.data;
+      if (data.trim().isEmpty || data.startsWith('- ')) return;
+      final int start = _reasoningLength;
+      _reasoningLength += data.length;
+      _payloads.add(<String, dynamic>{
+        'type': 'reasoning_delta',
+        'reasoning_start': start,
+        'reasoning_len': data.length,
+      });
+      uiThinkingJson = patchUiThinkingJsonWithToolUiEvent(
+        uiThinkingJson,
+        _payloads.last,
+        assistantCreatedAtMs: assistantCreatedAtMs,
+        toolsTitle: toolsTitle,
+      );
+      _scheduleFlush();
+      return;
+    }
     if (event.kind != 'ui') return;
     final Map<String, dynamic>? payload = _tryDecodePayload(event.data);
     if (payload == null) return;
@@ -63,11 +93,28 @@ class _ToolUiThinkingPersister {
     });
   }
 
+  void markFinished({Duration? reasoningDuration}) {
+    if (_blocked) return;
+    _finished = true;
+    if (reasoningDuration != null && reasoningDuration.inMilliseconds > 0) {
+      _finishedReasoningDuration = reasoningDuration;
+    }
+    uiThinkingJson = patchUiThinkingJsonFinish(
+      uiThinkingJson,
+      reasoningDuration: _finishedReasoningDuration,
+    );
+  }
+
   Future<void> flushNow() {
     _debounce?.cancel();
     _debounce = null;
     if (_disposed) return Future<void>.value();
-    if (_payloads.isEmpty) return Future<void>.value();
+    if (_blocked) {
+      _payloads.clear();
+      _finished = false;
+      return Future<void>.value();
+    }
+    if (_payloads.isEmpty && !_finished) return Future<void>.value();
 
     final Future<void> next = _flushChain.then((_) async {
       await _flushOnce();
@@ -79,6 +126,7 @@ class _ToolUiThinkingPersister {
   Future<void> _ensurePlaceholderExists(String uiJson) async {
     final String cidTrim = cid.trim();
     if (cidTrim.isEmpty) return;
+    if (_blocked) return;
     final List<AIMessage> existing = await settings.getChatHistoryByCid(
       cidTrim,
     );
@@ -103,6 +151,10 @@ class _ToolUiThinkingPersister {
         reasoningContent: base.reasoningContent,
         reasoningDuration: base.reasoningDuration,
         uiThinkingJson: uiJson,
+        usagePromptTokens: base.usagePromptTokens,
+        usageCompletionTokens: base.usageCompletionTokens,
+        usageTotalTokens: base.usageTotalTokens,
+        responseDuration: base.responseDuration,
       );
       await settings.saveChatHistoryByCid(cidTrim, out);
       return;
@@ -140,11 +192,19 @@ class _ToolUiThinkingPersister {
   Future<void> _flushOnce() async {
     final String cidTrim = cid.trim();
     if (cidTrim.isEmpty || assistantCreatedAtMs <= 0) return;
+    if (_blocked) {
+      _payloads.clear();
+      _finished = false;
+      return;
+    }
+    final List<Map<String, dynamic>> payloads = List<Map<String, dynamic>>.from(
+      _payloads,
+    );
 
     final String? base = await ScreenshotDatabase.instance
         .getAiAssistantUiThinkingJson(cidTrim, assistantCreatedAtMs);
-    String? next = base;
-    for (final Map<String, dynamic> p in _payloads) {
+    String? next = (base ?? '').trim().isNotEmpty ? base : uiThinkingJson;
+    for (final Map<String, dynamic> p in payloads) {
       next = patchUiThinkingJsonWithToolUiEvent(
         next,
         p,
@@ -152,8 +212,19 @@ class _ToolUiThinkingPersister {
         toolsTitle: toolsTitle,
       );
     }
+    if (_finished) {
+      next = patchUiThinkingJsonFinish(
+        next,
+        reasoningDuration: _finishedReasoningDuration,
+      );
+    }
     final String t = (next ?? '').trim();
     if (t.isEmpty) return;
+    if (_blocked) {
+      _payloads.clear();
+      _finished = false;
+      return;
+    }
 
     int updated = await ScreenshotDatabase.instance
         .updateAiAssistantUiThinkingJson(cidTrim, assistantCreatedAtMs, t);
@@ -169,6 +240,11 @@ class _ToolUiThinkingPersister {
 
     if (updated > 0) {
       uiThinkingJson = t;
+      if (payloads.isNotEmpty) {
+        final int removeCount = payloads.length.clamp(0, _payloads.length);
+        _payloads.removeRange(0, removeCount);
+      }
+      if (_finished) _finished = false;
       settings.notifyChatHistoryChanged(cidTrim);
     }
   }
@@ -183,6 +259,104 @@ class _ToolUiThinkingPersister {
 extension AIChatServiceSendExt on AIChatService {
   static const int _minHistoryReserveTokens = 512;
   static const int _summaryAppsPromptMaxItems = 60;
+
+  void blockConversationPersistenceBefore({
+    required String cid,
+    required int createdAtMs,
+  }) {
+    final String resolvedCid = cid.trim();
+    if (resolvedCid.isEmpty || createdAtMs <= 0) return;
+    final int existing = _conversationPersistBlockedBeforeMs[resolvedCid] ?? 0;
+    if (createdAtMs > existing) {
+      _conversationPersistBlockedBeforeMs[resolvedCid] = createdAtMs;
+    }
+  }
+
+  bool _isConversationPersistenceBlocked({
+    required String cid,
+    required int createdAtMs,
+  }) {
+    final int blockedBefore =
+        _conversationPersistBlockedBeforeMs[cid.trim()] ?? 0;
+    return blockedBefore > 0 && createdAtMs > 0 && createdAtMs <= blockedBefore;
+  }
+
+  bool _isConversationPersistenceBlockedOrStale({
+    required String cid,
+    required int? createdAtMs,
+  }) {
+    final String resolvedCid = cid.trim();
+    final int blockedBefore =
+        _conversationPersistBlockedBeforeMs[resolvedCid] ?? 0;
+    if (blockedBefore <= 0) return false;
+    final int at = createdAtMs ?? 0;
+    return at <= 0 || at <= blockedBefore;
+  }
+
+  String _toolDetailRef(int assistantCreatedAtMs, String callId) {
+    final String id = callId.trim();
+    if (assistantCreatedAtMs <= 0 || id.isEmpty) return id;
+    return '$assistantCreatedAtMs:$id';
+  }
+
+  AIMessage _assistantMessageFromGatewayResult(
+    AIGatewayResult result, {
+    String? uiThinkingJson,
+    Duration? responseDuration,
+  }) {
+    return AIMessage(
+      role: 'assistant',
+      content: result.content,
+      reasoningContent: result.reasoning,
+      reasoningDuration: result.reasoningDuration,
+      uiThinkingJson: (uiThinkingJson ?? '').trim().isEmpty
+          ? null
+          : uiThinkingJson!.trim(),
+      usagePromptTokens: result.usagePromptTokens,
+      usageCompletionTokens: result.usageCompletionTokens,
+      usageTotalTokens: result.usageTotalTokens,
+      responseDuration: responseDuration,
+    );
+  }
+
+  String? _toolMessagesResultJson(List<AIMessage> messages) {
+    if (messages.isEmpty) return null;
+    if (messages.length == 1) {
+      final String content = messages.first.content.trim();
+      if (content.isNotEmpty) {
+        try {
+          final Object? decoded = jsonDecode(content);
+          return jsonEncode(decoded);
+        } catch (_) {}
+      }
+    }
+    try {
+      return jsonEncode(
+        messages
+            .map(
+              (m) => <String, dynamic>{
+                'role': m.role,
+                'content': m.content,
+                if ((m.toolCallId ?? '').trim().isNotEmpty)
+                  'tool_call_id': m.toolCallId!.trim(),
+                if (m.toolCalls != null && m.toolCalls!.isNotEmpty)
+                  'tool_calls': m.toolCalls,
+              },
+            )
+            .toList(growable: false),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _toolMessagesResultText(List<AIMessage> messages) {
+    final String text = messages
+        .map((m) => m.content.trim())
+        .where((e) => e.isNotEmpty)
+        .join('\n\n');
+    return text.trim().isEmpty ? null : text;
+  }
 
   int _approxMsgTokens(String role, String content) {
     return PromptBudget.approxTokensForMessageJson(
@@ -329,6 +503,7 @@ extension AIChatServiceSendExt on AIChatService {
 
   void _recordPromptUsageForCall({
     required String cid,
+    required int? userCreatedAtMs,
     required String model,
     required int promptEstBefore,
     required int promptEstSent,
@@ -342,6 +517,12 @@ extension AIChatServiceSendExt on AIChatService {
   }) {
     final String resolvedCid = cid.trim();
     if (resolvedCid.isEmpty) return;
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: resolvedCid,
+      createdAtMs: userCreatedAtMs,
+    )) {
+      return;
+    }
 
     final int snapshotPrompt = result.usagePromptTokens ?? promptEstSent;
     final String mergedBreakdown = _mergePromptUsageIntoBreakdownJson(
@@ -356,6 +537,12 @@ extension AIChatServiceSendExt on AIChatService {
     );
 
     unawaited(() async {
+      if (_isConversationPersistenceBlockedOrStale(
+        cid: resolvedCid,
+        createdAtMs: userCreatedAtMs,
+      )) {
+        return;
+      }
       try {
         await _chatContext.recordPromptTokens(
           cid: resolvedCid,
@@ -365,6 +552,12 @@ extension AIChatServiceSendExt on AIChatService {
               : mergedBreakdown,
         );
       } catch (_) {}
+      if (_isConversationPersistenceBlockedOrStale(
+        cid: resolvedCid,
+        createdAtMs: userCreatedAtMs,
+      )) {
+        return;
+      }
       try {
         await _chatContext.recordPromptUsageEvent(
           cid: resolvedCid,
@@ -1206,7 +1399,17 @@ extension AIChatServiceSendExt on AIChatService {
     final int promptEstSent = PromptBudget.approxTokensForMessagesJson(
       requestMessages,
     );
+    final int turnCreatedAtMs = requestMessages.isNotEmpty
+        ? requestMessages.last.createdAt.millisecondsSinceEpoch
+        : 0;
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: cid,
+      createdAtMs: turnCreatedAtMs,
+    )) {
+      throw StateError('Request was superseded by retry.');
+    }
 
+    final Stopwatch responseSw = Stopwatch()..start();
     final AIGatewayResult result = await _gateway.complete(
       endpoints: endpoints,
       messages: requestMessages,
@@ -1215,9 +1418,11 @@ extension AIChatServiceSendExt on AIChatService {
       preferStreaming: true,
       logContext: 'chat',
     );
+    responseSw.stop();
 
     _recordPromptUsageForCall(
       cid: cid,
+      userCreatedAtMs: turnCreatedAtMs,
       model: modelForPrompt,
       promptEstBefore: promptEstBefore,
       promptEstSent: promptEstSent,
@@ -1230,11 +1435,9 @@ extension AIChatServiceSendExt on AIChatService {
       breakdownJson: promptBreakdownJson,
     );
 
-    final AIMessage assistant = AIMessage(
-      role: 'assistant',
-      content: result.content,
-      reasoningContent: result.reasoning,
-      reasoningDuration: result.reasoningDuration,
+    final AIMessage assistant = _assistantMessageFromGatewayResult(
+      result,
+      responseDuration: responseSw.elapsed,
     );
 
     // Do not block UI / streaming completion on history persistence.
@@ -1245,6 +1448,7 @@ extension AIChatServiceSendExt on AIChatService {
           cid: cid,
           history: history,
           userMessage: userMessage,
+          userCreatedAtMs: turnCreatedAtMs,
           assistant: assistant,
           modelUsed: result.modelUsed,
           toolSignatureDigests: const <String, Map<String, dynamic>>{},
@@ -1261,6 +1465,7 @@ extension AIChatServiceSendExt on AIChatService {
     Duration? timeout,
     String context = 'chat',
     String? conversationCid,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
   }) async {
     try {
       await FlutterLogger.nativeInfo(
@@ -1288,6 +1493,7 @@ extension AIChatServiceSendExt on AIChatService {
       includeHistory: true,
       persistHistory: true,
       extraSystemMessages: const <String>[],
+      reasoningLevel: reasoningLevel,
     );
   }
 
@@ -1311,6 +1517,8 @@ extension AIChatServiceSendExt on AIChatService {
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
+    int? uiUserCreatedAtMs,
     int? uiAssistantCreatedAtMs,
   }) async {
     if (tools.isNotEmpty) {
@@ -1336,9 +1544,11 @@ extension AIChatServiceSendExt on AIChatService {
           ? _ToolUiThinkingPersister(
               cid: cid,
               displayUserMessage: displayUserMessage,
+              turnCreatedAtMs: uiUserCreatedAtMs ?? assistantCreatedAtMs,
               assistantCreatedAtMs: assistantCreatedAtMs,
               toolsTitle: _loc('工具调用', 'Tools'),
               settings: _settings,
+              isPersistenceBlocked: _isConversationPersistenceBlocked,
               seededUiThinkingJson: seededUi,
             )
           : null;
@@ -1382,13 +1592,19 @@ extension AIChatServiceSendExt on AIChatService {
             toolStartMs: toolStartMs,
             toolEndMs: toolEndMs,
             forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
+            reasoningLevel: reasoningLevel,
             emitEvent: emitSafe,
+            uiUserCreatedAtMs: uiUserCreatedAtMs,
+            uiAssistantCreatedAtMs: uiAssistantCreatedAtMs,
             uiThinkingJsonProvider: () => timelinePersister?.uiThinkingJson,
           );
       // ignore: discarded_futures
       completed
           .then((AIMessage message) {
             if (timelinePersister != null) {
+              timelinePersister.markFinished(
+                reasoningDuration: message.reasoningDuration,
+              );
               unawaited(
                 timelinePersister.flushNow().whenComplete(
                   () => timelinePersister.dispose(),
@@ -1408,6 +1624,7 @@ extension AIChatServiceSendExt on AIChatService {
           })
           .catchError((Object error, StackTrace stackTrace) {
             if (timelinePersister != null) {
+              timelinePersister.markFinished();
               unawaited(
                 timelinePersister.flushNow().whenComplete(
                   () => timelinePersister.dispose(),
@@ -1493,6 +1710,8 @@ extension AIChatServiceSendExt on AIChatService {
       persistHistory: persistHistory,
       persistHistoryTail: persistHistoryTail,
       extraSystemMessages: extraSystemMessages,
+      reasoningLevel: reasoningLevel,
+      uiUserCreatedAtMs: uiUserCreatedAtMs,
     );
     if (trackDailyPerf) {
       DynamicEntryPerfService.instance.mark(
@@ -1516,6 +1735,8 @@ extension AIChatServiceSendExt on AIChatService {
     bool persistHistory = true,
     bool persistHistoryTail = true,
     List<String> extraSystemMessages = const <String>[],
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
+    int? uiUserCreatedAtMs,
   }) async {
     final String cid = conversationCid.trim();
     final String modelForBudget = endpoints.isNotEmpty
@@ -1792,23 +2013,38 @@ extension AIChatServiceSendExt on AIChatService {
       } catch (_) {}
     }
 
+    final Stopwatch responseSw = Stopwatch()..start();
     final AIGatewayStreamingSession gatewaySession = _gateway.startStreaming(
       endpoints: endpoints,
       messages: requestMessages,
       responseStartMarker: AIChatService.responseStartMarker,
       timeout: timeout,
       logContext: context,
+      reasoningLevel: reasoningLevel,
     );
 
     final Stream<AIStreamEvent> stream = gatewaySession.stream.map(
       (AIGatewayEvent event) => AIStreamEvent(event.kind, event.data),
     );
+    final int turnCreatedAtMs = (uiUserCreatedAtMs ?? 0) > 0
+        ? uiUserCreatedAtMs!
+        : (requestMessages.isNotEmpty
+              ? requestMessages.last.createdAt.millisecondsSinceEpoch
+              : 0);
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: cid,
+      createdAtMs: turnCreatedAtMs,
+    )) {
+      throw StateError('Request was superseded by retry.');
+    }
     final Future<AIMessage> completed = gatewaySession.completed.then((
       AIGatewayResult result,
     ) async {
+      responseSw.stop();
       if (context == 'chat' && persistHistory) {
         _recordPromptUsageForCall(
           cid: cid,
+          userCreatedAtMs: turnCreatedAtMs,
           model: modelForPrompt,
           promptEstBefore: promptEstBefore,
           promptEstSent: PromptBudget.approxTokensForMessagesJson(
@@ -1824,11 +2060,9 @@ extension AIChatServiceSendExt on AIChatService {
         );
       }
 
-      final AIMessage assistant = AIMessage(
-        role: 'assistant',
-        content: result.content,
-        reasoningContent: result.reasoning,
-        reasoningDuration: result.reasoningDuration,
+      final AIMessage assistant = _assistantMessageFromGatewayResult(
+        result,
+        responseDuration: responseSw.elapsed,
       );
 
       if (persistHistory) {
@@ -1839,6 +2073,7 @@ extension AIChatServiceSendExt on AIChatService {
               cid: cid,
               history: history,
               userMessage: displayUserMessage,
+              userCreatedAtMs: turnCreatedAtMs,
               assistant: assistant,
               modelUsed: result.modelUsed,
               toolSignatureDigests: const <String, Map<String, dynamic>>{},
@@ -1872,26 +2107,83 @@ extension AIChatServiceSendExt on AIChatService {
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     void Function(AIStreamEvent event)? emitEvent,
+    int? uiUserCreatedAtMs,
+    int? uiAssistantCreatedAtMs,
   }) async {
-    return _sendMessageWithDisplayOverrideInternal(
-      displayUserMessage,
-      actualUserMessage,
-      timeout: timeout,
-      includeHistory: includeHistory,
-      extraSystemMessages: extraSystemMessages,
-      tools: tools,
-      toolChoice: toolChoice,
-      maxToolIters: maxToolIters,
-      persistHistory: persistHistory,
-      persistHistoryTail: persistHistoryTail,
-      context: context,
-      conversationCid: conversationCid,
-      toolStartMs: toolStartMs,
-      toolEndMs: toolEndMs,
-      forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
-      emitEvent: emitEvent,
-    );
+    String? effectiveConversationCid = conversationCid;
+    _ToolUiThinkingPersister? timelinePersister;
+    if (tools.isNotEmpty) {
+      final String cid = (conversationCid ?? '').trim().isNotEmpty
+          ? conversationCid!.trim()
+          : (await _settings.getActiveConversationCid()).trim();
+      if (cid.isNotEmpty) effectiveConversationCid = cid;
+
+      final int assistantCreatedAtMs = uiAssistantCreatedAtMs ?? 0;
+      final bool enableTimelinePersist =
+          persistHistory &&
+          persistHistoryTail &&
+          cid.isNotEmpty &&
+          assistantCreatedAtMs > 0;
+      if (enableTimelinePersist) {
+        String? seededUi;
+        try {
+          seededUi = await ScreenshotDatabase.instance
+              .getAiAssistantUiThinkingJson(cid, assistantCreatedAtMs);
+        } catch (_) {
+          seededUi = null;
+        }
+        timelinePersister = _ToolUiThinkingPersister(
+          cid: cid,
+          displayUserMessage: displayUserMessage,
+          turnCreatedAtMs: uiUserCreatedAtMs ?? assistantCreatedAtMs,
+          assistantCreatedAtMs: assistantCreatedAtMs,
+          toolsTitle: _loc('工具调用', 'Tools'),
+          settings: _settings,
+          isPersistenceBlocked: _isConversationPersistenceBlocked,
+          seededUiThinkingJson: seededUi,
+        );
+      }
+    }
+
+    void emitWithTimeline(AIStreamEvent event) {
+      timelinePersister?.handle(event);
+      emitEvent?.call(event);
+    }
+
+    try {
+      return await _sendMessageWithDisplayOverrideInternal(
+        displayUserMessage,
+        actualUserMessage,
+        timeout: timeout,
+        includeHistory: includeHistory,
+        extraSystemMessages: extraSystemMessages,
+        tools: tools,
+        toolChoice: toolChoice,
+        maxToolIters: maxToolIters,
+        persistHistory: persistHistory,
+        persistHistoryTail: persistHistoryTail,
+        context: context,
+        conversationCid: effectiveConversationCid,
+        toolStartMs: toolStartMs,
+        toolEndMs: toolEndMs,
+        forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
+        reasoningLevel: reasoningLevel,
+        emitEvent: timelinePersister == null ? emitEvent : emitWithTimeline,
+        uiUserCreatedAtMs: uiUserCreatedAtMs,
+        uiAssistantCreatedAtMs: uiAssistantCreatedAtMs,
+        uiThinkingJsonProvider: () => timelinePersister?.uiThinkingJson,
+      );
+    } finally {
+      if (timelinePersister != null) {
+        try {
+          timelinePersister.markFinished();
+          await timelinePersister.flushNow();
+        } catch (_) {}
+        timelinePersister.dispose();
+      }
+    }
   }
 
   Future<AIMessage> _sendMessageWithDisplayOverrideInternal(
@@ -1911,12 +2203,16 @@ extension AIChatServiceSendExt on AIChatService {
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     void Function(AIStreamEvent event)? emitEvent,
+    int? uiUserCreatedAtMs,
+    int? uiAssistantCreatedAtMs,
     String? Function()? uiThinkingJsonProvider,
   }) async {
     if (tools.isNotEmpty) {
       _emitProgress(emitEvent, _loc('准备 agent loop…', 'Preparing agent loop…'));
     }
+    final Stopwatch responseSw = Stopwatch()..start();
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
@@ -2215,6 +2511,15 @@ extension AIChatServiceSendExt on AIChatService {
     final AIMessage pinnedUserMessage = requestMessages.isNotEmpty
         ? requestMessages.last
         : AIMessage(role: 'user', content: actualUserMessage);
+    final int pinnedUserCreatedAtMs = ((uiUserCreatedAtMs ?? 0) > 0)
+        ? uiUserCreatedAtMs!
+        : pinnedUserMessage.createdAt.millisecondsSinceEpoch;
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: cid,
+      createdAtMs: pinnedUserCreatedAtMs,
+    )) {
+      throw StateError('Request was superseded by retry.');
+    }
     final List<AIMessage> rawTurnTranscript = <AIMessage>[];
     final Set<String> toolNames = _extractToolNames(tools);
     final bool hasRetrievalTools =
@@ -2232,6 +2537,12 @@ extension AIChatServiceSendExt on AIChatService {
       int? forcedPromptEstBefore,
       String? forcedBreakdownJson,
     }) async {
+      if (_isConversationPersistenceBlockedOrStale(
+        cid: cid,
+        createdAtMs: pinnedUserCreatedAtMs,
+      )) {
+        throw StateError('Request was superseded by retry.');
+      }
       final int beforeEst =
           forcedPromptEstBefore ??
           (_approxToolSchemaTokens(toolsForCall) +
@@ -2281,15 +2592,23 @@ extension AIChatServiceSendExt on AIChatService {
           logContext: context,
           tools: toolsForCall,
           toolChoice: toolChoiceForCall,
+          reasoningLevel: reasoningLevel,
         );
         final Future<AIGatewayResult> completed = session.completed;
         await for (final AIGatewayEvent e in session.stream) {
           emitEvent(AIStreamEvent(e.kind, e.data));
         }
         final AIGatewayResult result = await completed;
+        if (_isConversationPersistenceBlockedOrStale(
+          cid: cid,
+          createdAtMs: pinnedUserCreatedAtMs,
+        )) {
+          throw StateError('Request was superseded by retry.');
+        }
         if (context == 'chat' && persistHistory) {
           _recordPromptUsageForCall(
             cid: cid,
+            userCreatedAtMs: pinnedUserCreatedAtMs,
             model: modelForPrompt,
             promptEstBefore: beforeEst,
             promptEstSent: sentEst,
@@ -2313,10 +2632,18 @@ extension AIChatServiceSendExt on AIChatService {
         logContext: context,
         tools: toolsForCall,
         toolChoice: toolChoiceForCall,
+        reasoningLevel: reasoningLevel,
       );
+      if (_isConversationPersistenceBlockedOrStale(
+        cid: cid,
+        createdAtMs: pinnedUserCreatedAtMs,
+      )) {
+        throw StateError('Request was superseded by retry.');
+      }
       if (context == 'chat' && persistHistory) {
         _recordPromptUsageForCall(
           cid: cid,
+          userCreatedAtMs: pinnedUserCreatedAtMs,
           model: modelForPrompt,
           promptEstBefore: beforeEst,
           promptEstSent: sentEst,
@@ -2602,10 +2929,40 @@ extension AIChatServiceSendExt on AIChatService {
               final List<String> appPkgs = await _resolveAppPackagesFromArgs(
                 args,
               );
+              final String detailRef = _toolDetailRef(
+                uiAssistantCreatedAtMs ?? 0,
+                c.id,
+              );
+              if (cid.isNotEmpty &&
+                  (uiAssistantCreatedAtMs ?? 0) > 0 &&
+                  c.id.trim().isNotEmpty &&
+                  !_isConversationPersistenceBlockedOrStale(
+                    cid: cid,
+                    createdAtMs: pinnedUserCreatedAtMs,
+                  )) {
+                final int assistantAt = uiAssistantCreatedAtMs!;
+                unawaited(() async {
+                  if (_isConversationPersistenceBlockedOrStale(
+                    cid: cid,
+                    createdAtMs: pinnedUserCreatedAtMs,
+                  )) {
+                    return;
+                  }
+                  await ScreenshotDatabase.instance.upsertAiToolCallDetail(
+                    conversationId: cid,
+                    assistantCreatedAt: assistantAt,
+                    callId: c.id,
+                    toolName: c.name,
+                    argumentsJson: c.argumentsJson,
+                    clearResult: true,
+                  );
+                }());
+              }
               return <String, dynamic>{
                 'call_id': c.id,
                 'tool_name': c.name,
                 'label': _toolCallUiLabel(c),
+                if (detailRef.isNotEmpty) 'detail_ref': detailRef,
                 if (appNames.isNotEmpty) 'app_names': appNames,
                 if (appPkgs.isNotEmpty) 'app_package_names': appPkgs,
               };
@@ -2641,13 +2998,20 @@ extension AIChatServiceSendExt on AIChatService {
 
         final String signature = _toolCallSignature(call);
 
+        if (_isConversationPersistenceBlockedOrStale(
+          cid: cid,
+          createdAtMs: pinnedUserCreatedAtMs,
+        )) {
+          throw StateError('Request was superseded by retry.');
+        }
         final Stopwatch toolSw = Stopwatch()..start();
+        final List<AIMessage> rawToolMsgs = await _executeToolCall(
+          call,
+          toolStartMs: toolStartMs,
+          toolEndMs: toolEndMs,
+        );
         final List<AIMessage> toolMsgs = _compactToolMessagesForPrompt(
-          await _executeToolCall(
-            call,
-            toolStartMs: toolStartMs,
-            toolEndMs: toolEndMs,
-          ),
+          rawToolMsgs,
           maxToolMessageTokens: dynamicToolMessageTokens,
           cid: cid,
           stage: 'tool_result_compact',
@@ -2679,6 +3043,34 @@ extension AIChatServiceSendExt on AIChatService {
           }
         }
         final String toolSummary = _summarizeToolMessages(toolMsgs);
+        if (cid.isNotEmpty &&
+            (uiAssistantCreatedAtMs ?? 0) > 0 &&
+            call.id.trim().isNotEmpty &&
+            !_isConversationPersistenceBlockedOrStale(
+              cid: cid,
+              createdAtMs: pinnedUserCreatedAtMs,
+            )) {
+          final int assistantAt = uiAssistantCreatedAtMs!;
+          unawaited(() async {
+            if (_isConversationPersistenceBlockedOrStale(
+              cid: cid,
+              createdAtMs: pinnedUserCreatedAtMs,
+            )) {
+              return;
+            }
+            await ScreenshotDatabase.instance.upsertAiToolCallDetail(
+              conversationId: cid,
+              assistantCreatedAt: assistantAt,
+              callId: call.id,
+              toolName: call.name,
+              argumentsJson: call.argumentsJson,
+              resultJson: _toolMessagesResultJson(rawToolMsgs),
+              resultText: _toolMessagesResultText(rawToolMsgs),
+              resultSummary: toolSummary,
+              durationMs: toolSw.elapsedMilliseconds,
+            );
+          }());
+        }
         final String summarySuffix = toolSummary.isEmpty
             ? ''
             : ' ($toolSummary)';
@@ -2695,6 +3087,7 @@ extension AIChatServiceSendExt on AIChatService {
           'tool_name': call.name,
           'result_summary': toolSummary,
           'duration_ms': toolSw.elapsedMilliseconds,
+          'detail_ref': _toolDetailRef(uiAssistantCreatedAtMs ?? 0, call.id),
         });
       }
 
@@ -3071,23 +3464,33 @@ extension AIChatServiceSendExt on AIChatService {
     }
 
     String? uiJson = uiThinkingJsonProvider?.call();
-    uiJson = (uiJson ?? '').trim().isNotEmpty ? uiJson!.trim() : null;
-    final AIMessage assistant = AIMessage(
-      role: 'assistant',
-      content: result.content,
-      reasoningContent: result.reasoning,
+    uiJson = patchUiThinkingJsonFinish(
+      uiJson,
       reasoningDuration: result.reasoningDuration,
+    );
+    uiJson = (uiJson ?? '').trim().isNotEmpty ? uiJson!.trim() : null;
+    responseSw.stop();
+    final AIMessage assistant = _assistantMessageFromGatewayResult(
+      result,
       uiThinkingJson: uiJson,
+      responseDuration: responseSw.elapsed,
     );
 
     if (persistHistory) {
       // Persist best-effort without blocking the tool-loop completion (stream UI depends on it).
       unawaited(() async {
         try {
+          if (_isConversationPersistenceBlockedOrStale(
+            cid: cid,
+            createdAtMs: pinnedUserCreatedAtMs,
+          )) {
+            return;
+          }
           await _persistConversation(
             cid: cid,
             history: history,
             userMessage: displayUserMessage,
+            userCreatedAtMs: pinnedUserCreatedAtMs,
             assistant: assistant,
             modelUsed: result.modelUsed,
             conversationTitle: displayUserMessage,
@@ -3106,6 +3509,7 @@ extension AIChatServiceSendExt on AIChatService {
     String userMessage, {
     String context = 'chat',
     Duration? timeout,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
   }) async {
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
@@ -3120,6 +3524,7 @@ extension AIChatServiceSendExt on AIChatService {
       includeHistory: false,
     );
 
+    final Stopwatch responseSw = Stopwatch()..start();
     final AIGatewayResult result = await _gateway.complete(
       endpoints: endpoints,
       messages: requestMessages,
@@ -3127,13 +3532,13 @@ extension AIChatServiceSendExt on AIChatService {
       timeout: timeout,
       preferStreaming: true,
       logContext: context,
+      reasoningLevel: reasoningLevel,
     );
+    responseSw.stop();
 
-    return AIMessage(
-      role: 'assistant',
-      content: result.content,
-      reasoningContent: result.reasoning,
-      reasoningDuration: result.reasoningDuration,
+    return _assistantMessageFromGatewayResult(
+      result,
+      responseDuration: responseSw.elapsed,
     );
   }
 

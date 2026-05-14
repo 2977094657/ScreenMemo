@@ -116,6 +116,24 @@ class AIRequestGateway {
 
   bool _shouldCooldown(String errorType) => errorType == 'retryable';
 
+  bool _looksLikeUnsupportedReasoningParam(Object? error) {
+    if (error == null) return false;
+    final String t = error.toString().toLowerCase();
+    if (!(t.contains('reasoning') ||
+        t.contains('reasoning_effort') ||
+        t.contains('thinking') ||
+        t.contains('thinking_budget') ||
+        t.contains('enable_thinking'))) {
+      return false;
+    }
+    return t.contains('unknown parameter') ||
+        t.contains('unsupported parameter') ||
+        t.contains('unrecognized') ||
+        t.contains('invalid_request_error') ||
+        t.contains('extra inputs are not permitted') ||
+        t.contains('not support');
+  }
+
   Future<void> _markEndpointSuccess(AIEndpoint endpoint) async {
     unawaited(
       AppHealthService.instance.recordApiSuccess(
@@ -230,6 +248,7 @@ class AIRequestGateway {
     String? logContext,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     bool forceChatCompletions = false,
     bool trackKeyStats = true,
   }) async {
@@ -255,6 +274,7 @@ class AIRequestGateway {
             stream: true,
             tools: tools,
             toolChoice: toolChoice,
+            reasoningLevel: reasoningLevel,
             useResponsesApiOverride: forceChatCompletions ? false : null,
           );
           final _GatewayAggregate aggregate = await _performStreaming(
@@ -311,23 +331,45 @@ class AIRequestGateway {
 
       _PreparedRequest? prepared;
       try {
-        prepared = _prepareRequest(
-          endpoint: effectiveEndpoint,
-          messages: messages,
-          stream: false,
-          tools: tools,
-          toolChoice: toolChoice,
-          useResponsesApiOverride: forceChatCompletions ? false : null,
-        );
-        final _GatewayAggregate aggregate = await _performNonStreaming(
-          endpoint: effectiveEndpoint,
-          prepared: prepared,
-          responseStartMarker: responseStartMarker,
-          timeout: timeout,
-          logContext: logContext,
-          imagesCount: imagesCount,
-          toolsCount: toolsCount,
-        );
+        Future<_GatewayAggregate> performWithLevel(
+          AIReasoningLevel level,
+        ) async {
+          prepared = _prepareRequest(
+            endpoint: effectiveEndpoint,
+            messages: messages,
+            stream: false,
+            tools: tools,
+            toolChoice: toolChoice,
+            reasoningLevel: level,
+            useResponsesApiOverride: forceChatCompletions ? false : null,
+          );
+          return _performNonStreaming(
+            endpoint: effectiveEndpoint,
+            prepared: prepared!,
+            responseStartMarker: responseStartMarker,
+            timeout: timeout,
+            logContext: logContext,
+            imagesCount: imagesCount,
+            toolsCount: toolsCount,
+          );
+        }
+
+        _GatewayAggregate aggregate;
+        try {
+          aggregate = await performWithLevel(reasoningLevel);
+        } catch (err) {
+          if (reasoningLevel == AIReasoningLevel.auto ||
+              !_looksLikeUnsupportedReasoningParam(err)) {
+            rethrow;
+          }
+          try {
+            await FlutterLogger.nativeWarn(
+              'AI',
+              '[网关] reasoning 参数不兼容，移除后重试（${endpoint.baseUrl}）：$err',
+            );
+          } catch (_) {}
+          aggregate = await performWithLevel(AIReasoningLevel.auto);
+        }
         if (trackKeyStats) await _markEndpointSuccess(endpoint);
         return AIGatewayResult(
           content: aggregate.content,
@@ -370,8 +412,9 @@ class AIRequestGateway {
         // in the Responses API response DTOs, and crash when OpenAI returns an object
         // tool_choice (e.g. forced function calling). In that case, retry once using
         // Chat Completions to avoid the relay's Responses parsing path.
-        if (prepared != null &&
-            prepared.useResponsesApi &&
+        final _PreparedRequest? failedPrepared = prepared;
+        if (failedPrepared != null &&
+            failedPrepared.useResponsesApi &&
             _looksLikeGoToolChoiceUnmarshalError(lastError)) {
           try {
             await FlutterLogger.nativeWarn(
@@ -389,6 +432,7 @@ class AIRequestGateway {
               stream: false,
               tools: tools,
               toolChoice: toolChoice,
+              reasoningLevel: reasoningLevel,
               useResponsesApiOverride: false,
             );
             final _GatewayAggregate aggregate = await _performNonStreaming(
@@ -446,6 +490,7 @@ class AIRequestGateway {
                 stream: false,
                 tools: tools,
                 toolChoice: flattenedToolChoice,
+                reasoningLevel: reasoningLevel,
                 useResponsesApiOverride: false,
               );
               final _GatewayAggregate aggregate = await _performNonStreaming(
@@ -489,6 +534,7 @@ class AIRequestGateway {
     String? logContext,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     bool forceChatCompletions = false,
     bool trackKeyStats = true,
   }) {
@@ -536,6 +582,7 @@ class AIRequestGateway {
             stream: true,
             tools: tools,
             toolChoice: toolChoice,
+            reasoningLevel: reasoningLevel,
             useResponsesApiOverride: forceChatCompletions ? false : null,
           );
 
@@ -618,6 +665,7 @@ class AIRequestGateway {
               stream: false,
               tools: tools,
               toolChoice: toolChoice,
+              reasoningLevel: reasoningLevel,
             );
             final _GatewayAggregate aggregate = await _performNonStreaming(
               endpoint: endpoint,
@@ -712,6 +760,7 @@ class AIRequestGateway {
     required bool stream,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     bool? useResponsesApiOverride,
   }) {
     final String trimmedBase = endpoint.baseUrl.trim();
@@ -734,7 +783,11 @@ class AIRequestGateway {
           queryParameters: const <String, String>{'alt': 'sse'},
         );
       }
-      final Map<String, dynamic> payload = _buildGooglePayload(messages);
+      final Map<String, dynamic> payload = _buildGooglePayload(
+        endpoint: endpoint,
+        messages: messages,
+        reasoningLevel: reasoningLevel,
+      );
       final Map<String, String> headers = <String, String>{
         'Content-Type': 'application/json',
         'x-goog-api-key': apiKey,
@@ -767,6 +820,7 @@ class AIRequestGateway {
             stream: stream,
             tools: tools,
             toolChoice: toolChoice,
+            reasoningLevel: reasoningLevel,
           )
         : _buildChatCompletionsPayload(
             endpoint: endpoint,
@@ -774,6 +828,7 @@ class AIRequestGateway {
             stream: stream,
             tools: tools,
             toolChoice: toolChoice,
+            reasoningLevel: reasoningLevel,
           );
     final Map<String, String> headers = <String, String>{
       'Content-Type': 'application/json',
@@ -826,7 +881,11 @@ class AIRequestGateway {
     );
   }
 
-  Map<String, dynamic> _buildGooglePayload(List<AIMessage> messages) {
+  Map<String, dynamic> _buildGooglePayload({
+    required AIEndpoint endpoint,
+    required List<AIMessage> messages,
+    required AIReasoningLevel reasoningLevel,
+  }) {
     final List<Map<String, dynamic>> contents = <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> systemParts = <Map<String, dynamic>>[];
     for (final AIMessage m in messages) {
@@ -930,6 +989,11 @@ class AIRequestGateway {
     if (systemParts.isNotEmpty) {
       payload['system_instruction'] = <String, dynamic>{'parts': systemParts};
     }
+    _applyGoogleReasoningPayload(
+      payload,
+      endpoint: endpoint,
+      level: reasoningLevel,
+    );
     return payload;
   }
 
@@ -939,18 +1003,27 @@ class AIRequestGateway {
     required bool stream,
     required List<Map<String, dynamic>> tools,
     required Object? toolChoice,
+    required AIReasoningLevel reasoningLevel,
   }) {
     final Map<String, dynamic> payload = <String, dynamic>{
       'model': endpoint.model,
       'messages': messages.map((AIMessage m) => m.toJson()).toList(),
       'stream': stream,
     };
+    if (stream) {
+      payload['stream_options'] = <String, dynamic>{'include_usage': true};
+    }
     if (tools.isNotEmpty) {
       payload['tools'] = tools;
       if (toolChoice != null) {
         payload['tool_choice'] = toolChoice;
       }
     }
+    _applyChatCompletionsReasoningPayload(
+      payload,
+      endpoint: endpoint,
+      level: reasoningLevel,
+    );
     return payload;
   }
 
@@ -960,12 +1033,18 @@ class AIRequestGateway {
     required bool stream,
     required List<Map<String, dynamic>> tools,
     required Object? toolChoice,
+    required AIReasoningLevel reasoningLevel,
   }) {
     final Map<String, dynamic> payload = <String, dynamic>{
       'model': endpoint.model,
       'input': _buildResponsesInputItems(messages),
       'stream': stream,
     };
+    _applyResponsesReasoningPayload(
+      payload,
+      endpoint: endpoint,
+      level: reasoningLevel,
+    );
     if (tools.isNotEmpty) {
       payload['tools'] = _normalizeResponsesTools(tools);
       final Object? normalizedToolChoice = _normalizeResponsesToolChoice(
@@ -1189,6 +1268,181 @@ class AIRequestGateway {
       });
     }
     return out;
+  }
+
+  String _hostKeyForReasoning(AIEndpoint endpoint) {
+    final Uri uri = _resolveBaseUri(endpoint.baseUrl.trim());
+    String host = uri.host.toLowerCase();
+    if (host.startsWith('www.')) host = host.substring(4);
+    return host;
+  }
+
+  bool _modelLooksReasoningCapable(AIEndpoint endpoint) {
+    final String model = endpoint.model.toLowerCase();
+    return model.startsWith('o') ||
+        model.contains('gpt-5') ||
+        model.contains('gpt-4.1') ||
+        model.contains('reason') ||
+        model.contains('thinking') ||
+        model.contains('deepseek-r') ||
+        model.contains('qwen3') ||
+        model.contains('qwq') ||
+        model.contains('gemini-2.5') ||
+        model.contains('gemini-3');
+  }
+
+  String _openAiChatReasoningEffort(AIReasoningLevel level) {
+    // Chat Completions 官方 reasoning_effort 不支持 none/auto/xhigh；
+    // off 只能尽量降到 low，xhigh 则按 high 发送。
+    switch (level) {
+      case AIReasoningLevel.low:
+        return 'low';
+      case AIReasoningLevel.medium:
+        return 'medium';
+      case AIReasoningLevel.high:
+      case AIReasoningLevel.xhigh:
+        return 'high';
+      case AIReasoningLevel.off:
+      case AIReasoningLevel.auto:
+        return 'low';
+    }
+  }
+
+  String _responsesReasoningEffort(AIReasoningLevel level) {
+    switch (level) {
+      case AIReasoningLevel.off:
+        return 'none';
+      case AIReasoningLevel.low:
+        return 'low';
+      case AIReasoningLevel.medium:
+        return 'medium';
+      case AIReasoningLevel.high:
+        return 'high';
+      case AIReasoningLevel.xhigh:
+        return 'xhigh';
+      case AIReasoningLevel.auto:
+        return 'auto';
+    }
+  }
+
+  void _applyChatCompletionsReasoningPayload(
+    Map<String, dynamic> payload, {
+    required AIEndpoint endpoint,
+    required AIReasoningLevel level,
+  }) {
+    if (level == AIReasoningLevel.auto) return;
+    if (!_modelLooksReasoningCapable(endpoint)) return;
+
+    final String host = _hostKeyForReasoning(endpoint);
+    if (host.contains('openrouter.ai')) {
+      payload['reasoning'] = <String, dynamic>{
+        if (level == AIReasoningLevel.off)
+          'effort': 'none'
+        else
+          'effort': level.effort,
+      };
+      return;
+    }
+
+    if (host.contains('dashscope.aliyuncs.com')) {
+      payload['enable_thinking'] = level.isEnabled;
+      if (level != AIReasoningLevel.auto) {
+        payload['thinking_budget'] = level.budgetTokens;
+      }
+      return;
+    }
+
+    if (host.contains('ark.cn-beijing.volces.com') ||
+        host.contains('api.moonshot.cn')) {
+      payload['thinking'] = <String, dynamic>{
+        'type': level.isEnabled ? 'enabled' : 'disabled',
+      };
+      return;
+    }
+
+    if (host.contains('api.deepseek.com')) {
+      payload['thinking'] = <String, dynamic>{
+        'type': level.isEnabled ? 'enabled' : 'disabled',
+      };
+      if (level.isEnabled) {
+        payload['reasoning_effort'] = _openAiChatReasoningEffort(level);
+      }
+      return;
+    }
+
+    if (host.contains('api.mistral.ai')) return;
+
+    payload['reasoning_effort'] = _openAiChatReasoningEffort(level);
+  }
+
+  void _applyResponsesReasoningPayload(
+    Map<String, dynamic> payload, {
+    required AIEndpoint endpoint,
+    required AIReasoningLevel level,
+  }) {
+    if (level == AIReasoningLevel.auto) return;
+    if (!_modelLooksReasoningCapable(endpoint)) return;
+    payload['reasoning'] = <String, dynamic>{
+      'summary': 'auto',
+      'effort': _responsesReasoningEffort(level),
+    };
+    payload['include'] = <String>['reasoning.encrypted_content'];
+  }
+
+  void _applyGoogleReasoningPayload(
+    Map<String, dynamic> payload, {
+    required AIEndpoint endpoint,
+    required AIReasoningLevel level,
+  }) {
+    if (level == AIReasoningLevel.auto) return;
+    if (!_modelLooksReasoningCapable(endpoint)) return;
+    final Map<String, dynamic> config = Map<String, dynamic>.from(
+      (payload['generationConfig'] as Map?) ?? {},
+    );
+    final String model = endpoint.model.toLowerCase();
+    final bool isGemini3 = model.contains('gemini-3');
+    final bool isGemini25Pro =
+        model.contains('gemini-2.5') && model.contains('pro');
+
+    final Map<String, dynamic> thinking = <String, dynamic>{
+      'includeThoughts': true,
+    };
+    switch (level) {
+      case AIReasoningLevel.off:
+        if (isGemini3) {
+          thinking['thinkingLevel'] = 'minimal';
+        } else if (!isGemini25Pro) {
+          thinking['thinkingBudget'] = 0;
+          thinking['includeThoughts'] = false;
+        }
+        break;
+      case AIReasoningLevel.low:
+        if (isGemini3) {
+          thinking['thinkingLevel'] = 'low';
+        } else {
+          thinking['thinkingBudget'] = level.budgetTokens;
+        }
+        break;
+      case AIReasoningLevel.medium:
+        if (isGemini3) {
+          thinking['thinkingLevel'] = 'medium';
+        } else {
+          thinking['thinkingBudget'] = level.budgetTokens;
+        }
+        break;
+      case AIReasoningLevel.high:
+      case AIReasoningLevel.xhigh:
+        if (isGemini3) {
+          thinking['thinkingLevel'] = 'high';
+        } else {
+          thinking['thinkingBudget'] = level.budgetTokens;
+        }
+        break;
+      case AIReasoningLevel.auto:
+        break;
+    }
+    config['thinkingConfig'] = thinking;
+    payload['generationConfig'] = config;
   }
 
   Object? _normalizeResponsesToolChoice(Object? toolChoice) {

@@ -119,6 +119,7 @@ Rules:
     required String cid,
     required List<AIMessage> history,
     required String userMessage,
+    int? userCreatedAtMs,
     required AIMessage assistant,
     required String modelUsed,
     required Map<String, Map<String, dynamic>> toolSignatureDigests,
@@ -128,6 +129,21 @@ Rules:
     String? conversationTitle,
   }) async {
     if (!persistHistory) return;
+    int? turnCreatedAtMs = userCreatedAtMs;
+    for (int i = history.length - 1; i >= 0; i--) {
+      if ((turnCreatedAtMs ?? 0) > 0) break;
+      final AIMessage m = history[i];
+      if (m.role == 'user' && m.content.trim() == userMessage.trim()) {
+        turnCreatedAtMs = m.createdAt.millisecondsSinceEpoch;
+        break;
+      }
+    }
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: cid,
+      createdAtMs: turnCreatedAtMs,
+    )) {
+      return;
+    }
 
     List<AIMessage>? mergedTail;
     bool didSaveTail = false;
@@ -141,6 +157,12 @@ Rules:
           final List<AIMessage> existing = await _settings.getChatHistoryByCid(
             cid,
           );
+          if (_isConversationPersistenceBlockedOrStale(
+            cid: cid,
+            createdAtMs: turnCreatedAtMs,
+          )) {
+            return;
+          }
           final List<AIMessage> merged = mergeCompletedTurnIntoHistory(
             existingHistory: existing,
             userMessage: userMessage,
@@ -153,6 +175,12 @@ Rules:
       } catch (_) {}
     }
     await _updateConversationModel(cid, modelUsed);
+    if (_isConversationPersistenceBlockedOrStale(
+      cid: cid,
+      createdAtMs: turnCreatedAtMs,
+    )) {
+      return;
+    }
 
     final List<AIMessage> historyForContext = mergedTail ?? history;
     final String userTrim = userMessage.trim();
@@ -186,6 +214,12 @@ Rules:
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
     try {
+      if (_isConversationPersistenceBlockedOrStale(
+        cid: cid,
+        createdAtMs: turnCreatedAtMs,
+      )) {
+        return;
+      }
       // Keep a separate append-only transcript + compacted memory for long chats.
       try {
         await _chatContext.seedFromChatHistoryIfEmpty(
@@ -199,11 +233,23 @@ Rules:
           userCreatedAtMs: userAtMs,
           assistantCreatedAtMs: assistantAtMs,
         );
+        if (_isConversationPersistenceBlockedOrStale(
+          cid: cid,
+          createdAtMs: turnCreatedAtMs,
+        )) {
+          return;
+        }
         if (toolSignatureDigests.isNotEmpty) {
           await _chatContext.mergeToolDigests(
             cid: cid,
             signatureDigests: toolSignatureDigests,
           );
+        }
+        if (_isConversationPersistenceBlockedOrStale(
+          cid: cid,
+          createdAtMs: turnCreatedAtMs,
+        )) {
+          return;
         }
         final List<AIMessage> rawToAppend = <AIMessage>[
           AIMessage(role: 'user', content: userMessage),

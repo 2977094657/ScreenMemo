@@ -104,15 +104,14 @@ Map<String, dynamic> _ensureToolsEvent(
       : <dynamic>[];
 
   Map<String, dynamic>? found;
-  for (int i = events.length - 1; i >= 0; i--) {
-    final Object? e0 = events[i];
-    if (e0 is! Map) continue;
-    final Map<String, dynamic> e = Map<String, dynamic>.from(e0);
-    final String type = (e['type'] ?? '').toString().trim();
-    if (type == 'tools') {
-      found = e;
-      events[i] = e;
-      break;
+  if (events.isNotEmpty) {
+    final Object? last0 = events.last;
+    if (last0 is Map) {
+      final Map<String, dynamic> last = Map<String, dynamic>.from(last0);
+      if ((last['type'] ?? '').toString().trim() == 'tools') {
+        found = last;
+        events[events.length - 1] = last;
+      }
     }
   }
   if (found == null) {
@@ -147,6 +146,7 @@ Map<String, dynamic> _ensureToolsEvent(
 /// Patch/extend v2 `ui_thinking_json` with tool UI events emitted by the service.
 ///
 /// Supported payload types:
+/// - `reasoning_delta`: appends/extends a lightweight reasoning span event.
 /// - `tool_batch_begin`: upserts tool chips and marks them active.
 /// - `tool_call_end`: marks the matching chip inactive and attaches `result_summary`.
 ///
@@ -159,8 +159,11 @@ String? patchUiThinkingJsonWithToolUiEvent(
   required String toolsTitle,
 }) {
   final String type = (payload['type'] ?? '').toString().trim();
-  if (type != 'tool_batch_begin' && type != 'tool_call_end')
+  if (type != 'tool_batch_begin' &&
+      type != 'tool_call_end' &&
+      type != 'reasoning_delta') {
     return uiThinkingJson;
+  }
 
   final int createdAtMs = assistantCreatedAtMs > 0
       ? assistantCreatedAtMs
@@ -180,6 +183,52 @@ String? patchUiThinkingJsonWithToolUiEvent(
 
   // Ensure the target block/event exists.
   final Map<String, dynamic> block = _ensureWritableBlock(obj);
+  if (type == 'reasoning_delta') {
+    final int start = _asInt(payload['reasoning_start']);
+    final int len = _asInt(payload['reasoning_len']);
+    if (start < 0 || len <= 0) return jsonEncode(obj);
+    final List<dynamic> events = (block['events'] is List)
+        ? List<dynamic>.from(block['events'] as List)
+        : <dynamic>[];
+    Map<String, dynamic>? lastReasoning;
+    if (events.isNotEmpty) {
+      final Object? last0 = events.last;
+      if (last0 is Map) {
+        final Map<String, dynamic> last = Map<String, dynamic>.from(last0);
+        if ((last['type'] ?? '').toString().trim() == 'reasoning') {
+          lastReasoning = last;
+        }
+      }
+    }
+    if (lastReasoning != null &&
+        _asInt(lastReasoning['reasoning_start']) >= 0) {
+      final int lastStart = _asInt(lastReasoning['reasoning_start']);
+      final int oldLen = _asInt(lastReasoning['reasoning_len']);
+      final int oldEnd = lastStart + oldLen;
+      final int newEnd = start + len;
+      if (newEnd <= oldEnd) {
+        return jsonEncode(obj);
+      }
+      lastReasoning['reasoning_len'] = newEnd - lastStart;
+      lastReasoning['active'] = true;
+      events[events.length - 1] = lastReasoning;
+    } else {
+      events.add(<String, dynamic>{
+        'type': 'reasoning',
+        'title': 'Reasoning',
+        'active': true,
+        'reasoning_start': start,
+        'reasoning_len': len,
+      });
+    }
+    block['events'] = events;
+    try {
+      return jsonEncode(obj);
+    } catch (_) {
+      return uiThinkingJson;
+    }
+  }
+
   final Map<String, dynamic> toolsEvent = _ensureToolsEvent(
     block,
     toolsTitle: toolsTitle,
@@ -202,6 +251,7 @@ String? patchUiThinkingJsonWithToolUiEvent(
       if (callId.isEmpty || toolName.isEmpty) continue;
       final String labelRaw = (t['label'] ?? '').toString().trim();
       final String label = labelRaw.isEmpty ? toolName : labelRaw;
+      final String detailRef = (t['detail_ref'] ?? '').toString().trim();
       final List<String> appNames = _parseStringList(t['app_names']);
       final List<String> appPkgs = _parseStringList(t['app_package_names']);
 
@@ -228,6 +278,8 @@ String? patchUiThinkingJsonWithToolUiEvent(
       chip['label'] = label;
       chip['active'] = true;
       chip.remove('result_summary');
+      chip.remove('duration_ms');
+      if (detailRef.isNotEmpty) chip['detail_ref'] = detailRef;
       if (appNames.isNotEmpty) chip['app_names'] = appNames;
       if (appPkgs.isNotEmpty) chip['app_package_names'] = appPkgs;
 
@@ -256,6 +308,8 @@ String? patchUiThinkingJsonWithToolUiEvent(
     final String callId = (payload['call_id'] ?? '').toString().trim();
     final String toolName = (payload['tool_name'] ?? '').toString().trim();
     final String summary = (payload['result_summary'] ?? '').toString().trim();
+    final String detailRef = (payload['detail_ref'] ?? '').toString().trim();
+    final int durationMs = _asInt(payload['duration_ms']);
     if (callId.isEmpty || toolName.isEmpty) return jsonEncode(obj);
 
     bool updated = false;
@@ -291,6 +345,8 @@ String? patchUiThinkingJsonWithToolUiEvent(
           if (id != callId) continue;
           c['active'] = false;
           if (summary.isNotEmpty) c['result_summary'] = summary;
+          if (durationMs > 0) c['duration_ms'] = durationMs;
+          if (detailRef.isNotEmpty) c['detail_ref'] = detailRef;
           chips[ci] = c;
           e['tools'] = chips;
           events[ei] = e;
@@ -313,6 +369,8 @@ String? patchUiThinkingJsonWithToolUiEvent(
         'label': toolName,
         'active': false,
         if (summary.isNotEmpty) 'result_summary': summary,
+        if (durationMs > 0) 'duration_ms': durationMs,
+        if (detailRef.isNotEmpty) 'detail_ref': detailRef,
       });
       toolsEvent['tools'] = chips;
     }
