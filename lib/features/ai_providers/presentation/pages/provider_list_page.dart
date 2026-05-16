@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
 
 import 'package:flutter/material.dart';
+import 'package:screen_memo/app/navigation/route_observer.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';
@@ -22,16 +23,38 @@ class ProviderListPage extends StatefulWidget {
   State<ProviderListPage> createState() => _ProviderListPageState();
 }
 
-class _ProviderListPageState extends State<ProviderListPage> {
+class _ProviderListPageState extends State<ProviderListPage> with RouteAware {
   final _svc = AIProvidersService.instance;
 
   bool _loading = true;
   List<AIProvider> _list = <AIProvider>[];
-  final Map<int, List<AIProviderKey>> _keysByProvider =
-      <int, List<AIProviderKey>>{};
+  ModalRoute<dynamic>? _route;
+
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null && route != _route) {
+      if (_route != null) appRouteObserver.unsubscribe(this);
+      _route = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
     _load();
   }
 
@@ -39,46 +62,15 @@ class _ProviderListPageState extends State<ProviderListPage> {
     setState(() => _loading = true);
     try {
       final rows = await _svc.listProviders();
-      final nextKeys = <int, List<AIProviderKey>>{};
-      for (final provider in rows) {
-        final id = provider.id;
-        if (id == null) continue;
-        nextKeys[id] = await _svc.listProviderKeys(id);
-      }
-      setState(() {
-        _list = rows;
-        _keysByProvider
-          ..clear()
-          ..addAll(nextKeys);
-      });
+      if (!mounted) return;
+      setState(() => _list = rows);
     } catch (e) {
-      UINotifier.error(context, AppLocalizations.of(context).pleaseTryAgain);
+      if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).pleaseTryAgain);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  String _typeLabel(String t) {
-    switch (t) {
-      case AIProviderTypes.openai:
-        return 'OpenAI';
-      case AIProviderTypes.azureOpenAI:
-        return 'Azure OpenAI';
-      case AIProviderTypes.claude:
-        return 'Claude';
-      case AIProviderTypes.gemini:
-        return 'Gemini';
-      case AIProviderTypes.custom:
-        return AppLocalizations.of(context).customLabel;
-      default:
-        return t;
-    }
-  }
-
-  String _briefUrl(String? url) {
-    final s = (url ?? '').trim();
-    if (s.isEmpty) return '-';
-    return s.length > 48 ? '${s.substring(0, 48)}' + '…' : s;
   }
 
   String _formatBalanceTotal(double value) {
@@ -88,64 +80,39 @@ class _ProviderListPageState extends State<ProviderListPage> {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  String? _providerBalanceSummary(
-    AIProvider provider,
-    List<AIProviderKey> keys,
-  ) {
-    if (!provider.hasBalanceQuery || keys.isEmpty) return null;
-    final known = keys.where((key) => key.hasBalance).toList();
-    if (known.isEmpty) return '总余额 —';
-    final numeric = known.where((key) => key.balanceTotal != null).toList();
-    if (numeric.isEmpty) {
-      if (known.length == 1) {
-        return '余额 ${known.first.balanceDisplay ?? '已获取'}';
+  String? _providerBalanceSummary(AIProvider provider) {
+    final summary = provider.keySummary;
+    if (!provider.hasBalanceQuery || summary.totalCount == 0) return null;
+    if (!summary.hasKnownBalance) return '总余额 —';
+    if (summary.numericBalanceCount == 0) {
+      if (summary.totalCount == 1) {
+        return '余额 ${summary.balanceDisplay ?? '已获取'}';
       }
-      return '余额已获取 ${known.length}/${keys.length}';
+      return '余额已获取 ${summary.knownBalanceCount}/${summary.totalCount}';
     }
-    final double total = numeric.fold<double>(
-      0,
-      (sum, key) => sum + (key.balanceTotal ?? 0),
-    );
-    final currencies = numeric
-        .map((key) => (key.balanceCurrency ?? '').trim())
-        .where((currency) => currency.isNotEmpty)
-        .toSet();
-    final currency = currencies.length == 1 ? ' ${currencies.first}' : '';
-    final partial = numeric.length < keys.length
-        ? '（${numeric.length}/${keys.length}）'
+    final currency = summary.balanceCurrency == null
+        ? ''
+        : ' ${summary.balanceCurrency}';
+    final partial = summary.numericBalanceCount < summary.totalCount
+        ? '（${summary.numericBalanceCount}/${summary.totalCount}）'
         : '';
-    return '总余额 ${_formatBalanceTotal(total)}$currency$partial';
+    return '总余额 ${_formatBalanceTotal(summary.balanceTotal ?? 0)}$currency$partial';
   }
 
   Widget _buildProviderKeySummary(AIProvider p) {
     final theme = Theme.of(context);
-    final keys = _keysByProvider[p.id ?? -1] ?? const <AIProviderKey>[];
-    final totalCount = keys.length;
-    final enabledCount = keys.where((key) => key.enabled).length;
-    final coolingCount = keys.where((key) => key.isCoolingDown()).length;
-    final errorCount = keys
-        .where((key) => (key.lastErrorType ?? '').trim().isNotEmpty)
-        .length;
-    final successTotal = keys.fold<int>(
-      0,
-      (sum, key) => sum + key.successCount,
-    );
-    final failureTotal = keys.fold<int>(
-      0,
-      (sum, key) => sum + key.failureTotalCount,
-    );
+    final summary = p.keySummary;
+    final totalCount = summary.totalCount;
+    final enabledCount = summary.enabledCount;
+    final coolingCount = summary.coolingCount;
+    final errorCount = summary.errorCount;
+    final successTotal = summary.successTotal;
+    final failureTotal = summary.failureTotal;
     final totalAttempts = successTotal + failureTotal;
     final successRate = totalAttempts == 0
         ? 1.0
         : successTotal / totalAttempts.clamp(1, 1 << 30);
-    final availableCount = keys
-        .where(
-          (key) =>
-              key.enabled &&
-              !key.isCoolingDown() &&
-              (key.lastErrorType ?? '').trim().isEmpty,
-        )
-        .length;
+    final availableCount = summary.availableCount;
 
     late final String statusLabel;
     late final Color statusColor;
@@ -182,7 +149,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
         ? '暂无调用记录'
         : '成功率 ${(successRate * 100).toStringAsFixed(2)}%';
     final availableText = '可用 $availableCount / 总计 $totalCount';
-    final balanceSummary = _providerBalanceSummary(p, keys);
+    final balanceSummary = _providerBalanceSummary(p);
 
     return Container(
       margin: const EdgeInsets.only(top: AppTheme.spacing2),
@@ -218,14 +185,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
             ],
           ),
           const SizedBox(height: AppTheme.spacing2),
-          _buildStatusBars(
-            keys: keys,
-            enabledCount: enabledCount,
-            successTotal: successTotal,
-            failureTotal: failureTotal,
-            errorCount: errorCount,
-            coolingCount: coolingCount,
-          ),
+          _buildStatusBars(summary),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -288,17 +248,10 @@ class _ProviderListPageState extends State<ProviderListPage> {
     );
   }
 
-  Widget _buildStatusBars({
-    required List<AIProviderKey> keys,
-    required int enabledCount,
-    required int successTotal,
-    required int failureTotal,
-    required int errorCount,
-    required int coolingCount,
-  }) {
+  Widget _buildStatusBars(AIProviderKeySummary summary) {
     final theme = Theme.of(context);
     const barCount = 72;
-    if (keys.isEmpty || enabledCount == 0) {
+    if (summary.totalCount == 0 || summary.enabledCount == 0) {
       return Directionality(
         textDirection: TextDirection.ltr,
         child: Row(
@@ -319,7 +272,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
       );
     }
 
-    final totalAttempts = successTotal + failureTotal;
+    final totalAttempts = summary.successTotal + summary.failureTotal;
     if (totalAttempts == 0) {
       return Directionality(
         textDirection: TextDirection.ltr,
@@ -341,27 +294,26 @@ class _ProviderListPageState extends State<ProviderListPage> {
       );
     }
 
-    final failureRatio = failureTotal / totalAttempts.clamp(1, 1 << 30);
+    final failureRatio = summary.failureTotal / totalAttempts.clamp(1, 1 << 30);
     final issueRatio =
-        ((failureRatio * barCount).ceil() + errorCount + coolingCount).clamp(
-          0,
-          barCount,
-        );
+        ((failureRatio * barCount).ceil() +
+                summary.errorCount +
+                summary.coolingCount)
+            .clamp(0, barCount);
     final coolingStart = (barCount * 0.56).round();
     final errorSeed =
-        (failureTotal + errorCount * 7 + coolingCount * 11) % barCount;
-    final latestSuccessAt = keys.fold<int>(0, (latest, key) {
-      final value = key.lastSuccessAt ?? 0;
-      return value > latest ? value : latest;
-    });
-    final latestFailureAt = keys.fold<int>(0, (latest, key) {
-      final value = key.lastFailedAt ?? 0;
-      return value > latest ? value : latest;
-    });
+        (summary.failureTotal +
+            summary.errorCount * 7 +
+            summary.coolingCount * 11) %
+        barCount;
+    final latestSuccessAt = summary.latestSuccessAt ?? 0;
+    final latestFailureAt = summary.latestFailedAt ?? 0;
     final latestKnownResultIsFailure = latestFailureAt > latestSuccessAt;
     final placeIssueAtEnd =
         latestKnownResultIsFailure ||
-        (latestSuccessAt == 0 && latestFailureAt == 0 && successTotal == 0);
+        (latestSuccessAt == 0 &&
+            latestFailureAt == 0 &&
+            summary.successTotal == 0);
 
     bool isIssueSlot(int index) {
       if (issueRatio == 0) return false;
@@ -375,9 +327,9 @@ class _ProviderListPageState extends State<ProviderListPage> {
       final seededError = isIssueSlot(index) && ((index + errorSeed) % 23 == 0);
       final recentError = isIssueSlot(index);
       final cooling =
-          coolingCount > 0 &&
+          summary.coolingCount > 0 &&
           index >= coolingStart &&
-          index < coolingStart + coolingCount.clamp(1, 6);
+          index < coolingStart + summary.coolingCount.clamp(1, 6);
       if (recentError || seededError) return theme.colorScheme.error;
       if (cooling) return AppTheme.warning;
       return AppTheme.success;

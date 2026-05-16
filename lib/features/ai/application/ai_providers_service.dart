@@ -229,6 +229,104 @@ class AIProviderKey {
   }
 }
 
+class AIProviderKeySummary {
+  final int totalCount;
+  final int enabledCount;
+  final int availableCount;
+  final int coolingCount;
+  final int errorCount;
+  final int successTotal;
+  final int failureTotal;
+  final int knownBalanceCount;
+  final int numericBalanceCount;
+  final double? balanceTotal;
+  final String? balanceDisplay;
+  final String? balanceCurrency;
+  final int? latestSuccessAt;
+  final int? latestFailedAt;
+  final int? updatedAt;
+
+  const AIProviderKeySummary({
+    this.totalCount = 0,
+    this.enabledCount = 0,
+    this.availableCount = 0,
+    this.coolingCount = 0,
+    this.errorCount = 0,
+    this.successTotal = 0,
+    this.failureTotal = 0,
+    this.knownBalanceCount = 0,
+    this.numericBalanceCount = 0,
+    this.balanceTotal,
+    this.balanceDisplay,
+    this.balanceCurrency,
+    this.latestSuccessAt,
+    this.latestFailedAt,
+    this.updatedAt,
+  });
+
+  factory AIProviderKeySummary.fromJsonString(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return const AIProviderKeySummary();
+    }
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! Map) return const AIProviderKeySummary();
+      int readInt(String key) {
+        final raw = decoded[key];
+        if (raw is int) return raw;
+        if (raw is num) return raw.toInt();
+        if (raw is String) return int.tryParse(raw) ?? 0;
+        return 0;
+      }
+
+      int? readNullableInt(String key) {
+        final raw = decoded[key];
+        if (raw == null) return null;
+        if (raw is int) return raw;
+        if (raw is num) return raw.toInt();
+        if (raw is String) return int.tryParse(raw);
+        return null;
+      }
+
+      double? readNullableDouble(String key) {
+        final raw = decoded[key];
+        if (raw == null) return null;
+        if (raw is num) return raw.toDouble();
+        if (raw is String) return double.tryParse(raw);
+        return null;
+      }
+
+      String? readNullableString(String key) {
+        final raw = decoded[key];
+        final text = raw == null ? '' : '$raw'.trim();
+        return text.isEmpty ? null : text;
+      }
+
+      return AIProviderKeySummary(
+        totalCount: readInt('totalCount'),
+        enabledCount: readInt('enabledCount'),
+        availableCount: readInt('availableCount'),
+        coolingCount: readInt('coolingCount'),
+        errorCount: readInt('errorCount'),
+        successTotal: readInt('successTotal'),
+        failureTotal: readInt('failureTotal'),
+        knownBalanceCount: readInt('knownBalanceCount'),
+        numericBalanceCount: readInt('numericBalanceCount'),
+        balanceTotal: readNullableDouble('balanceTotal'),
+        balanceDisplay: readNullableString('balanceDisplay'),
+        balanceCurrency: readNullableString('balanceCurrency'),
+        latestSuccessAt: readNullableInt('latestSuccessAt'),
+        latestFailedAt: readNullableInt('latestFailedAt'),
+        updatedAt: readNullableInt('updatedAt'),
+      );
+    } catch (_) {
+      return const AIProviderKeySummary();
+    }
+  }
+
+  bool get hasKnownBalance => knownBalanceCount > 0;
+}
+
 class AIProvider {
   final int? id;
   final String name;
@@ -251,6 +349,9 @@ class AIProvider {
   /// 是否在余额为 0 时自动删除该 key。
   final bool balanceAutoDeleteZeroKey;
 
+  /// 列表页展示用 Key 状态摘要，缓存于 ai_providers.key_summary_json。
+  final AIProviderKeySummary keySummary;
+
   AIProvider({
     required this.id,
     required this.name,
@@ -266,6 +367,7 @@ class AIProvider {
     required this.orderIndex,
     this.balanceEndpointType = AIBalanceEndpointTypes.none,
     this.balanceAutoDeleteZeroKey = false,
+    this.keySummary = const AIProviderKeySummary(),
   });
 
   factory AIProvider.fromDbRow(Map<String, dynamic> row) {
@@ -311,6 +413,9 @@ class AIProvider {
       ),
       balanceAutoDeleteZeroKey:
           ((row['balance_auto_delete_zero_key'] as int?) ?? 0) == 1,
+      keySummary: AIProviderKeySummary.fromJsonString(
+        row['key_summary_json'] as String?,
+      ),
     );
   }
 
@@ -335,6 +440,7 @@ class AIProvider {
     int? orderIndex,
     String? balanceEndpointType,
     bool? balanceAutoDeleteZeroKey,
+    AIProviderKeySummary? keySummary,
   }) {
     return AIProvider(
       id: id ?? this.id,
@@ -352,6 +458,7 @@ class AIProvider {
       balanceEndpointType: balanceEndpointType ?? this.balanceEndpointType,
       balanceAutoDeleteZeroKey:
           balanceAutoDeleteZeroKey ?? this.balanceAutoDeleteZeroKey,
+      keySummary: keySummary ?? this.keySummary,
     );
   }
 
@@ -739,7 +846,9 @@ class AIProvidersService {
       priority: priority,
       orderIndex: orderIndex,
     );
+    if (id == null) return null;
     await syncProviderModelsFromKeys(providerId);
+    await _db.refreshAIProviderKeySummary(providerId);
     return id;
   }
 
@@ -768,20 +877,27 @@ class AIProvidersService {
     );
     final providerId =
         before?.providerId ?? (await getProviderKey(id))?.providerId;
-    if (providerId != null) await syncProviderModelsFromKeys(providerId);
+    if (providerId != null) {
+      await syncProviderModelsFromKeys(providerId);
+      await _db.refreshAIProviderKeySummary(providerId);
+    }
     return ok;
   }
 
   Future<bool> deleteProviderKey(int id) async {
     final before = await getProviderKey(id);
     final ok = await _db.deleteAIProviderKey(id);
-    if (before != null) await syncProviderModelsFromKeys(before.providerId);
+    if (before != null) {
+      await syncProviderModelsFromKeys(before.providerId);
+      await _db.refreshAIProviderKeySummary(before.providerId);
+    }
     return ok;
   }
 
   Future<int> deleteAllProviderKeys(int providerId) async {
     final count = await _db.deleteAIProviderKeysForProvider(providerId);
     await syncProviderModelsFromKeys(providerId);
+    await _db.refreshAIProviderKeySummary(providerId);
     await deleteApiKey(providerId);
     return count;
   }
@@ -825,8 +941,11 @@ class AIProvidersService {
     }
   }
 
-  Future<void> markProviderKeySuccess(int keyId) =>
-      _db.markAIProviderKeySuccess(keyId);
+  Future<void> markProviderKeySuccess(int keyId) async {
+    await _db.markAIProviderKeySuccess(keyId);
+    final key = await getProviderKey(keyId);
+    if (key != null) await _db.refreshAIProviderKeySummary(key.providerId);
+  }
 
   Future<void> markProviderKeyFailure({
     required int keyId,
@@ -835,14 +954,18 @@ class AIProvidersService {
     bool incrementFailure = true,
     int? cooldownUntilMs,
     bool resetFailureCount = false,
-  }) => _db.markAIProviderKeyFailure(
-    keyId: keyId,
-    errorType: errorType,
-    errorMessage: errorMessage,
-    incrementFailure: incrementFailure,
-    cooldownUntilMs: cooldownUntilMs,
-    resetFailureCount: resetFailureCount,
-  );
+  }) async {
+    await _db.markAIProviderKeyFailure(
+      keyId: keyId,
+      errorType: errorType,
+      errorMessage: errorMessage,
+      incrementFailure: incrementFailure,
+      cooldownUntilMs: cooldownUntilMs,
+      resetFailureCount: resetFailureCount,
+    );
+    final key = await getProviderKey(keyId);
+    if (key != null) await _db.refreshAIProviderKeySummary(key.providerId);
+  }
 
   // ---------------- 余额查询（new-api / sub2api） ----------------
 
@@ -909,6 +1032,7 @@ class AIProvidersService {
       keyId: keyId,
       keyName: key.name,
       balance: balance,
+      providerId: providerId,
     );
   }
 
@@ -931,11 +1055,13 @@ class AIProvidersService {
       keyId: keyId,
       keyName: key.name,
       balance: balance,
+      providerId: providerId,
     );
   }
 
   Future<ProviderKeyBalance?> _saveFetchedBalanceForKey({
     required AIProvider provider,
+    required int providerId,
     required int keyId,
     required String keyName,
     required ProviderKeyBalance balance,
@@ -949,6 +1075,7 @@ class AIProvidersService {
       balanceRaw: balance.raw,
       balanceUpdatedAt: now,
     );
+    await _db.refreshAIProviderKeySummary(providerId);
 
     // 余额为 0 且开启了“自动删除”，则移除该 key。
     if (provider.balanceAutoDeleteZeroKey && balance.isZero) {

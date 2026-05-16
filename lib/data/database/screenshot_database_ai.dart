@@ -425,6 +425,19 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     } catch (_) {}
   }
 
+  Future<void> _ensureAiProviderKeySummaryColumns(DatabaseExecutor db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_providers ADD COLUMN key_summary_json TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_providers ADD COLUMN key_summary_updated_at INTEGER',
+      );
+    } catch (_) {}
+  }
+
   Future<void> _ensureAiProviderKeyStatsColumns(DatabaseExecutor db) async {
     try {
       await db.execute(
@@ -481,6 +494,150 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           'failure_total_count': 0,
           'created_at': now,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    } catch (_) {}
+  }
+
+  Map<String, Object?> _buildEmptyAIProviderKeySummary() {
+    return <String, Object?>{
+      'totalCount': 0,
+      'enabledCount': 0,
+      'availableCount': 0,
+      'coolingCount': 0,
+      'errorCount': 0,
+      'successTotal': 0,
+      'failureTotal': 0,
+      'knownBalanceCount': 0,
+      'numericBalanceCount': 0,
+      'balanceTotal': null,
+      'balanceDisplay': null,
+      'balanceCurrency': null,
+      'latestSuccessAt': null,
+      'latestFailedAt': null,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+  }
+
+  Map<String, Object?> _buildAIProviderKeySummaryFromRows(
+    List<Map<String, Object?>> rows,
+  ) {
+    if (rows.isEmpty) return _buildEmptyAIProviderKeySummary();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var enabledCount = 0;
+    var availableCount = 0;
+    var coolingCount = 0;
+    var errorCount = 0;
+    var successTotal = 0;
+    var failureTotal = 0;
+    var knownBalanceCount = 0;
+    var numericBalanceCount = 0;
+    var balanceTotal = 0.0;
+    var latestSuccessAt = 0;
+    var latestFailedAt = 0;
+    final currencies = <String>{};
+    String? singleBalanceDisplay;
+
+    for (final row in rows) {
+      final enabled = ((row['enabled'] as int?) ?? 1) != 0;
+      final cooldownUntilMs = row['cooldown_until_ms'] as int?;
+      final cooling = cooldownUntilMs != null && cooldownUntilMs > now;
+      final lastErrorType = ((row['last_error_type'] as String?) ?? '').trim();
+      final successCount = (row['success_count'] as int?) ?? 0;
+      final failureTotalCount = (row['failure_total_count'] as int?) ?? 0;
+      final successAt = (row['last_success_at'] as int?) ?? 0;
+      final failedAt = (row['last_failed_at'] as int?) ?? 0;
+      final balanceDisplay = ((row['balance_display'] as String?) ?? '').trim();
+      final balanceCurrency = ((row['balance_currency'] as String?) ?? '')
+          .trim();
+      final balanceRaw = row['balance_total'];
+      double? numericBalance;
+      if (balanceRaw is num) {
+        numericBalance = balanceRaw.toDouble();
+      } else if (balanceRaw is String) {
+        numericBalance = double.tryParse(balanceRaw);
+      }
+
+      if (enabled) enabledCount++;
+      if (cooling) coolingCount++;
+      if (lastErrorType.isNotEmpty) errorCount++;
+      if (enabled && !cooling && lastErrorType.isEmpty) availableCount++;
+      successTotal += successCount;
+      failureTotal += failureTotalCount;
+      if (successAt > latestSuccessAt) latestSuccessAt = successAt;
+      if (failedAt > latestFailedAt) latestFailedAt = failedAt;
+      if (balanceDisplay.isNotEmpty || numericBalance != null) {
+        knownBalanceCount++;
+      }
+      if (numericBalance != null) {
+        numericBalanceCount++;
+        balanceTotal += numericBalance;
+      }
+      if (balanceCurrency.isNotEmpty) currencies.add(balanceCurrency);
+      if (rows.length == 1 && balanceDisplay.isNotEmpty) {
+        singleBalanceDisplay = balanceDisplay;
+      }
+    }
+
+    return <String, Object?>{
+      'totalCount': rows.length,
+      'enabledCount': enabledCount,
+      'availableCount': availableCount,
+      'coolingCount': coolingCount,
+      'errorCount': errorCount,
+      'successTotal': successTotal,
+      'failureTotal': failureTotal,
+      'knownBalanceCount': knownBalanceCount,
+      'numericBalanceCount': numericBalanceCount,
+      'balanceTotal': numericBalanceCount == 0 ? null : balanceTotal,
+      'balanceDisplay': singleBalanceDisplay,
+      'balanceCurrency': currencies.length == 1 ? currencies.first : null,
+      'latestSuccessAt': latestSuccessAt == 0 ? null : latestSuccessAt,
+      'latestFailedAt': latestFailedAt == 0 ? null : latestFailedAt,
+      'updatedAt': now,
+    };
+  }
+
+  Future<void> refreshAIProviderKeySummary(
+    int providerId, {
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? await database;
+    try {
+      await _ensureAiProviderKeyStatsColumns(db);
+      await _ensureAiProviderKeyBalanceColumns(db);
+      await _ensureAiProviderKeySummaryColumns(db);
+      final rows = await db.query(
+        'ai_provider_keys',
+        where: 'provider_id = ?',
+        whereArgs: <Object?>[providerId],
+      );
+      final summary = _buildAIProviderKeySummaryFromRows(rows);
+      final updatedAt =
+          (summary['updatedAt'] as int?) ??
+          DateTime.now().millisecondsSinceEpoch;
+      await db.update(
+        'ai_providers',
+        <String, Object?>{
+          'key_summary_json': jsonEncode(summary),
+          'key_summary_updated_at': updatedAt,
+        },
+        where: 'id = ?',
+        whereArgs: <Object?>[providerId],
+      );
+    } catch (_) {}
+  }
+
+  Future<void> refreshAllAIProviderKeySummaries({
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? await database;
+    try {
+      await _ensureAiProviderKeySummaryColumns(db);
+      final providers = await db.query('ai_providers', columns: <String>['id']);
+      for (final provider in providers) {
+        final id = provider['id'] as int?;
+        if (id == null) continue;
+        await refreshAIProviderKeySummary(id, executor: db);
       }
     } catch (_) {}
   }
@@ -773,12 +930,15 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         api_key TEXT,
         models_json TEXT,                                         -- 缓存的模型列表，JSON 数组
         extra_json TEXT,                                          -- 各类型特定配置（如 Vertex 字段等）
+        key_summary_json TEXT,                                    -- 列表页展示用 Key 状态摘要
+        key_summary_updated_at INTEGER,
         order_index INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
     // 老库增量迁移：补上余额相关列
     await _ensureAiProvidersBalanceColumns(db);
+    await _ensureAiProviderKeySummaryColumns(db);
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(enabled, order_index, id)',
     );
@@ -790,6 +950,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     );
     await _createAiProviderKeysTable(db);
     await _migrateLegacyProviderKeys(db);
+    await refreshAllAIProviderKeySummaries(executor: db);
 
     // AI 上下文选中（chat/segments 等各自独立）
     await db.execute('''

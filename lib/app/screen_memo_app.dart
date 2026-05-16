@@ -17,6 +17,7 @@ import 'package:screen_memo/features/search/presentation/pages/search_page.dart'
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/daily_summary/application/daily_summary_service.dart';
 import 'package:screen_memo/app/navigation/navigation_service.dart';
+import 'package:screen_memo/app/navigation/route_observer.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/features/capture/application/screenshot_service.dart';
 import 'package:screen_memo/features/app_health/application/app_health_service.dart';
@@ -109,6 +110,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       ),
       debugShowCheckedModeBanner: false,
       navigatorKey: NavigationService.instance.navigatorKey,
+      navigatorObservers: [appRouteObserver],
       routes: {
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
