@@ -111,7 +111,10 @@ After chart
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatMarkdownChartBlock), findsOneWidget);
-    expect(find.byType(Chart), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((Widget widget) => widget is Chart),
+      findsOneWidget,
+    );
     expect(find.text('Recent trend'), findsOneWidget);
     expect(find.text('Trend is rising.'), findsOneWidget);
     expect(
@@ -151,7 +154,10 @@ After chart
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(Chart), findsNothing);
+    expect(
+      find.byWidgetPredicate((Widget widget) => widget is Chart),
+      findsNothing,
+    );
     expect(find.byType(ChatMarkdownChartBlock), findsOneWidget);
     expect(find.textContaining('```chart-v1'), findsOneWidget);
   });
@@ -181,7 +187,10 @@ Before
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatMarkdownChartBlock), findsNothing);
-    expect(find.byType(Chart), findsNothing);
+    expect(
+      find.byWidgetPredicate((Widget widget) => widget is Chart),
+      findsNothing,
+    );
     expect(find.textContaining('```chart-v1'), findsOneWidget);
   });
 }

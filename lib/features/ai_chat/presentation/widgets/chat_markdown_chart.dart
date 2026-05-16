@@ -7,6 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 
 const String kChartV1FenceLanguage = 'chart-v1';
 const String kChartBlockTag = 'chart-block';
+const String kChartBlockPayloadAttribute = 'payload';
 const bool _kChartDebugUi = false;
 const double _kPieCoordPadding = 10;
 const double _kPieDimFill = 0.92;
@@ -50,29 +51,18 @@ class ChartBlockSyntax extends md.BlockSyntax {
 
   @override
   bool canParse(md.BlockParser parser) {
-    final Match? opening = _openingPattern.firstMatch(parser.current.content);
-    if (opening == null) return false;
-    final String marker = opening.group(1)!;
-    for (int i = 1; ; i++) {
-      final md.Line? next = parser.peek(i);
-      if (next == null) return false;
-      final Match? closing = _closingPattern.firstMatch(next.content);
-      if (closing == null) continue;
-      final String closingMarker = closing.group(1)!;
-      if (closingMarker[0] == marker[0] &&
-          closingMarker.length >= marker.length) {
-        return true;
-      }
-    }
+    return _openingPattern.hasMatch(parser.current.content);
   }
 
   @override
   md.Node parse(md.BlockParser parser) {
-    final Match opening = _openingPattern.firstMatch(parser.current.content)!;
+    final String openingLine = parser.current.content;
+    final Match opening = _openingPattern.firstMatch(openingLine)!;
     final String marker = opening.group(1)!;
     parser.advance();
 
     final List<String> lines = <String>[];
+    bool closed = false;
     while (!parser.isDone) {
       final Match? closing = _closingPattern.firstMatch(parser.current.content);
       if (closing != null) {
@@ -80,6 +70,7 @@ class ChartBlockSyntax extends md.BlockSyntax {
         if (closingMarker[0] == marker[0] &&
             closingMarker.length >= marker.length) {
           parser.advance();
+          closed = true;
           break;
         }
       }
@@ -87,10 +78,17 @@ class ChartBlockSyntax extends md.BlockSyntax {
       parser.advance();
     }
 
-    return md.Element.text(
-      kChartBlockTag,
-      encodeChartBlockPayload(lines.join('\n').trim()),
+    if (!closed) {
+      return md.Element('pre', <md.Node>[
+        md.Element.text('code', <String>[openingLine, ...lines].join('\n')),
+      ]);
+    }
+
+    final md.Element element = md.Element.empty(kChartBlockTag);
+    element.attributes[kChartBlockPayloadAttribute] = encodeChartBlockPayload(
+      lines.join('\n').trim(),
     );
+    return element;
   }
 }
 

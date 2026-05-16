@@ -413,7 +413,9 @@ class _ChartBlockBuilder extends MarkdownElementBuilder {
     TextStyle? preferredStyle,
     TextStyle? parentStyle,
   ) {
-    final String encoded = element.textContent.trim();
+    final String encoded =
+        (element.attributes[kChartBlockPayloadAttribute] ?? element.textContent)
+            .trim();
     final String? rawJson = decodeChartBlockPayload(encoded);
     return ChatMarkdownChartBlock(
       rawJson: rawJson ?? '',
