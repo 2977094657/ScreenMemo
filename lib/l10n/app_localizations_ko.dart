@@ -2283,6 +2283,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get interfaceTypeLabel => '인터페이스 유형';
 
   @override
+  String get providerTypeOpenAI => 'OpenAI';
+
+  @override
+  String get providerTypeAzureOpenAI => 'Azure OpenAI';
+
+  @override
+  String get providerTypeClaude => 'Claude';
+
+  @override
+  String get providerTypeGemini => 'Gemini';
+
+  @override
   String currentTypeLabel(Object type) {
     return '현재: $type';
   }

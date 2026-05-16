@@ -699,26 +699,27 @@ extension _ProviderEditFormPart on _ProviderEditPageState {
     final Color fieldBg = isDark
         ? theme.colorScheme.surface
         : theme.scaffoldBackgroundColor;
+    final l10n = AppLocalizations.of(context);
     final items = <DropdownMenuItem<String>>[
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: AIProviderTypes.openai,
-        child: Text('OpenAI'),
+        child: Text(l10n.providerTypeOpenAI),
       ),
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: AIProviderTypes.azureOpenAI,
-        child: Text('Azure OpenAI'),
+        child: Text(l10n.providerTypeAzureOpenAI),
       ),
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: AIProviderTypes.claude,
-        child: Text('Claude'),
+        child: Text(l10n.providerTypeClaude),
       ),
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: AIProviderTypes.gemini,
-        child: Text('Gemini'),
+        child: Text(l10n.providerTypeGemini),
       ),
       DropdownMenuItem(
         value: AIProviderTypes.custom,
-        child: Text(AppLocalizations.of(context).customLabel),
+        child: Text(l10n.customLabel),
       ),
     ];
     return Column(

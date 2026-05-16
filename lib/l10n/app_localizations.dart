@@ -4164,6 +4164,30 @@ abstract class AppLocalizations {
   /// **'Interface type'**
   String get interfaceTypeLabel;
 
+  /// No description provided for @providerTypeOpenAI.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI'**
+  String get providerTypeOpenAI;
+
+  /// No description provided for @providerTypeAzureOpenAI.
+  ///
+  /// In en, this message translates to:
+  /// **'Azure OpenAI'**
+  String get providerTypeAzureOpenAI;
+
+  /// No description provided for @providerTypeClaude.
+  ///
+  /// In en, this message translates to:
+  /// **'Claude'**
+  String get providerTypeClaude;
+
+  /// No description provided for @providerTypeGemini.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini'**
+  String get providerTypeGemini;
+
   /// No description provided for @currentTypeLabel.
   ///
   /// In en, this message translates to:

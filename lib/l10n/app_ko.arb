@@ -1237,6 +1237,10 @@
   "inputAndAddModelHint": "모델을 입력 후 추가 (예: gpt-4o-mini)",
   "fetchModelsHint": "\"새로 고침\"을 눌러 자동으로 가져옵니다. 실패하면 모델 이름을 직접 추가하세요.",
   "interfaceTypeLabel": "인터페이스 유형",
+  "providerTypeOpenAI": "OpenAI",
+  "providerTypeAzureOpenAI": "Azure OpenAI",
+  "providerTypeClaude": "Claude",
+  "providerTypeGemini": "Gemini",
   "currentTypeLabel": "현재: {type}",
   "@currentTypeLabel": {
     "placeholders": {

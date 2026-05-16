@@ -2262,6 +2262,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get interfaceTypeLabel => '接口类型';
 
   @override
+  String get providerTypeOpenAI => 'OpenAI';
+
+  @override
+  String get providerTypeAzureOpenAI => 'Azure OpenAI';
+
+  @override
+  String get providerTypeClaude => 'Claude';
+
+  @override
+  String get providerTypeGemini => 'Gemini';
+
+  @override
   String currentTypeLabel(Object type) {
     return '当前：$type';
   }

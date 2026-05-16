@@ -2284,6 +2284,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get interfaceTypeLabel => 'インターフェース種別';
 
   @override
+  String get providerTypeOpenAI => 'OpenAI';
+
+  @override
+  String get providerTypeAzureOpenAI => 'Azure OpenAI';
+
+  @override
+  String get providerTypeClaude => 'Claude';
+
+  @override
+  String get providerTypeGemini => 'Gemini';
+
+  @override
   String currentTypeLabel(Object type) {
     return '現在：$type';
   }
