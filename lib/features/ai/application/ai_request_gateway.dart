@@ -1005,9 +1005,16 @@ class AIRequestGateway {
     required Object? toolChoice,
     required AIReasoningLevel reasoningLevel,
   }) {
+    final List<Map<String, dynamic>> wireMessages = messages
+        .map((AIMessage m) => m.toJson())
+        .toList(growable: false);
+    _fixDeepSeekToolReasoningContent(
+      endpoint: endpoint,
+      messages: wireMessages,
+    );
     final Map<String, dynamic> payload = <String, dynamic>{
       'model': endpoint.model,
-      'messages': messages.map((AIMessage m) => m.toJson()).toList(),
+      'messages': wireMessages,
       'stream': stream,
     };
     if (stream) {
@@ -1025,6 +1032,27 @@ class AIRequestGateway {
       level: reasoningLevel,
     );
     return payload;
+  }
+
+  void _fixDeepSeekToolReasoningContent({
+    required AIEndpoint endpoint,
+    required List<Map<String, dynamic>> messages,
+  }) {
+    if (!_isDeepSeekEndpoint(endpoint)) return;
+    for (final Map<String, dynamic> message in messages) {
+      final String role = (message['role'] as String? ?? '').trim();
+      if (role != 'assistant') continue;
+      final dynamic toolCalls = message['tool_calls'];
+      if (toolCalls is! List || toolCalls.isEmpty) continue;
+      final String reasoning = (message['reasoning_content'] as String? ?? '')
+          .trim();
+      if (reasoning.isNotEmpty) continue;
+      // DeepSeek thinking mode requires this field to be passed back for an
+      // assistant message that contains tool calls. Empty string keeps older
+      // stored turns protocol-compatible when the original reasoning was not
+      // available.
+      message['reasoning_content'] = '';
+    }
   }
 
   Map<String, dynamic> _buildResponsesPayload({
@@ -1277,8 +1305,20 @@ class AIRequestGateway {
     return host;
   }
 
+  bool _isDeepSeekEndpoint(AIEndpoint endpoint) {
+    final String host = _hostKeyForReasoning(endpoint);
+    final String providerType = (endpoint.providerType ?? '').toLowerCase();
+    final String providerName = (endpoint.providerName ?? '').toLowerCase();
+    final String model = endpoint.model.toLowerCase();
+    return host.contains('deepseek') ||
+        providerType.contains('deepseek') ||
+        providerName.contains('deepseek') ||
+        model.contains('deepseek');
+  }
+
   bool _modelLooksReasoningCapable(AIEndpoint endpoint) {
     final String model = endpoint.model.toLowerCase();
+    if (_isDeepSeekEndpoint(endpoint)) return true;
     return model.startsWith('o') ||
         model.contains('gpt-5') ||
         model.contains('gpt-4.1') ||
@@ -1305,6 +1345,22 @@ class AIRequestGateway {
       case AIReasoningLevel.off:
       case AIReasoningLevel.auto:
         return 'low';
+    }
+  }
+
+  String _deepSeekReasoningEffort(AIReasoningLevel level) {
+    // DeepSeek thinking mode currently documents high/max. Map the UI's low
+    // and medium to high, and xhigh to max.
+    switch (level) {
+      case AIReasoningLevel.xhigh:
+        return 'max';
+      case AIReasoningLevel.low:
+      case AIReasoningLevel.medium:
+      case AIReasoningLevel.high:
+        return 'high';
+      case AIReasoningLevel.off:
+      case AIReasoningLevel.auto:
+        return '';
     }
   }
 
@@ -1360,12 +1416,15 @@ class AIRequestGateway {
       return;
     }
 
-    if (host.contains('api.deepseek.com')) {
+    if (_isDeepSeekEndpoint(endpoint)) {
       payload['thinking'] = <String, dynamic>{
         'type': level.isEnabled ? 'enabled' : 'disabled',
       };
       if (level.isEnabled) {
-        payload['reasoning_effort'] = _openAiChatReasoningEffort(level);
+        final String effort = _deepSeekReasoningEffort(level);
+        if (effort.isNotEmpty) {
+          payload['reasoning_effort'] = effort;
+        }
       }
       return;
     }

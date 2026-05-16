@@ -107,7 +107,15 @@ Rules:
           PromptBudget.keepTailUnderTokenBudget(history, maxTokens: maxTokens);
       messages.addAll(
         trimmedHistory.map(
-          (msg) => AIMessage(role: msg.role, content: msg.content),
+          (msg) => AIMessage(
+            role: msg.role,
+            content: msg.content,
+            reasoningContent: msg.reasoningContent,
+            reasoningDuration: msg.reasoningDuration,
+            apiContent: msg.apiContent,
+            toolCalls: msg.toolCalls,
+            toolCallId: msg.toolCallId,
+          ),
         ),
       );
     }
@@ -254,7 +262,12 @@ Rules:
         final List<AIMessage> rawToAppend = <AIMessage>[
           AIMessage(role: 'user', content: userMessage),
           ...rawTurnTranscript,
-          AIMessage(role: 'assistant', content: assistant.content),
+          AIMessage(
+            role: 'assistant',
+            content: assistant.content,
+            reasoningContent: assistant.reasoningContent,
+            reasoningDuration: assistant.reasoningDuration,
+          ),
         ];
         await _chatContext.appendRawTranscriptMessages(
           cid: cid,

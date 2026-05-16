@@ -85,7 +85,15 @@ class PromptBudget {
         marker: marker,
       );
       int truncatedTokens = approxTokensForMessageJson(
-        AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
+        AIMessage(
+          role: m.role,
+          content: truncated,
+          createdAt: m.createdAt,
+          reasoningContent: m.reasoningContent,
+          reasoningDuration: m.reasoningDuration,
+          toolCalls: m.toolCalls,
+          toolCallId: m.toolCallId,
+        ),
       );
       while (truncatedTokens > remaining && budgetBytes > 0) {
         budgetBytes = (budgetBytes - approxBytesPerToken).clamp(0, 1 << 30);
@@ -95,12 +103,28 @@ class PromptBudget {
           marker: marker,
         );
         truncatedTokens = approxTokensForMessageJson(
-          AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
+          AIMessage(
+            role: m.role,
+            content: truncated,
+            createdAt: m.createdAt,
+            reasoningContent: m.reasoningContent,
+            reasoningDuration: m.reasoningDuration,
+            toolCalls: m.toolCalls,
+            toolCallId: m.toolCallId,
+          ),
         );
       }
       if (truncatedTokens > remaining) break;
       pickedRev.add(
-        AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
+        AIMessage(
+          role: m.role,
+          content: truncated,
+          createdAt: m.createdAt,
+          reasoningContent: m.reasoningContent,
+          reasoningDuration: m.reasoningDuration,
+          toolCalls: m.toolCalls,
+          toolCallId: m.toolCallId,
+        ),
       );
       remaining = 0;
       break;

@@ -1299,6 +1299,9 @@ class AIMessage {
     m['content'] = effectiveContent;
 
     if (toolCalls != null && toolCalls!.isNotEmpty) m['tool_calls'] = toolCalls;
+    if ((reasoningContent ?? '').trim().isNotEmpty) {
+      m['reasoning_content'] = reasoningContent!.trim();
+    }
     if (toolCallId != null && toolCallId!.trim().isNotEmpty) {
       m['tool_call_id'] = toolCallId!.trim();
     }

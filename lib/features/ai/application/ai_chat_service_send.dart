@@ -3029,9 +3029,17 @@ extension AIChatServiceSendExt on AIChatService {
       final AIMessage assistantToolCallMessage = AIMessage(
         role: 'assistant',
         content: result.content,
+        reasoningContent: result.reasoning,
+        reasoningDuration: result.reasoningDuration,
         toolCalls: result.toolCalls
             .map((e) => e.toOpenAIToolCallJson())
             .toList(),
+      );
+      unawaited(
+        FlutterLogger.nativeDebug(
+          'AITrace',
+          'TOOL_LOOP_ASSISTANT_CALL cid=$cid iter=$iters toolCalls=${result.toolCalls.length} contentLen=${result.content.length} reasoningLen=${(result.reasoning ?? '').length} reasoningField=${(result.reasoning ?? '').trim().isNotEmpty ? 1 : 0}',
+        ),
       );
       working.add(assistantToolCallMessage);
       rawTurnTranscript.add(assistantToolCallMessage);

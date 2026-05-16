@@ -136,6 +136,8 @@ extension AIChatServicePromptBudgetExt on AIChatService {
         role: 'user',
         content: _imageMessagePlaceholderText(m),
         createdAt: m.createdAt,
+        toolCalls: m.toolCalls,
+        toolCallId: m.toolCallId,
       );
     }
     if (changed && cid.trim().isNotEmpty) {
@@ -380,6 +382,8 @@ extension AIChatServicePromptBudgetExt on AIChatService {
           role: m.role,
           content: truncated,
           createdAt: m.createdAt,
+          reasoningContent: m.reasoningContent,
+          reasoningDuration: m.reasoningDuration,
           toolCalls: m.toolCalls,
           toolCallId: m.toolCallId,
           apiContent: m.apiContent,
