@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
@@ -85,6 +86,10 @@ void main() {
           'aspect_ratio': 'wide',
           'quality': 'HIGH',
           'output_format': 'jpg',
+          'reference_image_paths': List<String>.generate(
+            20,
+            (int index) => ' ref_$index.png ',
+          ),
         });
 
     expect(params.prompt, 'draw a clean icon');
@@ -93,6 +98,9 @@ void main() {
     expect(params.size, '1536x1024');
     expect(params.quality, 'high');
     expect(params.outputFormat, 'jpeg');
+    expect(params.referenceImagePaths.length, 16);
+    expect(params.referenceImagePaths.first, 'ref_0.png');
+    expect(params.hasReferenceImages, isTrue);
 
     expect(AIImageGenerationParams.normalizeCount(-2), 1);
     expect(AIImageGenerationParams.sizeForAspectRatio('portrait'), '1024x1536');

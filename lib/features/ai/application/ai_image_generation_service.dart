@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
@@ -13,6 +15,8 @@ import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 
 const String kAiImageGenerationContext = 'image_generation';
 const int kAiImageGenerationMaxCount = 10;
+const int kAiImageEditMaxReferenceImages = 16;
+const int kAiImageEditMaxReferenceEdge = 2048;
 
 class AIImageGenerationParams {
   const AIImageGenerationParams({
@@ -21,6 +25,7 @@ class AIImageGenerationParams {
     this.aspectRatio = 'square',
     this.quality = 'medium',
     this.outputFormat = 'png',
+    this.referenceImagePaths = const <String>[],
   });
 
   final String prompt;
@@ -28,6 +33,7 @@ class AIImageGenerationParams {
   final String aspectRatio;
   final String quality;
   final String outputFormat;
+  final List<String> referenceImagePaths;
 
   AIImageGenerationParams normalized() => AIImageGenerationParams(
     prompt: prompt.trim(),
@@ -35,9 +41,12 @@ class AIImageGenerationParams {
     aspectRatio: normalizeAspectRatio(aspectRatio),
     quality: normalizeQuality(quality),
     outputFormat: normalizeOutputFormat(outputFormat),
+    referenceImagePaths: normalizeReferenceImagePaths(referenceImagePaths),
   );
 
   String get size => sizeForAspectRatio(aspectRatio);
+
+  bool get hasReferenceImages => referenceImagePaths.isNotEmpty;
 
   static AIImageGenerationParams fromJson(Map<String, dynamic> json) {
     return AIImageGenerationParams(
@@ -46,6 +55,9 @@ class AIImageGenerationParams {
       aspectRatio: normalizeAspectRatio(json['aspect_ratio']),
       quality: normalizeQuality(json['quality']),
       outputFormat: normalizeOutputFormat(json['output_format']),
+      referenceImagePaths: normalizeReferenceImagePaths(
+        json['reference_image_paths'] ?? json['referenceImagePaths'],
+      ),
     ).normalized();
   }
 
@@ -114,6 +126,20 @@ class AIImageGenerationParams {
       default:
         return 'png';
     }
+  }
+
+  static List<String> normalizeReferenceImagePaths(Object? raw) {
+    final List<String> values = <String>[];
+    if (raw is Iterable) {
+      for (final Object? item in raw) {
+        final String path = (item ?? '').toString().trim();
+        if (path.isNotEmpty) values.add(path);
+      }
+    } else {
+      final String path = (raw ?? '').toString().trim();
+      if (path.isNotEmpty) values.add(path);
+    }
+    return <String>{...values}.take(kAiImageEditMaxReferenceImages).toList();
   }
 }
 
@@ -190,6 +216,22 @@ class AIImageGenerationService {
     return base.replace(path: nextPath);
   }
 
+  static Uri buildImagesEditsUri(String baseUrl) {
+    final String trimmed = baseUrl.trim();
+    if (trimmed.isEmpty) {
+      return Uri.parse('https://api.openai.com/v1/images/edits');
+    }
+    final Uri base = Uri.parse(trimmed);
+    final String path = base.path.trim();
+    final String normalizedPath = path.endsWith('/')
+        ? path.substring(0, path.length - 1)
+        : path;
+    final String nextPath = normalizedPath.endsWith('/v1')
+        ? '$normalizedPath/images/edits'
+        : '$normalizedPath/v1/images/edits';
+    return base.replace(path: nextPath);
+  }
+
   Future<AIImageGenerationResult> generate({
     required AIImageGenerationParams params,
     required String conversationId,
@@ -212,7 +254,7 @@ class AIImageGenerationService {
     unawaited(
       FlutterLogger.nativeInfo(
         'AI_IMAGE',
-        'generate.start call=$toolCallId promptLen=${normalized.prompt.length} count=${normalized.count} size=${normalized.size} quality=${normalized.quality} format=${normalized.outputFormat} endpoints=${endpoints.length} cid=$conversationId assistantAt=$assistantCreatedAtMs',
+        'generate.start call=$toolCallId promptLen=${normalized.prompt.length} count=${normalized.count} size=${normalized.size} quality=${normalized.quality} format=${normalized.outputFormat} refs=${normalized.referenceImagePaths.length} endpoints=${endpoints.length} cid=$conversationId assistantAt=$assistantCreatedAtMs',
       ),
     );
     if (endpoints.isEmpty) {
@@ -285,6 +327,16 @@ class AIImageGenerationService {
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception('Image generation API key is missing.');
     }
+    if (params.hasReferenceImages) {
+      return _editWithEndpoint(
+        endpoint: endpoint,
+        params: params,
+        conversationId: conversationId,
+        assistantCreatedAtMs: assistantCreatedAtMs,
+        toolCallId: toolCallId,
+        apiKey: apiKey,
+      );
+    }
     final Uri uri = buildImagesGenerationsUri(endpoint.baseUrl);
     final Map<String, Object?> body = <String, Object?>{
       'model': endpoint.model,
@@ -321,16 +373,122 @@ class AIImageGenerationService {
       );
     }
 
+    final Map<String, dynamic> obj = _decodeImageResponseObject(
+      response.body,
+      invalidJsonMessage: 'Image generation response is not valid JSON.',
+      invalidObjectMessage: 'Image generation response is not an object.',
+    );
+    return _persistImageResponse(
+      endpoint: endpoint,
+      params: params,
+      conversationId: conversationId,
+      assistantCreatedAtMs: assistantCreatedAtMs,
+      toolCallId: toolCallId,
+      obj: obj,
+    );
+  }
+
+  Future<AIImageGenerationResult> _editWithEndpoint({
+    required AIEndpoint endpoint,
+    required AIImageGenerationParams params,
+    required String conversationId,
+    required int? assistantCreatedAtMs,
+    required String toolCallId,
+    required String apiKey,
+  }) async {
+    final List<_PreparedEditImage> references = <_PreparedEditImage>[];
+    for (final String path in params.referenceImagePaths) {
+      references.add(await _prepareReferenceImage(path));
+    }
+    if (references.isEmpty) {
+      throw Exception('At least one reference image is required.');
+    }
+
+    final Uri uri = buildImagesEditsUri(endpoint.baseUrl);
+    final http.MultipartRequest request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $apiKey'
+      ..fields['model'] = endpoint.model
+      ..fields['prompt'] = params.prompt
+      ..fields['n'] = params.count.toString()
+      ..fields['size'] = params.size
+      ..fields['quality'] = params.quality
+      ..fields['output_format'] = params.outputFormat
+      ..fields['response_format'] = 'b64_json';
+
+    final String imageFieldName = references.length == 1 ? 'image' : 'image[]';
+    for (int i = 0; i < references.length; i += 1) {
+      final _PreparedEditImage ref = references[i];
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          imageFieldName,
+          ref.bytes,
+          filename: ref.fileName,
+          contentType: MediaType.parse(ref.mimeType),
+        ),
+      );
+    }
+
+    unawaited(
+      FlutterLogger.nativeInfo(
+        'AI_IMAGE',
+        'http.edit.request call=$toolCallId uri=$uri model=${endpoint.model} refs=${references.length} n=${params.count} size=${params.size} quality=${params.quality} format=${params.outputFormat}',
+      ),
+    );
+
+    final http.StreamedResponse streamed = await _client.send(request);
+    final http.Response response = await http.Response.fromStream(streamed);
+    unawaited(
+      FlutterLogger.nativeInfo(
+        'AI_IMAGE',
+        'http.edit.response call=$toolCallId status=${response.statusCode} bytes=${response.bodyBytes.length}',
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Image edit request failed: ${response.statusCode} ${_clip(response.body, 800)}',
+      );
+    }
+
+    final Map<String, dynamic> obj = _decodeImageResponseObject(
+      response.body,
+      invalidJsonMessage: 'Image edit response is not valid JSON.',
+      invalidObjectMessage: 'Image edit response is not an object.',
+    );
+    return _persistImageResponse(
+      endpoint: endpoint,
+      params: params,
+      conversationId: conversationId,
+      assistantCreatedAtMs: assistantCreatedAtMs,
+      toolCallId: toolCallId,
+      obj: obj,
+    );
+  }
+
+  Map<String, dynamic> _decodeImageResponseObject(
+    String body, {
+    required String invalidJsonMessage,
+    required String invalidObjectMessage,
+  }) {
     final dynamic decoded;
     try {
-      decoded = jsonDecode(response.body);
+      decoded = jsonDecode(body);
     } catch (_) {
-      throw Exception('Image generation response is not valid JSON.');
+      throw Exception(invalidJsonMessage);
     }
     if (decoded is! Map) {
-      throw Exception('Image generation response is not an object.');
+      throw Exception(invalidObjectMessage);
     }
-    final Map<String, dynamic> obj = Map<String, dynamic>.from(decoded);
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Future<AIImageGenerationResult> _persistImageResponse({
+    required AIEndpoint endpoint,
+    required AIImageGenerationParams params,
+    required String conversationId,
+    required int? assistantCreatedAtMs,
+    required String toolCallId,
+    required Map<String, dynamic> obj,
+  }) async {
     final dynamic dataRaw = obj['data'];
     if (dataRaw is! List || dataRaw.isEmpty) {
       throw Exception('Image generation response is missing data.');
@@ -423,6 +581,8 @@ class AIImageGenerationService {
           'quality': params.quality,
           'output_format': params.outputFormat,
           'marker': marker,
+          if (params.hasReferenceImages)
+            'reference_image_count': params.referenceImagePaths.length,
         });
       }
     } catch (e) {
@@ -486,6 +646,47 @@ class AIImageGenerationService {
 
     throw Exception(
       'Image generation response is missing b64_json or downloadable url.',
+    );
+  }
+
+  Future<_PreparedEditImage> _prepareReferenceImage(String path) async {
+    final File file = File(path.trim());
+    if (!await file.exists()) {
+      throw Exception('Reference image file does not exist.');
+    }
+    final Uint8List original = await file.readAsBytes();
+    if (original.isEmpty) {
+      throw Exception('Reference image file is empty.');
+    }
+    final img.Image? decoded = img.decodeImage(original);
+    if (decoded == null) {
+      throw Exception('Reference image format is not supported.');
+    }
+    img.Image normalized = img.bakeOrientation(decoded);
+    final int longest = normalized.width > normalized.height
+        ? normalized.width
+        : normalized.height;
+    if (longest > kAiImageEditMaxReferenceEdge) {
+      normalized = img.copyResize(
+        normalized,
+        width: normalized.width >= normalized.height
+            ? kAiImageEditMaxReferenceEdge
+            : null,
+        height: normalized.height > normalized.width
+            ? kAiImageEditMaxReferenceEdge
+            : null,
+        interpolation: img.Interpolation.average,
+      );
+    }
+    final Uint8List pngBytes = Uint8List.fromList(img.encodePng(normalized));
+    final String stem = p
+        .basenameWithoutExtension(file.path)
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    return _PreparedEditImage(
+      fileName: '${stem.isEmpty ? 'reference' : stem}.png',
+      mimeType: 'image/png',
+      bytes: pngBytes,
     );
   }
 
@@ -592,4 +793,16 @@ class AIImageGenerationService {
     if (t.length <= maxChars) return t;
     return '${t.substring(0, maxChars)}...';
   }
+}
+
+class _PreparedEditImage {
+  const _PreparedEditImage({
+    required this.fileName,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  final String fileName;
+  final String mimeType;
+  final Uint8List bytes;
 }
