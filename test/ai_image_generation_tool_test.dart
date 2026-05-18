@@ -11,7 +11,9 @@ import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
 import 'package:screen_memo/features/ai/application/ai_image_generation_service.dart';
 import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
+import 'package:screen_memo/features/ai/application/chat_context_service.dart';
 import 'package:screen_memo/features/ai_chat/presentation/widgets/markdown_math.dart';
+import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -761,6 +763,249 @@ void main() {
         } catch (_) {}
         if (await tmp.exists()) {
           await tmp.delete(recursive: true);
+        }
+      }
+    },
+  );
+
+  test(
+    'batched get_images follow-up preserves contiguous tool results',
+    () async {
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'screen_memo_tool_batch_order_',
+      );
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      var chatCalls = 0;
+      Map<String, dynamic>? followUpRequest;
+      Future<void>? serverDone;
+      try {
+        final Directory root = Directory(p.join(tmp.path, 'root'));
+        await root.create(recursive: true);
+        await ScreenshotDatabase.instance.initializeForDesktop(root.path);
+
+        final File screenshot = File(
+          p.join(root.path, 'output', 'screenshots', 'xhs_sample.png'),
+        );
+        await screenshot.parent.create(recursive: true);
+        await screenshot.writeAsBytes(base64Decode(_onePixelPngBase64));
+        await ScreenshotDatabase.instance.insertScreenshot(
+          ScreenshotRecord(
+            appPackageName: 'com.xingin.xhs',
+            appName: '小红书',
+            filePath: screenshot.path,
+            captureTime: DateTime.now(),
+            fileSize: await screenshot.length(),
+            ocrText: '小红书 sample',
+          ),
+        );
+
+        serverDone = () async {
+          await for (final HttpRequest req in server) {
+            final String path = req.uri.path;
+            final String body = await utf8.decoder.bind(req).join();
+            if (req.method == 'POST' && path == '/v1/chat/completions') {
+              chatCalls += 1;
+              if (chatCalls == 1) {
+                req.response.statusCode = HttpStatus.ok;
+                req.response.headers.set(
+                  HttpHeaders.contentTypeHeader,
+                  'text/event-stream; charset=utf-8',
+                );
+                req.response.write(
+                  'data: ${jsonEncode(<String, dynamic>{
+                    'choices': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'delta': <String, dynamic>{
+                          'tool_calls': <Map<String, dynamic>>[
+                            <String, dynamic>{
+                              'index': 0,
+                              'id': 'call_img_1',
+                              'type': 'function',
+                              'function': <String, dynamic>{
+                                'name': 'get_images',
+                                'arguments': jsonEncode(<String, dynamic>{
+                                  'filenames': <String>['xhs_sample.png'],
+                                }),
+                              },
+                            },
+                            <String, dynamic>{
+                              'index': 1,
+                              'id': 'call_search_1',
+                              'type': 'function',
+                              'function': <String, dynamic>{
+                                'name': 'search_screenshots_ocr',
+                                'arguments': jsonEncode(<String, dynamic>{
+                                  'query': '小红书',
+                                  'limit': 1,
+                                }),
+                              },
+                            },
+                          ],
+                        },
+                        'finish_reason': 'tool_calls',
+                      },
+                    ],
+                  })}\n\n',
+                );
+                req.response.write('data: [DONE]\n\n');
+                await req.response.close();
+                continue;
+              }
+
+              followUpRequest = jsonDecode(body) as Map<String, dynamic>;
+              req.response.statusCode = HttpStatus.ok;
+              req.response.headers.set(
+                HttpHeaders.contentTypeHeader,
+                'text/event-stream; charset=utf-8',
+              );
+              req.response.write(
+                'data: ${jsonEncode(<String, dynamic>{
+                  'choices': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'delta': <String, dynamic>{'content': 'done'},
+                      'finish_reason': 'stop',
+                    },
+                  ],
+                })}\n\n',
+              );
+              req.response.write('data: [DONE]\n\n');
+              await req.response.close();
+              continue;
+            }
+
+            req.response.statusCode = HttpStatus.notFound;
+            await req.response.close();
+          }
+        }();
+
+        final String baseUrl = 'http://127.0.0.1:${server.port}';
+        final int? providerId = await AIProvidersService.instance
+            .createProvider(
+              name: 'Tool batch order provider',
+              type: AIProviderTypes.openai,
+              baseUrl: baseUrl,
+              models: const <String>['chat-test'],
+              apiKey: 'sk-test',
+              isDefault: true,
+            );
+        expect(providerId, isNotNull);
+        await ScreenshotDatabase.instance.setAIContext(
+          context: 'chat',
+          providerId: providerId!,
+          model: 'chat-test',
+        );
+
+        await HttpOverrides.runZoned(
+          () async {
+            final AIStreamingSession session = await AIChatService.instance
+                .sendMessageStreamedV2WithDisplayOverride(
+                  '看一下我最近小红书看了啥',
+                  '看一下我最近小红书看了啥',
+                  includeHistory: false,
+                  persistHistory: true,
+                  persistHistoryTail: true,
+                  tools: AIChatService.defaultChatTools(),
+                  toolChoice: 'auto',
+                  conversationCid: 'cid-tool-batch-order',
+                  uiUserCreatedAtMs: DateTime.now().millisecondsSinceEpoch,
+                  uiAssistantCreatedAtMs:
+                      DateTime.now().millisecondsSinceEpoch + 1,
+                );
+            await session.stream.toList();
+            await session.completed;
+          },
+          createHttpClient: (SecurityContext? context) {
+            return _RealHttpOverrides().createHttpClient(context);
+          },
+        );
+
+        expect(chatCalls, 2);
+        expect(followUpRequest, isNotNull);
+        final List<dynamic> messages =
+            followUpRequest!['messages'] as List<dynamic>;
+        final int assistantIdx = messages.indexWhere((dynamic raw) {
+          final Map<String, dynamic> message = Map<String, dynamic>.from(
+            raw as Map,
+          );
+          return message['role'] == 'assistant' &&
+              message['tool_calls'] is List;
+        });
+        expect(assistantIdx, greaterThanOrEqualTo(0));
+        final Map<String, dynamic> assistant = Map<String, dynamic>.from(
+          messages[assistantIdx] as Map,
+        );
+        final List<dynamic> toolCalls = assistant['tool_calls'] as List<dynamic>;
+        expect(toolCalls, hasLength(2));
+        expect(
+          messages
+              .skip(assistantIdx + 1)
+              .take(2)
+              .map((dynamic raw) => (raw as Map)['role'])
+              .toList(),
+          <String>['tool', 'tool'],
+        );
+        expect(
+          messages
+              .skip(assistantIdx + 1)
+              .take(2)
+              .map((dynamic raw) => (raw as Map)['tool_call_id'])
+              .toList(),
+          <String>['call_img_1', 'call_search_1'],
+        );
+        final Map<String, dynamic> imageUser = Map<String, dynamic>.from(
+          messages[assistantIdx + 3] as Map,
+        );
+        expect(imageUser['role'], 'user');
+        expect(imageUser['content'], isA<List<dynamic>>());
+
+        List<AIMessage> rawTranscript = const <AIMessage>[];
+        int rawAssistantIdx = -1;
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+          rawTranscript = await ChatContextService.instance
+              .loadRawTranscriptForPrompt(
+                cid: 'cid-tool-batch-order',
+                maxTokens: 0,
+              );
+          rawAssistantIdx = rawTranscript.indexWhere(
+            (AIMessage message) =>
+                message.role == 'assistant' &&
+                (message.toolCalls?.isNotEmpty ?? false),
+          );
+          if (rawAssistantIdx >= 0 &&
+              rawTranscript.length > rawAssistantIdx + 3) {
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(rawAssistantIdx, greaterThanOrEqualTo(0));
+        expect(rawTranscript[rawAssistantIdx + 1].role, 'tool');
+        expect(rawTranscript[rawAssistantIdx + 1].toolCallId, 'call_img_1');
+        expect(rawTranscript[rawAssistantIdx + 2].role, 'tool');
+        expect(rawTranscript[rawAssistantIdx + 2].toolCallId, 'call_search_1');
+        expect(rawTranscript[rawAssistantIdx + 3].role, 'user');
+      } finally {
+        await server.close(force: true);
+        if (serverDone != null) {
+          await serverDone.timeout(
+            const Duration(seconds: 1),
+            onTimeout: () {},
+          );
+        }
+        try {
+          await ScreenshotDatabase.instance.disposeDesktop();
+        } catch (_) {}
+        if (await tmp.exists()) {
+          try {
+            await tmp.delete(recursive: true);
+          } on FileSystemException {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+            try {
+              if (await tmp.exists()) await tmp.delete(recursive: true);
+            } catch (_) {}
+          }
         }
       }
     },

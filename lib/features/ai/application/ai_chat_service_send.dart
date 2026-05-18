@@ -3213,6 +3213,8 @@ extension AIChatServiceSendExt on AIChatService {
       int idxInBatch = 0;
       int batchRetrievalCalls = 0;
       int batchRetrievalHits = 0;
+      final List<AIMessage> batchToolProtocolMessages = <AIMessage>[];
+      final List<AIMessage> batchFollowUpMessages = <AIMessage>[];
       for (final AIToolCall call in result.toolCalls) {
         idxInBatch += 1;
         totalToolCalls += 1;
@@ -3282,8 +3284,14 @@ extension AIChatServiceSendExt on AIChatService {
           model: modelForBudget,
         );
         toolSw.stop();
-        working.addAll(toolMsgs);
-        rawTurnTranscript.addAll(toolMsgs);
+        final List<AIMessage> protocolToolMsgs = toolMsgs
+            .where((AIMessage m) => m.role == 'tool')
+            .toList(growable: false);
+        final List<AIMessage> followUpMsgs = toolMsgs
+            .where((AIMessage m) => m.role != 'tool')
+            .toList(growable: false);
+        batchToolProtocolMessages.addAll(protocolToolMsgs);
+        batchFollowUpMessages.addAll(followUpMsgs);
         if (rawToolPayload != null || toolMsgs.isNotEmpty) {
           final Map<String, dynamic> obj =
               rawToolPayload ?? _safeJsonObject(toolMsgs.first.content);
@@ -3375,6 +3383,15 @@ extension AIChatServiceSendExt on AIChatService {
           );
         }
       }
+
+      // OpenAI-compatible chat tool protocol requires the assistant tool_calls
+      // message to be followed immediately by every matching role=tool result.
+      // Auxiliary follow-up messages, such as get_images image_url payloads, must
+      // come after the whole batch of tool results.
+      working.addAll(batchToolProtocolMessages);
+      working.addAll(batchFollowUpMessages);
+      rawTurnTranscript.addAll(batchToolProtocolMessages);
+      rawTurnTranscript.addAll(batchFollowUpMessages);
 
       if (shouldFinishAfterGenerateImage) {
         final List<String> markers =
