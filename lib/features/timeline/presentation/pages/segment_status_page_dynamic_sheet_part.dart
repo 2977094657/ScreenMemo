@@ -885,13 +885,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
                 enabled: hasRaw,
                 onPressed: () async {
                   if (!hasRaw) return;
+                  final AppLocalizations l10n = AppLocalizations.of(context);
                   try {
                     await Clipboard.setData(ClipboardData(text: rawText));
-                    if (!mounted) return;
-                    UINotifier.success(
-                      context,
-                      AppLocalizations.of(context).copySuccess,
-                    );
+                    if (!mounted || !context.mounted) return;
+                    UINotifier.success(context, l10n.copySuccess);
                   } catch (_) {}
                 },
               ),

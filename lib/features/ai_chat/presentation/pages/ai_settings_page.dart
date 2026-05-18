@@ -15,6 +15,7 @@ import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
 import 'package:screen_memo/features/ai/application/chat_context_service.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
+import 'package:screen_memo/core/widgets/ui_select_field.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';

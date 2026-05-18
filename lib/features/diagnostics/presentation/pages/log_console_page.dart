@@ -9,6 +9,7 @@ import 'package:talker/talker.dart';
 
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart' hide LogLevel;
+import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/search_styles.dart';
 
 enum _LogLevelFilter { all, debug, info, warn, error }
@@ -253,30 +254,31 @@ class _LogConsolePageState extends State<LogConsolePage> {
       appBar: AppBar(
         title: Text(widget.title ?? l10n.logPanelTitle),
         actions: [
-          PopupMenuButton<_LogLevelFilter>(
+          UIActionMenuButton<_LogLevelFilter>(
             tooltip: l10n.logFilterTooltip,
-            initialValue: _filter,
+            selectedValue: _filter,
             onSelected: (v) => setState(() => _filter = v),
-            itemBuilder: (context) => [
-              PopupMenuItem(
+            minWidth: 220,
+            items: [
+              UIActionMenuItem(
                 value: _LogLevelFilter.all,
-                child: Text(l10n.logLevelAll),
+                label: l10n.logLevelAll,
               ),
-              PopupMenuItem(
+              UIActionMenuItem(
                 value: _LogLevelFilter.debug,
-                child: Text(l10n.logLevelDebugVerbose),
+                label: l10n.logLevelDebugVerbose,
               ),
-              PopupMenuItem(
+              UIActionMenuItem(
                 value: _LogLevelFilter.info,
-                child: Text(l10n.logLevelInfo),
+                label: l10n.logLevelInfo,
               ),
-              PopupMenuItem(
+              UIActionMenuItem(
                 value: _LogLevelFilter.warn,
-                child: Text(l10n.logLevelWarning),
+                label: l10n.logLevelWarning,
               ),
-              PopupMenuItem(
+              UIActionMenuItem(
                 value: _LogLevelFilter.error,
-                child: Text(l10n.logLevelErrorSevere),
+                label: l10n.logLevelErrorSevere,
               ),
             ],
             child: const Padding(

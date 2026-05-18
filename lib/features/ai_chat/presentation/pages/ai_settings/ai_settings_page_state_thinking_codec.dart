@@ -1197,14 +1197,12 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
   }
 
   Widget _buildGroupSelector() {
-    final items = <DropdownMenuItem<int?>>[
-      DropdownMenuItem<int?>(
+    final items = <UISelectItem<int?>>[
+      UISelectItem<int?>(
         value: null,
-        child: Text(AppLocalizations.of(context).ungroupedSingleConfig),
+        label: AppLocalizations.of(context).ungroupedSingleConfig,
       ),
-      ..._groups.map(
-        (g) => DropdownMenuItem<int?>(value: g.id, child: Text(g.name)),
-      ),
+      ..._groups.map((g) => UISelectItem<int?>(value: g.id, label: g.name)),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1226,11 +1224,15 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         if (_groupSelectorVisible)
           Row(
             children: [
-              DropdownButton<int?>(
+              UISelectField<int?>(
                 value: _activeGroupId,
                 items: items,
-                isDense: true,
-                style: Theme.of(context).textTheme.bodySmall,
+                width: 190,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing2,
+                  vertical: AppTheme.spacing1,
+                ),
+                menuMaxHeight: 320,
                 onChanged: (v) => _onGroupChanged(v),
               ),
               const SizedBox(width: AppTheme.spacing2),

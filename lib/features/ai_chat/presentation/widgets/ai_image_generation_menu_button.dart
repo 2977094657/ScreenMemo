@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';
 import 'package:screen_memo/core/widgets/search_styles.dart';
+import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
@@ -491,32 +492,19 @@ class _AIImageGenerationMenuButtonState
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
+    return UIActionMenuButton<String>(
       tooltip: AppLocalizations.of(context).aiGeneratedImagesHistoryTitle,
-      icon: const Icon(Icons.image_outlined),
+      buttonIcon: const Icon(Icons.image_outlined),
       onSelected: _handleSelected,
-      itemBuilder: (context) => [
-        PopupMenuItem<String>(
+      minWidth: 248,
+      items: [
+        UIActionMenuItem<String>(
           value: 'image_generation_model',
-          child: ListTile(
-            leading: const Icon(Icons.tune_outlined),
-            title: Text(
-              AppLocalizations.of(context).aiGeneratedImageModelTitle,
-            ),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
+          label: AppLocalizations.of(context).aiGeneratedImageModelTitle,
         ),
-        PopupMenuItem<String>(
+        UIActionMenuItem<String>(
           value: 'generated_images_history',
-          child: ListTile(
-            leading: const Icon(Icons.image_search_outlined),
-            title: Text(
-              AppLocalizations.of(context).aiGeneratedImagesHistoryTitle,
-            ),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
+          label: AppLocalizations.of(context).aiGeneratedImagesHistoryTitle,
         ),
       ],
     );

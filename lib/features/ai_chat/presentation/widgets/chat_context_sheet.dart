@@ -20,6 +20,7 @@ import 'package:screen_memo/features/ai/application/prompt_budget.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/widgets/segmented_token_bar.dart';
+import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 
@@ -553,7 +554,7 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                       onPressed: _busy ? null : _reload,
                       icon: const Icon(Icons.refresh_rounded),
                     ),
-                    PopupMenuButton<_ConversationExportAction>(
+                    UIActionMenuButton<_ConversationExportAction>(
                       tooltip: ChatContextSheet._loc(
                         context,
                         '导出当前会话',
@@ -561,30 +562,26 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                       ),
                       enabled: !_busy,
                       onSelected: _onExportActionSelected,
-                      itemBuilder: (ctx) =>
-                          <PopupMenuEntry<_ConversationExportAction>>[
-                            PopupMenuItem<_ConversationExportAction>(
-                              value: _ConversationExportAction.copy,
-                              child: Text(
-                                ChatContextSheet._loc(
-                                  context,
-                                  '复制当前会话',
-                                  'Copy conversation',
-                                ),
-                              ),
-                            ),
-                            PopupMenuItem<_ConversationExportAction>(
-                              value: _ConversationExportAction.save,
-                              child: Text(
-                                ChatContextSheet._loc(
-                                  context,
-                                  '保存到文件',
-                                  'Save to file',
-                                ),
-                              ),
-                            ),
-                          ],
-                      icon: const Icon(Icons.ios_share_outlined),
+                      showSelectedState: false,
+                      items: [
+                        UIActionMenuItem<_ConversationExportAction>(
+                          value: _ConversationExportAction.copy,
+                          label: ChatContextSheet._loc(
+                            context,
+                            '复制当前会话',
+                            'Copy conversation',
+                          ),
+                        ),
+                        UIActionMenuItem<_ConversationExportAction>(
+                          value: _ConversationExportAction.save,
+                          label: ChatContextSheet._loc(
+                            context,
+                            '保存到文件',
+                            'Save to file',
+                          ),
+                        ),
+                      ],
+                      buttonIcon: const Icon(Icons.ios_share_outlined),
                     ),
                     if (isDrawer)
                       IconButton(
