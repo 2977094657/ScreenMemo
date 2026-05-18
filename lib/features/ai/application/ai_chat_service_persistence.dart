@@ -6,14 +6,14 @@ extension AIChatServicePersistenceExt on AIChatService {
     final String languagePolicy = lookupAppLocalizations(
       locale,
     ).aiSystemPromptLanguagePolicy.trim();
-    final String timeContext = buildCurrentDateTimeSystemMessage(locale).trim();
-    final String appMarkerContext = buildAppMarkerSystemMessage(locale).trim();
     final String chartProtocol = _chartMarkdownProtocolForLocale(locale).trim();
+    final String appMarkerContext = buildAppMarkerSystemMessage(locale).trim();
+    final String timeContext = buildCurrentDateTimeSystemMessage(locale).trim();
     final List<String> blocks = <String>[
       if (languagePolicy.isNotEmpty) languagePolicy,
-      if (timeContext.isNotEmpty) timeContext,
-      if (appMarkerContext.isNotEmpty) appMarkerContext,
       if (allowCharts && chartProtocol.isNotEmpty) chartProtocol,
+      if (appMarkerContext.isNotEmpty) appMarkerContext,
+      if (timeContext.isNotEmpty) timeContext,
     ];
     return blocks.join('\n\n');
   }
