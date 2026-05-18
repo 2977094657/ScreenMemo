@@ -10,6 +10,7 @@ import com.fqyw.screen_memo.segment.SegmentSummaryManager
 import com.fqyw.screen_memo.settings.AISettingsNative
 import com.fqyw.screen_memo.settings.UserSettingsKeysNative
 import com.fqyw.screen_memo.settings.UserSettingsStorage
+import com.fqyw.screen_memo.logging.OutputFileLogger
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -80,6 +81,14 @@ class DynamicRebuildService : Service() {
                 )
             } catch (_: Exception) {}
             val current = DynamicRebuildTaskStore.load(appCtx)
+            logBackfillDiag(
+                appCtx,
+                "startOrResumeTask requestedMode=$normalizedTaskMode resumeExisting=$resumeExisting " +
+                    "requestedConcurrency=${dayConcurrency ?: "null"} normalizedConcurrency=$normalizedConcurrency " +
+                    "currentTaskId=${current?.taskId ?: "null"} currentMode=${current?.taskMode ?: "null"} " +
+                    "currentStatus=${current?.status ?: "null"} currentRecoverable=${current?.isRecoverable() ?: false} " +
+                    "currentCanContinue=${current?.canContinue() ?: false}",
+            )
             if (current != null && current.isRecoverable()) {
                 current.dayConcurrency = normalizeDayConcurrency(current.dayConcurrency)
                 current.currentStage = "resume_requested"
@@ -92,6 +101,13 @@ class DynamicRebuildService : Service() {
                     ),
                 )
                 DynamicRebuildTaskStore.save(appCtx, current)
+                logBackfillDiag(
+                    appCtx,
+                    "startOrResumeTask resumeRecoverable taskId=${current.taskId} mode=${current.taskMode} " +
+                        "status=${current.status} dayConcurrency=${current.dayConcurrency} " +
+                        "dayWorks=${current.dayWorks.size} totalSegments=${current.totalSegments} " +
+                        "processed=${current.processedSegments} failed=${current.failedSegments}",
+                )
                 startService(appCtx, ACTION_RESUME)
                 return current.toMap()
             }
@@ -145,6 +161,14 @@ class DynamicRebuildService : Service() {
                 )
                 current.refreshDerivedFields()
                 DynamicRebuildTaskStore.save(appCtx, current)
+                logBackfillDiag(
+                    appCtx,
+                    "startOrResumeTask continueExisting taskId=${current.taskId} mode=${current.taskMode} " +
+                        "status=${current.status} dayConcurrency=${current.dayConcurrency} " +
+                        "dayWorks=${current.dayWorks.size} totalSegments=${current.totalSegments} " +
+                        "processed=${current.processedSegments} failed=${current.failedSegments} " +
+                        "model=${aiConfig.model}",
+                )
                 startService(appCtx, ACTION_RESUME)
                 return current.toMap()
             }
@@ -200,6 +224,11 @@ class DynamicRebuildService : Service() {
                 },
             )
             DynamicRebuildTaskStore.save(context, next)
+            logBackfillDiag(
+                appCtx,
+                "startOrResumeTask createNew taskId=${next.taskId} mode=${next.taskMode} " +
+                    "status=${next.status} dayConcurrency=${next.dayConcurrency}",
+            )
             startService(context, ACTION_START)
             return next.toMap()
         }
@@ -291,6 +320,18 @@ class DynamicRebuildService : Service() {
                 "fill_missing" -> TASK_MODE_BACKFILL
                 else -> TASK_MODE_REBUILD
             }
+        }
+
+        private fun logBackfillDiag(context: Context, message: String) {
+            val normalized = message
+                .replace("\r", " ")
+                .replace("\n", " ")
+                .trim()
+            if (normalized.isEmpty()) return
+            val appCtx = try { context.applicationContext } catch (_: Exception) { context }
+            try {
+                OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+            } catch (_: Exception) {}
         }
 
         private fun startService(context: Context, action: String) {
@@ -479,6 +520,13 @@ class DynamicRebuildService : Service() {
         val durationSec = readSegmentDurationSec()
         val sampleIntervalSec = readSegmentSampleIntervalSec()
         val backfillMode = state.isBackfillMode()
+        logBackfillDiag(
+            this,
+            "prepareWorkItems start taskId=${state.taskId} mode=${state.taskMode} backfill=$backfillMode " +
+                "status=${state.status} durationSec=$durationSec sampleIntervalSec=$sampleIntervalSec " +
+                "dayConcurrency=${state.dayConcurrency} existingDayWorks=${state.dayWorks.size} " +
+                "existingTotalSegments=${state.totalSegments}",
+        )
         recordStage(
             state = state,
             stage = "prepare_worklist",
@@ -501,6 +549,10 @@ class DynamicRebuildService : Service() {
             } catch (_: Exception) {
                 0
             }
+            logBackfillDiag(
+                this,
+                "prepareWorkItems normalizeOverlap taskId=${state.taskId} normalizedClusters=$normalized",
+            )
             if (normalized > 0) {
                 recordStage(
                     state = state,
@@ -515,10 +567,21 @@ class DynamicRebuildService : Service() {
         } else {
             SegmentSummaryManager.buildFullRebuildWorklist(this, durationSec)
         }
+        logBackfillDiag(
+            this,
+            "prepareWorkItems worklistBuilt taskId=${state.taskId} mode=${state.taskMode} " +
+                "windows=${windows.size} preview=${windows.take(12).joinToString(";") { window -> windowDiag(window.startTime, window.endTime, window.existingSegmentId) }}",
+        )
         val dayWorks = buildDayWorkItems(windows).toMutableList()
         if (backfillMode) {
             reorderBackfillDaysForOverlapSafety(dayWorks)
         }
+        logBackfillDiag(
+            this,
+            "prepareWorkItems dayWorksBuilt taskId=${state.taskId} days=${dayWorks.size} " +
+                "totalWindows=${dayWorks.sumOf { it.totalSegments() }} " +
+                "preview=${dayWorks.take(20).joinToString(";") { day -> "${day.dayKey}:${day.totalSegments()}" }}",
+        )
         val aiConfig = if (windows.isNotEmpty()) {
             recordStage(
                 state = state,
@@ -593,6 +656,11 @@ class DynamicRebuildService : Service() {
             synchronized(stateLock) {
                 persistStateLocked(state)
             }
+            logBackfillDiag(
+                this,
+                "prepareWorkItems completedEmpty taskId=${state.taskId} mode=${state.taskMode} " +
+                    "reason=${state.currentStageDetail}",
+            )
             return state
         }
 
@@ -611,6 +679,12 @@ class DynamicRebuildService : Service() {
                 } else {
                     "共 ${state.totalSegments} 条动态，覆盖 ${state.totalDays()} 天，并发 ${state.dayConcurrency} 天"
                 },
+        )
+        logBackfillDiag(
+            this,
+            "prepareWorkItems done taskId=${state.taskId} mode=${state.taskMode} " +
+                "totalSegments=${state.totalSegments} totalDays=${state.totalDays()} " +
+                "dayConcurrency=${state.dayConcurrency} aiModel=${state.aiModel}",
         )
         return state
     }
@@ -631,7 +705,17 @@ class DynamicRebuildService : Service() {
         val parallelism = synchronized(stateLock) {
             state.parallelismForRun()
         }
+        logBackfillDiag(
+            this,
+            "processPreparedDays start taskId=${state.taskId} mode=${state.taskMode} " +
+                "parallelism=$parallelism dayWorks=${state.dayWorks.size} totalSegments=${state.totalSegments} " +
+                "processed=${state.processedSegments} failed=${state.failedSegments}",
+        )
         if (parallelism <= 0) {
+            logBackfillDiag(
+                this,
+                "processPreparedDays noParallelism taskId=${state.taskId} reason=parallelism<=0",
+            )
             return finalizeTaskState(state)
         }
 
@@ -644,8 +728,16 @@ class DynamicRebuildService : Service() {
         var inFlight = 0
         try {
             inFlight += submitAvailableDayAssignments(state, completion)
+            logBackfillDiag(
+                this,
+                "processPreparedDays submittedInitial taskId=${state.taskId} inFlight=$inFlight",
+            )
             while (inFlight > 0) {
                 if (isCancellationRequested()) {
+                    logBackfillDiag(
+                        this,
+                        "processPreparedDays cancelBeforeWait taskId=${state.taskId} inFlight=$inFlight",
+                    )
                     requestCancelAllWorkers("cancel_before_wait")
                     return markCancelled(state, "已停止所有并发线程，后台任务退出")
                 }
@@ -674,11 +766,26 @@ class DynamicRebuildService : Service() {
                     throw e
                 }
                 inFlight -= 1
+                logBackfillDiag(
+                    this,
+                    "processPreparedDays workerResult taskId=${state.taskId} slot=${result.slotId} " +
+                        "dayIndex=${result.dayIndex} outcome=${result.outcome} inFlightAfterPoll=$inFlight",
+                )
                 if (result.outcome == DayRunOutcome.CANCELLED || isCancellationRequested()) {
+                    logBackfillDiag(
+                        this,
+                        "processPreparedDays workerCancelled taskId=${state.taskId} slot=${result.slotId} " +
+                            "dayIndex=${result.dayIndex}",
+                    )
                     requestCancelAllWorkers("worker_cancelled")
                     return markCancelled(state, "已停止所有并发线程，后台任务退出")
                 }
                 if (result.outcome == DayRunOutcome.FATAL) {
+                    logBackfillDiag(
+                        this,
+                        "processPreparedDays fatal taskId=${state.taskId} slot=${result.slotId} " +
+                            "dayIndex=${result.dayIndex} error=${clipForUi(result.fatalError?.message ?: "unknown", 240)}",
+                    )
                     synchronized(stateLock) {
                         state.status = DynamicRebuildTaskState.STATUS_FAILED
                         state.lastError = result.fatalError?.message ?: "动态重建失败"
@@ -698,7 +805,14 @@ class DynamicRebuildService : Service() {
                     return state
                 }
                 if (!isCancellationRequested()) {
-                    inFlight += submitAvailableDayAssignments(state, completion)
+                    val submitted = submitAvailableDayAssignments(state, completion)
+                    inFlight += submitted
+                    if (submitted > 0) {
+                        logBackfillDiag(
+                            this,
+                            "processPreparedDays submittedMore taskId=${state.taskId} submitted=$submitted inFlight=$inFlight",
+                        )
+                    }
                 }
             }
         } finally {
@@ -712,8 +826,17 @@ class DynamicRebuildService : Service() {
         }
 
         if (isCancellationRequested()) {
+            logBackfillDiag(
+                this,
+                "processPreparedDays cancelledAtEnd taskId=${state.taskId}",
+            )
             return markCancelled(state, "已中断当前 AI 请求，后台任务停止")
         }
+        logBackfillDiag(
+            this,
+            "processPreparedDays finalize taskId=${state.taskId} processed=${state.processedSegments} " +
+                "failed=${state.failedSegments} failedDays=${state.failedDayCount()}",
+        )
         return finalizeTaskState(state)
     }
 
@@ -760,6 +883,13 @@ class DynamicRebuildService : Service() {
             val assignment = synchronized(stateLock) {
                 acquireNextAssignmentLocked(state)
             } ?: break
+            val day = synchronized(stateLock) { state.dayWorks.getOrNull(assignment.dayIndex) }
+            logBackfillDiag(
+                this,
+                "submitAssignment taskId=${state.taskId} slot=${assignment.slotId} dayIndex=${assignment.dayIndex} " +
+                    "day=${day?.dayKey ?: ""} status=${day?.status ?: ""} nextIndex=${day?.nextWindowIndex ?: -1} " +
+                    "total=${day?.totalSegments() ?: 0} retry=${day?.retryCount ?: 0}",
+            )
             completion.submit {
                 processDayAssignment(
                     state = state,
@@ -847,6 +977,13 @@ class DynamicRebuildService : Service() {
                         ?.currentSegmentId ?: 0L,
                 )
             } ?: return DayRunResult(slotId, dayIndex, DayRunOutcome.COMPLETED)
+            logBackfillDiag(
+                this,
+                "processDay windowSnapshot taskId=${state.taskId} slot=$slotId dayIndex=$dayIndex " +
+                    "day=${snapshot.dayKey} ordinal=${snapshot.processedSegments + 1}/${snapshot.totalSegments} " +
+                    "retry=${snapshot.retryCount} window=${windowDiag(snapshot.windowStart, snapshot.windowEnd, snapshot.existingSegmentId)} " +
+                    "currentSegmentId=${snapshot.currentSegmentId}",
+            )
 
             recordStage(
                 state = state,
@@ -867,6 +1004,12 @@ class DynamicRebuildService : Service() {
             )
 
             try {
+                logBackfillDiag(
+                    this,
+                    "processDay rebuildCall taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "window=${windowDiag(snapshot.windowStart, snapshot.windowEnd, snapshot.existingSegmentId)} " +
+                        "passExistingSegmentId=${snapshot.currentSegmentId.takeIf { it > 0L } ?: snapshot.existingSegmentId}",
+                )
                 SegmentSummaryManager.rebuildWindowStrict(
                     ctx = this,
                     windowStart = snapshot.windowStart,
@@ -901,6 +1044,11 @@ class DynamicRebuildService : Service() {
                         }
                     },
                 )
+                logBackfillDiag(
+                    this,
+                    "processDay rebuildReturn taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "window=${windowDiag(snapshot.windowStart, snapshot.windowEnd, snapshot.existingSegmentId)}",
+                )
                 val dayCompleted = synchronized(stateLock) {
                     val day = state.dayWorks.getOrNull(dayIndex)
                         ?: return@synchronized false
@@ -928,6 +1076,11 @@ class DynamicRebuildService : Service() {
                     }
                     completed
                 }
+                logBackfillDiag(
+                    this,
+                    "processDay progressUpdated taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "dayCompleted=$dayCompleted nextOrdinal=${snapshot.processedSegments + 2}/${snapshot.totalSegments}",
+                )
                 if (dayCompleted) {
                     recordStage(
                         state = state,
@@ -942,6 +1095,11 @@ class DynamicRebuildService : Service() {
                         dayKey = snapshot.dayKey,
                         dayIndex = dayIndex,
                     )
+                    logBackfillDiag(
+                        this,
+                        "processDay dayCompleted taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                            "total=${snapshot.totalSegments}",
+                    )
                     return DayRunResult(slotId, dayIndex, DayRunOutcome.COMPLETED)
                 }
                 recordStage(
@@ -955,6 +1113,11 @@ class DynamicRebuildService : Service() {
                     dayIndex = dayIndex,
                 )
             } catch (e: SegmentSummaryManager.DynamicRebuildCancelledException) {
+                logBackfillDiag(
+                    this,
+                    "processDay cancelledException taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "segment=${e.segmentId} message=${clipForUi(e.message ?: e.toString(), 240)}",
+                )
                 if (e.segmentId > 0L) {
                     synchronized(stateLock) {
                         state.workerSlots.firstOrNull { it.slotId == slotId }
@@ -964,6 +1127,12 @@ class DynamicRebuildService : Service() {
                 }
                 return DayRunResult(slotId, dayIndex, DayRunOutcome.CANCELLED)
             } catch (e: SegmentSummaryManager.DynamicRebuildStepException) {
+                logBackfillDiag(
+                    this,
+                    "processDay stepException taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "segment=${e.segmentId} window=${windowDiag(snapshot.windowStart, snapshot.windowEnd, snapshot.existingSegmentId)} " +
+                        "message=${clipForUi(e.message ?: e.toString(), 300)}",
+                )
                 if (isCancellationRequested()) {
                     return DayRunResult(slotId, dayIndex, DayRunOutcome.CANCELLED)
                 }
@@ -975,6 +1144,12 @@ class DynamicRebuildService : Service() {
                     segmentId = e.segmentId,
                 )
             } catch (e: Exception) {
+                logBackfillDiag(
+                    this,
+                    "processDay exception taskId=${state.taskId} slot=$slotId day=${snapshot.dayKey} " +
+                        "window=${windowDiag(snapshot.windowStart, snapshot.windowEnd, snapshot.existingSegmentId)} " +
+                        "type=${e.javaClass.simpleName} message=${clipForUi(e.message ?: e.toString(), 300)}",
+                )
                 if (isCancellationRequested()) {
                     return DayRunResult(slotId, dayIndex, DayRunOutcome.CANCELLED)
                 }
@@ -999,6 +1174,11 @@ class DynamicRebuildService : Service() {
         val dayKey = synchronized(stateLock) {
             state.dayWorks.getOrNull(dayIndex)?.dayKey.orEmpty()
         }
+        logBackfillDiag(
+            this,
+            "handleDayFailure start taskId=${state.taskId} slot=$slotId dayIndex=$dayIndex day=$dayKey " +
+                "segment=$segmentId error=${clipForUi(errorMessage, 300)}",
+        )
         recordStage(
             state = state,
             stage = "day_failure_probe",
@@ -1031,6 +1211,12 @@ class DynamicRebuildService : Service() {
                 failureMessages = listOf(e.message ?: e.toString()),
             )
         }
+        logBackfillDiag(
+            this,
+            "handleDayFailure probeResult taskId=${state.taskId} slot=$slotId day=$dayKey " +
+                "success=${probe.success} keyLabel=${probe.keyLabel} attempts=${probe.attemptsUsed} " +
+                "candidates=${probe.totalCandidates} failure=${clipForUi(probe.failureSummary, 300)}",
+        )
 
         if (isCancellationRequested()) {
             return DayRunResult(slotId, dayIndex, DayRunOutcome.CANCELLED)
@@ -1085,6 +1271,10 @@ class DynamicRebuildService : Service() {
             }
         }
         if (outcome == DayRunOutcome.FATAL) {
+            logBackfillDiag(
+                this,
+                "handleDayFailure fatalOutcome taskId=${state.taskId} slot=$slotId day=$dayKey",
+            )
             return DayRunResult(slotId, dayIndex, outcome)
         }
         recordStage(
@@ -1108,6 +1298,11 @@ class DynamicRebuildService : Service() {
             dayKey = dayKey,
             dayIndex = dayIndex,
             forceLog = true,
+        )
+        logBackfillDiag(
+            this,
+            "handleDayFailure done taskId=${state.taskId} slot=$slotId day=$dayKey outcome=$outcome " +
+                "retry=${synchronized(stateLock) { state.dayWorks.getOrNull(dayIndex)?.retryCount ?: -1 }}",
         )
         return DayRunResult(slotId, dayIndex, outcome)
     }
@@ -1172,6 +1367,12 @@ class DynamicRebuildService : Service() {
             state.refreshDerivedFields()
             persistStateLocked(state)
         }
+        logBackfillDiag(
+            this,
+            "finalizeTaskState taskId=${state.taskId} mode=${state.taskMode} status=${state.status} " +
+                "total=${state.totalSegments} processed=${state.processedSegments} failed=${state.failedSegments} " +
+                "failedDays=${state.failedDayCount()} completedDays=${state.completedDayCount()}",
+        )
         try {
             SegmentSummaryManager.tick(applicationContext)
         } catch (_: Exception) {}
@@ -1228,6 +1429,13 @@ class DynamicRebuildService : Service() {
             ),
         )
         persistStateLocked(state)
+        logBackfillDiag(
+            this,
+            "acquireAssignment taskId=${state.taskId} slot=${slot.slotId} dayIndex=$dayIndex " +
+                "day=${day.dayKey} status=${day.status} retry=${day.retryCount} " +
+                "nextIndex=${day.nextWindowIndex} total=${day.totalSegments()} " +
+                "currentWindow=${currentWindow?.let { windowDiag(it.startTime, it.endTime, it.existingSegmentId) } ?: "none"}",
+        )
         return WorkerAssignment(slot.slotId, dayIndex)
     }
 
@@ -1261,6 +1469,11 @@ class DynamicRebuildService : Service() {
         }
         state.refreshDerivedFields()
         persistStateLocked(state)
+        logBackfillDiag(
+            this,
+            "markDayCompleted taskId=${state.taskId} slot=$slotId day=${day.dayKey} " +
+                "total=${day.totalSegments()} processed=${day.processedSegments}",
+        )
     }
 
     private fun persistStateLocked(state: DynamicRebuildTaskState) {
@@ -1766,6 +1979,11 @@ class DynamicRebuildService : Service() {
         } catch (_: Exception) {
             ""
         }
+    }
+
+    private fun windowDiag(startMillis: Long, endMillis: Long, existingSegmentId: Long = 0L): String {
+        val segPart = if (existingSegmentId > 0L) " existingSegmentId=$existingSegmentId" else ""
+        return "${formatRangeLabel(startMillis, endMillis)}($startMillis-$endMillis)$segPart"
     }
 }
 

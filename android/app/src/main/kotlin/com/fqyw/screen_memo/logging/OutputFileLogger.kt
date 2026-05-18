@@ -72,6 +72,10 @@ object OutputFileLogger {
         enqueueForce(context, true, tag, message)
     }
 
+    fun infoDiagnostic(context: Context, tag: String, message: String) {
+        try { writeDirect(context, false, tag, message) } catch (_: Exception) {}
+    }
+
     private fun writeDirect(context: Context, isError: Boolean, tag: String, message: String) {
         val ts = System.currentTimeMillis()
         val base = context.getExternalFilesDir(null) ?: return

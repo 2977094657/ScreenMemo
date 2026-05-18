@@ -26,6 +26,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
+import java.security.MessageDigest
 import java.util.Timer
 import java.util.TimerTask
 import java.util.Collections
@@ -68,6 +69,7 @@ object SegmentSummaryManager {
         val startTime: Long,
         val endTime: Long,
         val segmentId: Long = 0L,
+        val hasCompliantResult: Boolean = false,
     )
 
     // 读写设置（SharedPreferences）
@@ -79,6 +81,33 @@ object SegmentSummaryManager {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun logBackfillDiag(ctx: Context, message: String) {
+        val normalized = message
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .trim()
+        if (normalized.isEmpty()) return
+        val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        try {
+            OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+        } catch (_: Exception) {}
+    }
+
+    private fun shortSha256(text: String): String {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(text.toByteArray(Charsets.UTF_8))
+            digest.joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }.take(16)
+        } catch (_: Exception) {
+            text.hashCode().toString(16)
+        }
+    }
+
+    private fun promptPrefixHash(text: String, maxChars: Int): String {
+        val n = text.length.coerceAtMost(maxChars).coerceAtLeast(0)
+        return "${n}:${shortSha256(text.take(n))}"
     }
 
     private fun isDynamicAutoRepairEnabled(ctx: Context): Boolean {
@@ -1253,8 +1282,8 @@ object SegmentSummaryManager {
                 }
                 val orderedForPrompt = effSamples.sortedBy { it.captureTime }
 
-                sb.append(timeRangeLabel).append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
                 sb.append(header).append('\n')
+                sb.append(timeRangeLabel).append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
                 sb.append(imageIndexLabel).append('\n')
                 for ((idx, s) in orderedForPrompt.withIndex()) {
                     val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
@@ -1796,9 +1825,28 @@ object SegmentSummaryManager {
         stageScope: String? = null,
     ): AiCallResult {
         val configs = resolveAiConfigCandidates(ctx, aiConfigOverride)
+        val diagEnabled = isDynamicAiStage(stageScope) || isDynamicRebuildTaskActive(ctx)
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall enter seg=${seg.id} samples=${samples.size} promptLen=${prompt.length} " +
+                    "isMerge=$isMerge injectDynamicRules=$injectDynamicRules maxImagesOverride=${maxImagesOverride ?: "null"} " +
+                    "allowJsonAutoRetry=$allowJsonAutoRetry jsonRetryCount=$jsonRetryCount strictFailure=$strictFailure " +
+                    "stageScope=${stageScope ?: "null"} configCount=${configs.size} override=${aiConfigOverride != null}",
+            )
+        }
         var lastError: Exception? = null
         for ((index, cfg) in configs.withIndex()) {
             try {
+                if (diagEnabled) {
+                    logBackfillDiag(
+                        ctx,
+                        "aiCall candidateStart seg=${seg.id} candidate=${index + 1}/${configs.size} " +
+                            "keyId=${cfg.providerKeyId ?: 0} keyName=${cfg.providerKeyName ?: "legacy"} " +
+                            "providerId=${cfg.providerId ?: 0} providerType=${cfg.providerType ?: "unknown"} " +
+                            "model=${cfg.model} baseUrl=${cfg.baseUrl} chatPath=${cfg.chatPath ?: "default"}",
+                    )
+                }
                 if (configs.size > 1) {
                     FileLogger.i(
                         TAG,
@@ -1820,12 +1868,27 @@ object SegmentSummaryManager {
                     stageReporter = stageReporter,
                     stageScope = stageScope,
                 )
+                if (diagEnabled) {
+                    logBackfillDiag(
+                        ctx,
+                        "aiCall candidateSuccess seg=${seg.id} candidate=${index + 1}/${configs.size} " +
+                            "keyId=${cfg.providerKeyId ?: 0} model=${result.model} outputLen=${result.outputText.length} " +
+                            "structuredLen=${result.structuredJson?.length ?: 0}",
+                    )
+                }
                 AISettingsNative.markProviderKeySuccess(ctx, cfg)
                 return result
             } catch (e: Exception) {
                 lastError = e
                 val msg = e.message ?: e.toString()
                 val errorType = classifyAiFailure(msg)
+                if (diagEnabled) {
+                    logBackfillDiag(
+                        ctx,
+                        "aiCall candidateFailed seg=${seg.id} candidate=${index + 1}/${configs.size} " +
+                            "keyId=${cfg.providerKeyId ?: 0} type=$errorType message=${truncateForLog(msg, 500)}",
+                    )
+                }
                 AISettingsNative.markProviderKeyFailure(ctx, cfg.providerKeyId, errorType, msg, 3)
                 if (configs.size > 1) {
                     FileLogger.w(
@@ -1856,9 +1919,28 @@ object SegmentSummaryManager {
         stageReporter: ((String, String, String, Long) -> Unit)? = null,
         stageScope: String? = null,
     ): AiCallResult {
+        val diagEnabled = isDynamicAiStage(stageScope) || isDynamicRebuildTaskActive(ctx)
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall singleEnter seg=${seg.id} samples=${samples.size} promptLen=${prompt.length} " +
+                    "isMerge=$isMerge injectDynamicRules=$injectDynamicRules maxImagesOverride=${maxImagesOverride ?: "null"} " +
+                    "allowJsonAutoRetry=$allowJsonAutoRetry jsonRetryCount=$jsonRetryCount strictFailure=$strictFailure " +
+                    "stageScope=${stageScope ?: "null"} override=${aiConfigOverride != null}",
+            )
+        }
         val cfg = aiConfigOverride ?: AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
         val requestTimeoutMs = resolveDynamicAiRequestTimeoutMs(stageScope)
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall configResolved seg=${seg.id} providerId=${cfg.providerId ?: 0} " +
+                    "providerType=${cfg.providerType ?: "unknown"} keyId=${cfg.providerKeyId ?: 0} " +
+                    "keyName=${cfg.providerKeyName ?: "legacy"} model=${cfg.model} baseUrl=${cfg.baseUrl} " +
+                    "chatPath=${cfg.chatPath ?: "default"} apiKeyBlank=${apiKey.isBlank()} timeoutMs=${requestTimeoutMs ?: 0L}",
+            )
+        }
         val clientBuilder = OkHttpClientFactory.newBuilder(ctx)
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
@@ -1873,6 +1955,9 @@ object SegmentSummaryManager {
                 .writeTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
         }
         val client = clientBuilder.build()
+        if (diagEnabled) {
+            logBackfillDiag(ctx, "aiCall clientReady seg=${seg.id} timeoutMs=${requestTimeoutMs ?: 0L}")
+        }
 
         val model = cfg.model
         val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
@@ -1911,6 +1996,14 @@ object SegmentSummaryManager {
             } else {
                 candidateSamples
             }
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall samplesPrepared seg=${seg.id} raw=${rawSamplesOrdered.size} " +
+                    "afterDamageFilter=${samplesOrdered.size} damaged=$damagedImages requestedCap=$requestedCap " +
+                    "effectiveCap=$effectiveCap effSamples=${effSamples.size} first=${effSamples.take(6).joinToString("|") { sample -> File(sample.filePath).name }}",
+            )
+        }
 
         val promptWithRule = if (!injectDynamicRules) {
             prompt
@@ -1935,13 +2028,13 @@ object SegmentSummaryManager {
             val dynamicCapRule = if (isMerge) {
                 if (isZhForRule) {
                     """
-- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进整体总结。
+- 仅对不超过总图数三分之一的代表性图片进行文字描述（向下取整，允许0张）；其余图片不要逐图描述，请合并进整体总结。
 - 如需逐图说明，请使用 described_images[] 列出这些被描述的图片（长度≤上述上限）；每项：{file:"图片序号字符串", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
 - key_actions[].ref_image 必须复用 content_groups[].representative_images 中已选择的图片序号，不得新增超出上限的图片引用。
 """.trim()
                 } else {
                     """
-- Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
+- Provide textual descriptions for at most one-third of the images (floor; may be 0). Do not narrate the rest image-by-image; integrate them into the summary.
 - If you describe any individual images, list them in described_images[] (length <= the cap); each item: {file:"image index string", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason"}.
 - key_actions[].ref_image MUST reuse image indexes chosen in content_groups[].representative_images and MUST NOT exceed the cap.
 """.trim()
@@ -1949,13 +2042,13 @@ object SegmentSummaryManager {
             } else {
                 if (isZhForRule) {
                     """
-- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进摘要。
+- 仅对不超过总图数三分之一的代表性图片进行文字描述（向下取整，允许0张）；其余图片不要逐图描述，请合并进摘要。
 - 仅使用 described_images[] 列出这些"被文字描述"的单张图片，数组长度<=上述上限；每项结构：{file:"图片序号字符串", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
 - key_actions[].ref_image 必须复用 described_images[] 中的图片序号，不得新增超出上限的图片引用。
 """.trim()
                 } else {
                     """
-- Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
+- Provide textual descriptions for at most one-third of the images (floor; may be 0). Do not narrate the rest image-by-image; integrate them into the summary.
 - Use described_images[] ONLY to list the individually described images, length <= the cap; each item: {file:"image index string", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason for the single image"}.
 - key_actions[].ref_image MUST reuse image indexes in described_images[] and MUST NOT exceed the cap.
                     """.trim()
@@ -1964,47 +2057,47 @@ object SegmentSummaryManager {
             val dynamicImageRule = if (slimOpenAiMergePrompt) {
                 when (effectiveLangForRule) {
                     "zh" -> """
- - 本次共 ${totalImagesToSend} 张图片。请按输入顺序将图片编号为 1..${totalImagesToSend}，后续所有图片引用都必须使用这些序号字符串。
+ - 本次输入包含多张图片。请按输入顺序将图片编号为连续序号字符串（从 1 开始），后续所有图片引用都必须使用这些序号字符串。
  - key_actions[].ref_image 与 content_groups[].representative_images 只能引用本次输入的图片序号，不得填写文件名或路径。
  - 不要重新生成 image_tags[] 与 image_descriptions[]；系统会沿用原事件已有的图片标签与图片描述。
  """.trim()
                     "ja" -> """
- - 今回の画像は ${totalImagesToSend} 枚です。入力順に 1..${totalImagesToSend} の番号文字列を使い、後続の画像参照は必ずその番号だけを使ってください。
+ - 今回の画像は複数枚あります。入力順に連番の文字列（1 から開始）を使い、後続の画像参照は必ずその番号だけを使ってください。
  - key_actions[].ref_image と content_groups[].representative_images は今回入力した画像番号のみ参照でき、ファイル名やパスは使わないでください。
  - image_tags[] と image_descriptions[] を再生成しないでください。既存イベントの画像タグと画像説明をシステム側で引き継ぎます。
  """.trim()
                     "ko" -> """
- - 이번 요청에는 이미지가 ${totalImagesToSend}장 있습니다. 입력 순서대로 1..${totalImagesToSend} 번호 문자열을 사용하고, 이후의 모든 이미지 참조는 반드시 그 번호만 사용하세요.
+ - 이번 요청에는 이미지가 여러 장 있습니다. 입력 순서대로 연속 번호 문자열(1부터 시작)을 사용하고, 이후의 모든 이미지 참조는 반드시 그 번호만 사용하세요.
  - key_actions[].ref_image 와 content_groups[].representative_images 는 이번 입력 이미지 번호만 참조할 수 있으며 파일명이나 경로를 쓰면 안 됩니다.
  - image_tags[] 와 image_descriptions[] 는 다시 생성하지 마세요. 기존 이벤트의 이미지 태그와 설명은 시스템이 이어받습니다.
  """.trim()
                     else -> """
- - This request includes ${totalImagesToSend} images. Number them by input order as 1..${totalImagesToSend}, and use only those index strings for any later image references.
+ - This request includes multiple images. Number them by input order as consecutive strings starting at 1, and use only those index strings for any later image references.
  - key_actions[].ref_image and content_groups[].representative_images must reference only the provided image indexes, never filenames or paths.
  - Do not regenerate image_tags[] or image_descriptions[]; the system will carry over image tags and descriptions from the original events.
  """.trim()
                 }
             } else when (effectiveLangForRule) {
                 "zh" -> """
- - 本次共 ${totalImagesToSend} 张图片。请按输入顺序将图片编号为 1..${totalImagesToSend}。必须输出 image_tags[]，长度必须等于 ${totalImagesToSend}，且 file 必须填写"图片序号字符串"（例如 "1"），不要填写文件名或路径。tags 必须为中文本地化标签；如涉及成人/裸露/性暗示等，请额外添加英文统一标签 "nsfw"（必须小写）。除 "nsfw" 外不要输出英文标签。
+ - 本次输入包含多张图片。请按输入顺序将图片编号为连续序号字符串（从 1 开始）。必须输出 image_tags[]，长度必须等于实际附带图片数量，且 file 必须填写"图片序号字符串"（例如 "1"），不要填写文件名或路径。tags 必须为中文本地化标签；如涉及成人/裸露/性暗示等，请额外添加英文统一标签 "nsfw"（必须小写）。除 "nsfw" 外不要输出英文标签。
  - 必须输出 image_descriptions[] 覆盖所有图片：每项 {from_file:"图片序号字符串", to_file:"图片序号字符串", description:"至少6句自然语言（尽可能 8-12 句）"}；允许将连续且内容高度一致的图片合并为一段（例如连续聊天截图），用 from_file/to_file 表示范围；确保所有图片序号被覆盖且不重复。
  - 为了便于后续检索/语义搜索：description 必须尽可能详尽、多角度描述画面（场景/界面布局/关键元素/可能的操作与意图/状态变化等），并覆盖尽可能多的可检索关键词/实体（应用/页面/功能/人物/地点/商品/流程等）。不要逐字抄写可见文字，也不要输出“可见文字：...”这类字段。每条 description 末尾必须追加 1 行：`关键词：...`（尽可能多、尽可能具体，可包含同义词/拆词/中英缩写；关键词建议至少 20 个，用 `、` 分隔）。
  - key_actions[].ref_image 必须引用本次输入的图片序号之一（字符串）。
  """.trim()
                 "ja" -> """
- - 今回は画像が ${totalImagesToSend} 枚です。入力順に 1..${totalImagesToSend} で番号付けしてください。image_tags[] を必ず出力し、要素数は ${totalImagesToSend} と同じにしてください。file にはファイル名ではなく「画像番号の文字列」（例: "1"）を入れてください。tags は日本語のローカライズタグを使用し、成人/露出/性的示唆などがある場合は英語の統一タグ "nsfw"(小文字) を追加してください。"nsfw" 以外は英語タグを出力しないでください。
+ - 今回は画像が複数枚あります。入力順に連番の文字列（1 から開始）で番号付けしてください。image_tags[] を必ず出力し、要素数は実際の添付画像数と同じにしてください。file にはファイル名ではなく「画像番号の文字列」（例: "1"）を入れてください。tags は日本語のローカライズタグを使用し、成人/露出/性的示唆などがある場合は英語の統一タグ "nsfw"(小文字) を追加してください。"nsfw" 以外は英語タグを出力しないでください。
  - image_descriptions[] で全画像をカバーしてください。各要素: {from_file:"画像番号文字列", to_file:"画像番号文字列", description:"自然言語で6文以上（可能なら 8-12 文）"}。内容がほぼ同じ連続画像（例: チャットの連続スクショ）は 1 つにまとめ、from_file/to_file で範囲を表現してください。全画像番号が重複なく必ず含まれるようにしてください。
  - 検索しやすくするため、description はできるだけ詳細に多角度で記述し（場面/レイアウト/主要要素/想定される操作や意図/状態変化など）、具体的な固有名詞/キーワード（アプリ/画面/機能/人物/場所/商品/ワークフロー等）をできるだけ多く含めてください。画面上の文字の書き起こしは不要で、`表示文字：...` のような欄も出力しないでください。各 description の末尾に必ず 1 行 `キーワード：...` を追加してください（できるだけ多く、同義語/分割語/略語も可；目安として 20 個以上）。
  - key_actions[].ref_image は今回入力した画像番号のいずれかを参照してください（文字列）。
  """.trim()
                 "ko" -> """
- - 이번 요청에는 이미지가 ${totalImagesToSend}장 있습니다. 입력 순서대로 1..${totalImagesToSend} 번호를 사용하세요. image_tags[]를 반드시 출력하고 길이는 ${totalImagesToSend}와 같아야 합니다. file에는 파일명이 아니라 "이미지 번호 문자열"(예: "1")을 넣으세요. tags는 한국어 로컬라이즈 태그를 사용하세요. 성인/노출/성적 암시 등이 있으면 영어 통일 태그 "nsfw"(소문자)를 추가하세요. "nsfw" 외에는 영어 태그를 출력하지 마세요.
+ - 이번 요청에는 이미지가 여러 장 있습니다. 입력 순서대로 연속 번호 문자열(1부터 시작)을 사용하세요. image_tags[]를 반드시 출력하고 길이는 실제 첨부 이미지 수와 같아야 합니다. file에는 파일명이 아니라 "이미지 번호 문자열"(예: "1")을 넣으세요. tags는 한국어 로컬라이즈 태그를 사용하세요. 성인/노출/성적 암시 등이 있으면 영어 통일 태그 "nsfw"(소문자)를 추가하세요. "nsfw" 외에는 영어 태그를 출력하지 마세요.
  - image_descriptions[]로 모든 이미지를 커버하세요. 각 항목: {from_file:"이미지 번호 문자열", to_file:"이미지 번호 문자열", description:"자연어 6문장 이상(가능하면 8-12문장)"}. 내용이 거의 동일한 연속 이미지(예: 연속 채팅 캡처)는 1개로 묶고 from_file/to_file로 범위를 표시하세요. 모든 이미지 번호가 중복 없이 반드시 포함되도록 하세요.
  - 검색/시맨틱 검색을 위해 description을 가능한 한 상세하고 다각도로 작성하세요(상황/레이아웃/핵심 요소/가능한 행동·의도/상태 변화 등). 구체적인 키워드/개체(앱/화면/기능/인물/장소/상품/워크플로 등)를 최대한 많이 포함하세요. 화면 글자 전사는 필요 없으며 `보이는 글자：...` 같은 항목도 출력하지 마세요. 각 description 끝에 반드시 1줄 `키워드：...`를 추가하세요(가능한 한 많이, 동의어/분해어/약어 포함 가능; 최소 20개 권장).
  - key_actions[].ref_image는 이번 입력 이미지 번호 중 하나를 참조해야 합니다(문자열).
  """.trim()
                 else -> """
- - This request includes ${totalImagesToSend} images. Number them by input order as 1..${totalImagesToSend}. You MUST output image_tags[] with exactly ${totalImagesToSend} items, and each item's file MUST be an image index string (e.g., "1"), not a filename/path. tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
+ - This request includes multiple images. Number them by input order as consecutive strings starting at 1. You MUST output image_tags[] with exactly one item per attached image, and each item's file MUST be an image index string (e.g., "1"), not a filename/path. tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
  - You MUST output image_descriptions[] covering ALL images. Each item: {from_file:"image index string", to_file:"image index string", description:"at least 6 natural language sentences (aim for 8-12 if reasonable)"}. You may merge highly similar consecutive images (e.g., continuous chat screenshots) into one description group and use from_file/to_file to denote the range. Ensure every image index is covered exactly once (no missing, no duplicates).
  - For retrieval/semantic search, each description must be detailed and multi-angle (scene/layout/key elements/likely action & intent/state changes) and include as many concrete searchable keywords/entities as possible (app/page/feature/people/places/product/workflow, etc.). Do NOT transcribe long on-screen text and do NOT output a separate "Visible text" field/section. Append exactly ONE final line to each description: `Keywords: ...` (many items; include synonyms/split-words/abbreviations when helpful; aim for 20+ keywords).
  - key_actions[].ref_image MUST reference one of the input image indexes (string).
@@ -2032,9 +2125,23 @@ object SegmentSummaryManager {
                 prompt
             }
         }
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall promptReady seg=${seg.id} promptLen=${prompt.length} promptWithRuleLen=${promptWithRule.length} " +
+                    "injectDynamicRules=$injectDynamicRules isGoogle=$isGoogle isMerge=$isMerge " +
+                    "promptPrefix1024=${promptPrefixHash(prompt, 1024)} promptWithRulePrefix1024=${promptPrefixHash(promptWithRule, 1024)}",
+            )
+        }
 
         // 速率限制：必要时等待
+        if (diagEnabled) {
+            logBackfillDiag(ctx, "aiCall rateLimitBefore seg=${seg.id}")
+        }
         val waited = acquireAiRateSlot(ctx)
+        if (diagEnabled) {
+            logBackfillDiag(ctx, "aiCall rateLimitAfter seg=${seg.id} waitedMs=$waited")
+        }
 
         // 配置校验与请求前日志
         try {
@@ -2079,6 +2186,13 @@ object SegmentSummaryManager {
         try {
             OutputFileLogger.info(ctx, TAG, "AI 准备：提供方=${if (isGoogle) "google" else "openai-compat"}, 模型=${model}, baseUrl=${base}, 段ID=${seg.id}, 合并=${isMerge}, 文本长度=${textLen}, 文本长度(含规则)=${textLenWithRule}, 图片数=${samples.size}, 实际发送=${effSamples.size}, 字节数=${totalImageBytes}, 缺失图片=${missingImages}, 疑似损坏图片=${damagedImages}, 前几个文件=${firstNames.joinToString("|")}")
         } catch (_: Exception) {}
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall imageStatsDone seg=${seg.id} totalImageBytes=$totalImageBytes missingImages=$missingImages " +
+                    "damagedImages=$damagedImages firstFiles=${firstNames.joinToString("|")}",
+            )
+        }
 
         // 额外打印提示词预览（不含图片/密钥）：Logcat 截断 + 文件完整
         try {
@@ -2094,6 +2208,14 @@ object SegmentSummaryManager {
         val t0 = System.currentTimeMillis()
         val requestId = "seg${seg.id}_${System.nanoTime()}"
         val providerLabel = if (isGoogle) "google" else "openai-compat"
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall requestContextReady seg=${seg.id} requestId=$requestId provider=$providerLabel " +
+                    "url=$url model=$model images=${effSamples.size}/${samples.size} promptLen=$textLenWithRule " +
+                    "promptPrefix2048=${promptPrefixHash(prompt, 2048)} promptWithRulePrefix2048=${promptPrefixHash(promptWithRule, 2048)}",
+            )
+        }
         val stageSpec = resolveDynamicAiStageSpec(stageScope)
         val heartbeatStop = AtomicBoolean(false)
         val heartbeatAttempt = AtomicInteger(1)
@@ -2200,9 +2322,19 @@ object SegmentSummaryManager {
             return sb.toString().trimEnd()
         }
         val rawRequestTrace: String? = try { buildRequestTrace() } catch (_: Exception) { null }
+        if (diagEnabled) {
+            logBackfillDiag(
+                ctx,
+                "aiCall rawRequestTraceReady seg=${seg.id} requestId=$requestId rawRequestLen=${rawRequestTrace?.length ?: 0}",
+            )
+        }
         logStructuredRequest(
-            "AIREQ START id=$requestId provider=$providerLabel segment_id=${seg.id} is_merge=$isMerge url=$url model=$model images_attached=${effSamples.size} images_total=${samples.size} prompt_len=$textLenWithRule timeout_ms=${requestTimeoutMs ?: 0L}"
+            "AIREQ START id=$requestId provider=$providerLabel segment_id=${seg.id} is_merge=$isMerge url=$url model=$model images_attached=${effSamples.size} images_total=${samples.size} prompt_len=$textLenWithRule " +
+                "prompt_prefix_1024=${promptPrefixHash(promptWithRule, 1024)} prompt_prefix_2048=${promptPrefixHash(promptWithRule, 2048)} timeout_ms=${requestTimeoutMs ?: 0L}"
         )
+        if (diagEnabled) {
+            logBackfillDiag(ctx, "aiCall aireqStartLogged seg=${seg.id} requestId=$requestId")
+        }
 
         try {
             if (isGoogle) {
@@ -2212,17 +2344,31 @@ object SegmentSummaryManager {
 
             val parts = JSONArray()
             parts.put(JSONObject().put("text", promptWithRule))
+            var encodedImages = 0
+            var skippedPayloadImages = 0
             for (s in effSamples) {
-                val payload = prepareImagePayloadForAi(ctx, s.filePath) ?: continue
-                if (payload.bytes.isEmpty()) continue
+                val payload = prepareImagePayloadForAi(ctx, s.filePath)
+                if (payload == null || payload.bytes.isEmpty()) {
+                    skippedPayloadImages += 1
+                    continue
+                }
                 val b64 = Base64.encodeToString(payload.bytes, Base64.NO_WRAP)
                 val inline = JSONObject()
                     .put("mimeType", payload.mime)
                     .put("data", b64)
                 parts.put(JSONObject().put("inlineData", inline))
+                encodedImages += 1
             }
             val contents = JSONArray().put(JSONObject().put("parts", parts))
             val body = JSONObject().put("contents", contents).toString()
+            if (diagEnabled) {
+                logBackfillDiag(
+                    ctx,
+                    "aiCall requestBodyReady seg=${seg.id} requestId=$requestId provider=google " +
+                        "encodedImages=$encodedImages skippedPayloadImages=$skippedPayloadImages bodyLen=${body.length} " +
+                        "bodyPrefix1024=${promptPrefixHash(body, 1024)}",
+                )
+            }
             val reqBody: RequestBody = body.toRequestBody("application/json; charset=utf-8".toMediaType())
             val req = Request.Builder()
                 .url(url)
@@ -2241,6 +2387,13 @@ object SegmentSummaryManager {
                 var lastFailureKind: String? = null
                 while (attempt < maxAttempts) {
                     maybeThrowDynamicAiCancelled(ctx, stageScope, seg.id)
+                    if (diagEnabled) {
+                        logBackfillDiag(
+                            ctx,
+                            "aiCall attemptStart seg=${seg.id} requestId=$requestId provider=google " +
+                                "attempt=${attempt + 1}/$maxAttempts url=$url",
+                        )
+                    }
                     heartbeatAttempt.set(attempt + 1)
                     heartbeatPhase.set("流式请求")
                     heartbeatResponseCode.set(-1)
@@ -2554,13 +2707,19 @@ object SegmentSummaryManager {
 
             val contentArr = JSONArray()
             contentArr.put(JSONObject().put("type", "text").put("text", promptWithRule))
+            var encodedImages = 0
+            var skippedPayloadImages = 0
             for (s in effSamples) {
-                val payload = prepareImagePayloadForAi(ctx, s.filePath) ?: continue
-                if (payload.bytes.isEmpty()) continue
+                val payload = prepareImagePayloadForAi(ctx, s.filePath)
+                if (payload == null || payload.bytes.isEmpty()) {
+                    skippedPayloadImages += 1
+                    continue
+                }
                 val b64 = Base64.encodeToString(payload.bytes, Base64.NO_WRAP)
                 val dataUrl = "data:" + payload.mime + ";base64," + b64
                 val imageUrl = JSONObject().put("url", dataUrl)
                 contentArr.put(JSONObject().put("type", "image_url").put("image_url", imageUrl))
+                encodedImages += 1
             }
             val messages = JSONArray().put(JSONObject()
                 .put("role", "user")
@@ -2619,6 +2778,16 @@ object SegmentSummaryManager {
                 if (preferResponsesApi) buildResponsesBody(true) else buildChatBody(true)
             val bodyNonStream =
                 if (preferResponsesApi) buildResponsesBody(false) else buildChatBody(false)
+            if (diagEnabled) {
+                logBackfillDiag(
+                    ctx,
+                    "aiCall requestBodyReady seg=${seg.id} requestId=$requestId provider=openai-compat " +
+                        "encodedImages=$encodedImages skippedPayloadImages=$skippedPayloadImages " +
+                        "bodyStreamLen=${bodyStream.length} bodyNonStreamLen=${bodyNonStream.length} " +
+                        "preferResponsesApi=$preferResponsesApi allowResponsesFallback=$allowResponsesFallback " +
+                        "bodyStreamPrefix1024=${promptPrefixHash(bodyStream, 1024)} bodyNonStreamPrefix1024=${promptPrefixHash(bodyNonStream, 1024)}",
+                )
+            }
 
             fun buildReq(targetUrl: String, body: String, accept: String): Request {
                 val reqBody: RequestBody =
@@ -2644,6 +2813,13 @@ object SegmentSummaryManager {
                 var lastFailureKind: String? = null
                 while (attempt < maxAttempts) {
                     maybeThrowDynamicAiCancelled(ctx, stageScope, seg.id)
+                    if (diagEnabled) {
+                        logBackfillDiag(
+                            ctx,
+                            "aiCall attemptStart seg=${seg.id} requestId=$requestId provider=openai-compat " +
+                                "attempt=${attempt + 1}/$maxAttempts url=$url",
+                        )
+                    }
                     heartbeatAttempt.set(attempt + 1)
                     heartbeatPhase.set("流式请求")
                     heartbeatResponseCode.set(-1)
@@ -3251,35 +3427,35 @@ object SegmentSummaryManager {
             )
             sb.append(langPolicy2).append('\n').append('\n')
             if (isZh2) {
-                sb.append("请判断两段时间是否属于同一用户事件：\n")
-                    .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                    .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                    .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
-                    .append("两段各自的 overall_summary：\n")
-                    .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
-                    .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
                 val gapMin = if (cur.startTime >= prev.endTime) (cur.startTime - prev.endTime) / 60000L else 0L
-                sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                sb.append("请判断两段时间是否属于同一用户事件：\n")
+                    .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
                     .append("合并判定策略（放宽）：\n")
                     .append("- 若两段主要应用相同，或同属'视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作'等同类行为，即使内容不同也视为同一事件；\n")
                     .append("- 时间间隔仅供参考，不设固定阈值；若后段延续了前段的同类行为或属于同一持续活动，倾向判定 same_event=true；\n")
                     .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
                     .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
-            } else {
-                sb.append("Decide whether the two time ranges belong to the same user event:\n")
-                    .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                    .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                    .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
-                    .append("Each range overall_summary:\n")
+                    .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                    .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                    .append("两段各自的 overall_summary：\n")
                     .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
                     .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                    .append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+            } else {
                 val gapMin = if (cur.startTime >= prev.endTime) (cur.startTime - prev.endTime) / 60000L else 0L
-                sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
+                sb.append("Decide whether the two time ranges belong to the same user event:\n")
+                    .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
                     .append("Merge decision guidelines (relaxed):\n")
                     .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
                     .append("- The time gap is only a reference (no fixed threshold). If the latter continues the former activity type or appears to be the same continuous activity, prefer same_event=true.\n")
                     .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
                     .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+                    .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                    .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                    .append("Each range overall_summary:\n")
+                    .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                    .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                    .append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
             }
 
             // 送入判定的图片：最终受提供方硬上限保护（<= PROVIDER_IMAGE_HARD_LIMIT）。
@@ -3822,35 +3998,35 @@ object SegmentSummaryManager {
                 )
                 sb.append(langPolicy2).append('\n').append('\n')
                 if (isZh2) {
-                    sb.append("请判断两段时间是否属于同一用户事件：\n")
-                        .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                        .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                        .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
-                        .append("两段各自的 overall_summary：\n")
-                        .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
-                        .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
                     val gapMin = if (cur.startTime >= prev.endTime) (cur.startTime - prev.endTime) / 60000L else 0L
-                    sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                    sb.append("请判断两段时间是否属于同一用户事件：\n")
+                        .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
                         .append("合并判定策略（放宽）：\n")
                         .append("- 若两段主要应用相同，或同属'视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作'等同类行为，即使内容不同也视为同一事件；\n")
                         .append("- 时间间隔仅供参考，不设固定阈值；若后段延续了前段的同类行为或属于同一持续活动，倾向判定 same_event=true；\n")
                         .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
                         .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
-                } else {
-                    sb.append("Decide whether the two time ranges belong to the same user event:\n")
-                        .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                        .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                        .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
-                        .append("Each range overall_summary:\n")
+                        .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                        .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                        .append("两段各自的 overall_summary：\n")
                         .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
                         .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                        .append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                } else {
                     val gapMin = if (cur.startTime >= prev.endTime) (cur.startTime - prev.endTime) / 60000L else 0L
-                    sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
+                    sb.append("Decide whether the two time ranges belong to the same user event:\n")
+                        .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
                         .append("Merge decision guidelines (relaxed):\n")
                         .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
                         .append("- The time gap is only a reference (no fixed threshold). If the latter continues the former activity type or appears to be the same continuous activity, prefer same_event=true.\n")
                         .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
                         .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+                        .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                        .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                        .append("Each range overall_summary:\n")
+                        .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                        .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                        .append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
                 }
 
                 stageReporter?.invoke(
@@ -4475,12 +4651,12 @@ object SegmentSummaryManager {
         }
 
         val sb = StringBuilder()
+        sb.append(headerBuilder.toString()).append('\n')
         sb.append(timeRangeLabel)
             .append(fmt(seg.startTime))
             .append(" - ")
             .append(fmt(seg.endTime))
             .append('\n')
-        sb.append(headerBuilder.toString()).append('\n')
         sb.append(imageIndexLabel).append('\n')
         for ((idx, s) in samples.sortedBy { it.captureTime }.withIndex()) {
             val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
@@ -5123,13 +5299,13 @@ object SegmentSummaryManager {
             else -> "Image index list (reference by number only)"
         }
 
+        sb.append(header).append('\n')
         sb.append(titleLabel).append('\n')
             .append(timeRangeLabel)
             .append(fmt(kotlin.math.min(a.startTime, b.startTime)))
             .append(" - ")
             .append(fmt(kotlin.math.max(a.endTime, b.endTime)))
             .append('\n')
-            .append(header).append('\n')
         run {
             val provided = samples.size
             val total = totalImages ?: provided
@@ -5429,6 +5605,7 @@ object SegmentSummaryManager {
                     startTime = it.startTime,
                     endTime = it.endTime,
                     segmentId = it.id,
+                    hasCompliantResult = SegmentDatabaseHelper.hasCompliantResultForSegment(ctx, it.id),
                 )
             }
         } catch (_: Exception) {
@@ -5491,13 +5668,14 @@ object SegmentSummaryManager {
                 endMillis = cur.endTime,
                 excludeSegmentId = cur.id,
                 requireResult = true,
-            ).firstOrNull()
+            ).firstOrNull { SegmentDatabaseHelper.hasCompliantResultForSegment(ctx, it.id) }
         } catch (_: Exception) {
             null
         }
         if (overlap != null) return overlap
         return try {
             SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+                ?.takeIf { SegmentDatabaseHelper.hasCompliantResultForSegment(ctx, it.id) }
         } catch (_: Exception) {
             null
         }
@@ -5507,50 +5685,154 @@ object SegmentSummaryManager {
         val safeDurationSec = durationSec.coerceAtLeast(60)
         val durationMs = safeDurationSec * 1000L
         val shots = SegmentDatabaseHelper.listAllShotsAscending(ctx)
-        if (shots.isEmpty()) return emptyList()
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist start durationSec=$durationSec safeDurationSec=$safeDurationSec shots=${shots.size}",
+        )
+        if (shots.isEmpty()) {
+            logBackfillDiag(ctx, "buildMissingWorklist empty reason=no_shots")
+            return emptyList()
+        }
         val now = System.currentTimeMillis()
         val scanStart = shots.first().captureTime
         val scanEnd = kotlin.math.min(now, shots.last().captureTime + durationMs)
         val scanStartForExisting = kotlin.math.max(0L, scanStart - durationMs)
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist scanRange scanStart=${fmt(scanStart)}($scanStart) " +
+                "scanEnd=${fmt(scanEnd)}($scanEnd) scanStartForExisting=${fmt(scanStartForExisting)}($scanStartForExisting) " +
+                "now=${fmt(now)}($now) firstShot=${fmt(shots.first().captureTime)} lastShot=${fmt(shots.last().captureTime)}",
+        )
+        val existingAll = try {
+            SegmentDatabaseHelper.listRootSegmentsOverlappingWindow(
+                context = ctx,
+                startMillis = scanStartForExisting,
+                endMillis = scanEnd + durationMs,
+                requireResult = false,
+            ).map {
+                ExistingDynamicWindow(
+                    startTime = it.startTime,
+                    endTime = it.endTime,
+                    segmentId = it.id,
+                    hasCompliantResult = SegmentDatabaseHelper.hasCompliantResultForSegment(ctx, it.id),
+                )
+            }
+        } catch (e: Exception) {
+            logBackfillDiag(
+                ctx,
+                "buildMissingWorklist existingAll failed type=${e.javaClass.simpleName} message=${e.message ?: e.toString()}",
+            )
+            emptyList()
+        }
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist existingAll count=${existingAll.size} compliant=${existingAll.count { it.hasCompliantResult }} " +
+                "preview=${existingAll.take(40).joinToString(";") { "seg=${it.segmentId} ${fmt(it.startTime)}-${fmt(it.endTime)} compliant=${it.hasCompliantResult}" }}",
+        )
+        var existingRawCount = 0
+        var existingCompliantCount = 0
+        val existingRejectedPreview = ArrayList<String>()
         val existingWithResults = try {
             SegmentDatabaseHelper.listRootSegmentsOverlappingWindow(
                 context = ctx,
                 startMillis = scanStartForExisting,
                 endMillis = scanEnd + durationMs,
                 requireResult = true,
-            ).map {
-                ExistingDynamicWindow(
-                    startTime = it.startTime,
-                    endTime = it.endTime,
-                    segmentId = it.id,
-                )
+            ).mapNotNull {
+                existingRawCount += 1
+                if (!SegmentDatabaseHelper.hasCompliantResultForSegment(ctx, it.id)) {
+                    if (existingRejectedPreview.size < 30) {
+                        existingRejectedPreview.add(
+                            "seg=${it.id} ${fmt(it.startTime)}-${fmt(it.endTime)} reason=non_compliant_result",
+                        )
+                    }
+                    null
+                } else {
+                    existingCompliantCount += 1
+                    ExistingDynamicWindow(
+                        startTime = it.startTime,
+                        endTime = it.endTime,
+                        segmentId = it.id,
+                        hasCompliantResult = true,
+                    )
+                }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logBackfillDiag(
+                ctx,
+                "buildMissingWorklist existingWithResults failed type=${e.javaClass.simpleName} message=${e.message ?: e.toString()}",
+            )
             emptyList()
         }
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist existingWithResults raw=$existingRawCount compliant=$existingCompliantCount " +
+                "rejectedPreview=${existingRejectedPreview.joinToString(";")}",
+        )
         val plan = planNonOverlappingWindows(
             shotTimes = shots.map { it.captureTime },
-            existingWindows = existingWithResults,
+            existingWindows = existingAll,
             durationMs = durationMs,
             nowMillis = now,
+        )
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist plan windows=${plan.windows.size} skippedCovered=${plan.skippedCovered} " +
+                "mergedShortGaps=${plan.mergedShortGaps} preview=${plan.windows.take(30).joinToString(";") { window -> "${fmt(window.startTime)}-${fmt(window.endTime)}" }}",
         )
         val missing = ArrayList<DynamicRebuildWindow>(plan.windows.size + 16)
         val dayStats = LinkedHashMap<String, Int>()
         val queuedKeys = HashSet<String>()
-        val existingWithoutResults = try {
+        val existingRepairScan = try {
             SegmentDatabaseHelper.listSegmentsNeedingSummary(
                 ctx,
                 limit = Int.MAX_VALUE,
                 sinceMillis = scanStartForExisting,
                 endMillis = scanEnd + durationMs,
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logBackfillDiag(
+                ctx,
+                "buildMissingWorklist existingRepairScan failed type=${e.javaClass.simpleName} message=${e.message ?: e.toString()}",
+            )
             emptyList()
         }
-        for (seg in existingWithoutResults) {
-            if (seg.startTime >= seg.endTime || seg.endTime > now) continue
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist existingRepairScan count=${existingRepairScan.size} " +
+                "preview=${existingRepairScan.take(80).joinToString(";") { seg -> segmentDiag(ctx, seg) }}",
+        )
+        val existingWithoutResults = ArrayList<SegmentDatabaseHelper.Segment>(existingRepairScan.size)
+        var queuedExisting = 0
+        var skippedExistingFutureOrInvalid = 0
+        var skippedExistingDuplicate = 0
+        var skippedExistingNowCompliant = 0
+        val skippedExistingPreview = ArrayList<String>()
+        for (seg in existingRepairScan) {
+            if (seg.startTime >= seg.endTime || seg.endTime > now) {
+                skippedExistingFutureOrInvalid += 1
+                if (skippedExistingPreview.size < 40) {
+                    skippedExistingPreview.add("seg=${seg.id} reason=invalid_or_future ${fmt(seg.startTime)}-${fmt(seg.endTime)}")
+                }
+                continue
+            }
+            val repairReason = resultRepairReasonForSegment(ctx, seg.id)
+            if (repairReason == "none") {
+                skippedExistingNowCompliant += 1
+                if (skippedExistingPreview.size < 40) {
+                    skippedExistingPreview.add("seg=${seg.id} reason=now_compliant ${fmt(seg.startTime)}-${fmt(seg.endTime)}")
+                }
+                continue
+            }
+            existingWithoutResults.add(seg)
             val key = "${seg.startTime}|${seg.endTime}"
-            if (!queuedKeys.add(key)) continue
+            if (!queuedKeys.add(key)) {
+                skippedExistingDuplicate += 1
+                if (skippedExistingPreview.size < 40) {
+                    skippedExistingPreview.add("seg=${seg.id} reason=duplicate_window ${fmt(seg.startTime)}-${fmt(seg.endTime)}")
+                }
+                continue
+            }
             missing.add(
                 DynamicRebuildWindow(
                     startTime = seg.startTime,
@@ -5558,11 +5840,24 @@ object SegmentSummaryManager {
                     existingSegmentId = seg.id,
                 )
             )
+            queuedExisting += 1
             val dayKey = dateKeyFromMillis(seg.startTime)
             dayStats[dayKey] = (dayStats[dayKey] ?: 0) + 1
         }
+        var queuedPlanned = 0
+        var skippedExactDuplicate = 0
+        var skippedOverlapRepair = 0
+        var skippedOverlapExisting = 0
+        var skippedCoveredUsable = 0
+        var skippedWindowDuplicate = 0
+        val skippedPlanPreview = ArrayList<String>()
         for (window in plan.windows) {
-            if (window.endTime > now) continue
+            if (window.endTime > now) {
+                if (skippedPlanPreview.size < 60) {
+                    skippedPlanPreview.add("window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=future")
+                }
+                continue
+            }
             val exactWithoutResult = existingWithoutResults.firstOrNull {
                 it.startTime == window.startTime && it.endTime == window.endTime
             }
@@ -5578,12 +5873,34 @@ object SegmentSummaryManager {
                     )
                     val dayKey = dateKeyFromMillis(exactWithoutResult.startTime)
                     dayStats[dayKey] = (dayStats[dayKey] ?: 0) + 1
+                    queuedExisting += 1
+                } else {
+                    skippedExactDuplicate += 1
+                    if (skippedPlanPreview.size < 60) {
+                        skippedPlanPreview.add("window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=exact_existing_already_queued seg=${exactWithoutResult.id}")
+                    }
                 }
                 continue
             }
             if (existingWithoutResults.any {
                     it.startTime < window.endTime && it.endTime > window.startTime
                 }) {
+                skippedOverlapRepair += 1
+                if (skippedPlanPreview.size < 60) {
+                    skippedPlanPreview.add("window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=overlaps_existing_repair")
+                }
+                continue
+            }
+            val overlappingExisting = existingAll.firstOrNull {
+                it.startTime < window.endTime && it.endTime > window.startTime
+            }
+            if (overlappingExisting != null) {
+                skippedOverlapExisting += 1
+                if (skippedPlanPreview.size < 60) {
+                    skippedPlanPreview.add(
+                        "window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=overlaps_existing_root seg=${overlappingExisting.segmentId} compliant=${overlappingExisting.hasCompliantResult}",
+                    )
+                }
                 continue
             }
             val covered = try {
@@ -5591,17 +5908,45 @@ object SegmentSummaryManager {
                     ctx,
                     window.startTime,
                     window.endTime,
+                    requireCompliantJson = true,
                 )
             } catch (_: Exception) {
                 false
             }
-            if (covered) continue
+            if (covered) {
+                skippedCoveredUsable += 1
+                if (skippedPlanPreview.size < 60) {
+                    skippedPlanPreview.add("window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=covered_by_compliant_result")
+                }
+                continue
+            }
             val key = "${window.startTime}|${window.endTime}"
-            if (!queuedKeys.add(key)) continue
+            if (!queuedKeys.add(key)) {
+                skippedWindowDuplicate += 1
+                if (skippedPlanPreview.size < 60) {
+                    skippedPlanPreview.add("window=${fmt(window.startTime)}-${fmt(window.endTime)} reason=duplicate_planned_window")
+                }
+                continue
+            }
             missing.add(window)
+            queuedPlanned += 1
             val dayKey = dateKeyFromMillis(window.startTime)
             dayStats[dayKey] = (dayStats[dayKey] ?: 0) + 1
         }
+        logBackfillDiag(
+            ctx,
+                "buildMissingWorklist queueSummary missing=${missing.size} queuedExisting=$queuedExisting queuedPlanned=$queuedPlanned " +
+                "skippedExistingInvalidOrFuture=$skippedExistingFutureOrInvalid skippedExistingDuplicate=$skippedExistingDuplicate " +
+                "skippedExistingNowCompliant=$skippedExistingNowCompliant " +
+                "skippedExactDuplicate=$skippedExactDuplicate skippedOverlapRepair=$skippedOverlapRepair " +
+                "skippedOverlapExisting=$skippedOverlapExisting " +
+                "skippedCoveredUsable=$skippedCoveredUsable skippedWindowDuplicate=$skippedWindowDuplicate " +
+                "skippedExistingPreview=${skippedExistingPreview.joinToString(";")} skippedPlanPreview=${skippedPlanPreview.joinToString(";")}",
+        )
+        logBackfillDiag(
+            ctx,
+            "buildMissingWorklist missingPreview=${missing.take(120).joinToString(";") { window -> "${fmt(window.startTime)}-${fmt(window.endTime)} existingSegmentId=${window.existingSegmentId}" }}",
+        )
         if (missing.isNotEmpty()) {
             val preview = dayStats.entries.take(12).joinToString(", ") { "${it.key}:${it.value}" }
             try {
@@ -5632,6 +5977,12 @@ object SegmentSummaryManager {
         var outputText: String? = null
         var structuredJson: String? = null
         try {
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict enter window=${fmt(windowStart)}-${fmt(windowEnd)}($windowStart-$windowEnd) " +
+                    "durationSec=$durationSec sampleIntervalSec=$sampleIntervalSec existingSegmentId=$existingSegmentId " +
+                    "model=${aiConfig.model}",
+            )
             stageReporter?.invoke(
                 "window_enter",
                 "进入重建时间窗",
@@ -5640,8 +5991,18 @@ object SegmentSummaryManager {
             )
             if (existingSegmentId > 0L) {
                 val existing = SegmentDatabaseHelper.getSegmentById(appCtx, existingSegmentId)
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict existingLookup requested=$existingSegmentId found=${existing != null} " +
+                        (existing?.let { "seg=${it.id} ${fmt(it.startTime)}-${fmt(it.endTime)} status=${it.status}" } ?: ""),
+                )
                 if (existing != null) {
                     if (existing.startTime != windowStart || existing.endTime != windowEnd) {
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict existingMismatch requested=$existingSegmentId " +
+                                "existingWindow=${fmt(existing.startTime)}-${fmt(existing.endTime)} current=${fmt(windowStart)}-${fmt(windowEnd)}",
+                        )
                         stageReporter?.invoke(
                             "window_existing_mismatch",
                             "忽略旧续跑段落",
@@ -5650,19 +6011,46 @@ object SegmentSummaryManager {
                         )
                     } else {
                         val existingResult = SegmentDatabaseHelper.getResultForSegment(appCtx, existing.id)
-                        if (_hasUsableSegmentResult(existingResult.first, existingResult.second)) {
+                        val repairReason = resultRepairReason(existingResult.first, existingResult.second)
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict existingResult seg=${existing.id} reason=$repairReason " +
+                                "hasUsable=${_hasUsableSegmentResult(existingResult.first, existingResult.second)} " +
+                                "needsRepair=${SegmentDatabaseHelper.needsDynamicSummaryRepair(existingResult.first, existingResult.second)}",
+                        )
+                        if (!SegmentDatabaseHelper.needsDynamicSummaryRepair(existingResult.first, existingResult.second)) {
                             seg = existing
                             summaryReady = true
                             outputText = existingResult.first
                             structuredJson = existingResult.second
+                            logBackfillDiag(
+                                appCtx,
+                                "rebuildWindowStrict reuseExisting seg=${existing.id} reason=compliant_result",
+                            )
                             stageReporter?.invoke(
                                 "window_reuse_existing",
                                 "复用已有结果",
                                 "已复用段落 #${existing.id} 的现有结果",
                                 existing.id,
                             )
+                        } else if (_hasUsableSegmentResult(existingResult.first, existingResult.second)) {
+                            seg = existing
+                            logBackfillDiag(
+                                appCtx,
+                                "rebuildWindowStrict regenerateExisting seg=${existing.id} reason=$repairReason",
+                            )
+                            stageReporter?.invoke(
+                                "window_repair_bad_json",
+                                "Regenerate invalid JSON",
+                                "Segment #${existing.id} has an unusable structured_json result. Regenerating the AI summary.",
+                                existing.id,
+                            )
                         } else {
                             seg = existing
+                            logBackfillDiag(
+                                appCtx,
+                                "rebuildWindowStrict continueExistingNoSummary seg=${existing.id} reason=$repairReason",
+                            )
                             stageReporter?.invoke(
                                 "window_reuse_no_summary",
                                 "复用待总结动态",
@@ -5676,22 +6064,53 @@ object SegmentSummaryManager {
 
             if (seg == null) {
                 val exactId = SegmentDatabaseHelper.findSegmentIdByWindow(appCtx, windowStart, windowEnd)
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict exactLookup window=${fmt(windowStart)}-${fmt(windowEnd)} exactId=$exactId",
+                )
                 if (exactId > 0L) {
                     val exactSeg = SegmentDatabaseHelper.getSegmentById(appCtx, exactId)
                     val exactResult = SegmentDatabaseHelper.getResultForSegment(appCtx, exactId)
-                    if (exactSeg != null && _hasUsableSegmentResult(exactResult.first, exactResult.second)) {
+                    val repairReason = resultRepairReason(exactResult.first, exactResult.second)
+                    logBackfillDiag(
+                        appCtx,
+                        "rebuildWindowStrict exactResult exactId=$exactId found=${exactSeg != null} reason=$repairReason " +
+                            "hasUsable=${_hasUsableSegmentResult(exactResult.first, exactResult.second)} " +
+                            "needsRepair=${SegmentDatabaseHelper.needsDynamicSummaryRepair(exactResult.first, exactResult.second)}",
+                    )
+                    if (exactSeg != null && !SegmentDatabaseHelper.needsDynamicSummaryRepair(exactResult.first, exactResult.second)) {
                         seg = exactSeg
                         summaryReady = true
                         outputText = exactResult.first
                         structuredJson = exactResult.second
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict reuseExact seg=${exactSeg.id} reason=compliant_result",
+                        )
                         stageReporter?.invoke(
                             "window_reuse_exact",
                             "复用时间窗结果",
                             "发现完全匹配时间窗的已有结果，直接复用",
                             exactSeg.id,
                         )
+                    } else if (exactSeg != null && _hasUsableSegmentResult(exactResult.first, exactResult.second)) {
+                        seg = exactSeg
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict regenerateExact seg=${exactSeg.id} reason=$repairReason",
+                        )
+                        stageReporter?.invoke(
+                            "window_repair_exact_bad_json",
+                            "Regenerate invalid JSON",
+                            "Exact segment #${exactSeg.id} has an unusable structured_json result. Regenerating the AI summary.",
+                            exactSeg.id,
+                        )
                     } else if (exactSeg != null) {
                         seg = exactSeg
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict continueExactNoSummary seg=${exactSeg.id} reason=$repairReason",
+                        )
                         stageReporter?.invoke(
                             "window_reuse_exact_no_summary",
                             "复用待总结窗口",
@@ -5699,6 +6118,10 @@ object SegmentSummaryManager {
                             exactSeg.id,
                         )
                     } else {
+                        logBackfillDiag(
+                            appCtx,
+                            "rebuildWindowStrict cleanupDanglingExact exactId=$exactId reason=getSegmentById_null",
+                        )
                         cleanupRebuildSegment(appCtx, exactId)
                     }
                 }
@@ -5706,6 +6129,10 @@ object SegmentSummaryManager {
 
             if (seg == null) {
                 if (!ensureNoRootOverlapBeforeCreate(appCtx, windowStart, windowEnd, "rebuildWindowStrict")) {
+                    logBackfillDiag(
+                        appCtx,
+                        "rebuildWindowStrict skipCreate reason=root_overlap window=${fmt(windowStart)}-${fmt(windowEnd)}",
+                    )
                     stageReporter?.invoke(
                         "window_skip_overlap",
                         "跳过交错窗口",
@@ -5729,6 +6156,10 @@ object SegmentSummaryManager {
                     status = "collecting",
                 )
                 if (createdId <= 0L) {
+                    logBackfillDiag(
+                        appCtx,
+                        "rebuildWindowStrict createFailed window=${fmt(windowStart)}-${fmt(windowEnd)} createdId=$createdId",
+                    )
                     throw DynamicRebuildStepException("创建动态事件失败", 0L)
                 }
                 seg = SegmentDatabaseHelper.getSegmentById(appCtx, createdId)
@@ -5740,6 +6171,10 @@ object SegmentSummaryManager {
                         sampleIntervalSec = sampleIntervalSec.coerceAtLeast(5),
                         status = "collecting",
                     )
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict createdSegment seg=${seg.id} window=${fmt(seg.startTime)}-${fmt(seg.endTime)} status=${seg.status}",
+                )
                 stageReporter?.invoke(
                     "window_segment_ready",
                     "动态事件已创建",
@@ -5755,6 +6190,31 @@ object SegmentSummaryManager {
                 seg.id,
             )
             var samples = SegmentDatabaseHelper.getSamplesForSegment(appCtx, seg.id)
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict samplesInitial seg=${seg.id} count=${samples.size} summaryReady=$summaryReady",
+            )
+            if (!summaryReady && samples.isEmpty()) {
+                val shotCount = try {
+                    SegmentDatabaseHelper.countShotsBetween(appCtx, windowStart, windowEnd, hardLimit = 1)
+                } catch (_: Exception) {
+                    0
+                }
+                if (shotCount <= 0) {
+                    logBackfillDiag(
+                        appCtx,
+                        "rebuildWindowStrict skipNoSourceShots seg=${seg.id} window=${fmt(windowStart)}-${fmt(windowEnd)} reason=no_screenshots_in_window",
+                    )
+                    try { SegmentDatabaseHelper.updateSegmentStatus(appCtx, seg.id, "completed") } catch (_: Exception) {}
+                    stageReporter?.invoke(
+                        "window_skip_no_samples",
+                        "跳过无样本窗口",
+                        "当前时间窗没有截图样本，无法重新生成 AI 总结",
+                        seg.id,
+                    )
+                    return seg.id
+                }
+            }
             if (samples.isEmpty()) {
                 val effectiveDurationSec =
                     (((windowEnd - windowStart) / 1000L).toInt()).coerceAtLeast(1)
@@ -5778,6 +6238,11 @@ object SegmentSummaryManager {
                 if (samples.isNotEmpty()) {
                     SegmentDatabaseHelper.saveSamples(appCtx, seg.id, samples)
                 }
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict samplesBuilt seg=${seg.id} count=${samples.size} " +
+                        "effectiveDurationSec=$effectiveDurationSec effectiveSampleIntervalSec=$effectiveSampleIntervalSec",
+                )
                 stageReporter?.invoke(
                     "window_samples_built",
                     "样本构建完成",
@@ -5785,6 +6250,10 @@ object SegmentSummaryManager {
                     seg.id,
                 )
             } else {
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict samplesReuse seg=${seg.id} count=${samples.size}",
+                )
                 stageReporter?.invoke(
                     "window_samples_ready",
                     "样本已就绪",
@@ -5795,6 +6264,10 @@ object SegmentSummaryManager {
 
             if (!summaryReady) {
                 ensureDynamicRebuildNotCancelled(appCtx, seg.id)
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict summarizeStart seg=${seg.id} samples=${samples.size}",
+                )
                 val summary = summarizeSegmentForRebuildStrict(
                     appCtx,
                     seg,
@@ -5805,6 +6278,17 @@ object SegmentSummaryManager {
                 outputText = summary.first
                 structuredJson = summary.second
                 summaryReady = true
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict summarizeDone seg=${seg.id} " +
+                        "hasUsable=${_hasUsableSegmentResult(outputText, structuredJson)} " +
+                        "repairReason=${resultRepairReason(outputText, structuredJson)}",
+                )
+            } else {
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict summarizeSkipped seg=${seg.id} reason=summaryReady",
+                )
             }
 
             if (_hasUsableSegmentResult(outputText, structuredJson)) {
@@ -5818,6 +6302,11 @@ object SegmentSummaryManager {
                     "总结已生成，准备判断是否需要与上一条动态合并",
                     latestSeg.id,
                 )
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict mergeCheckStart seg=${latestSeg.id} samples=${latestSamples.size} " +
+                        "repairReason=${resultRepairReason(outputText, structuredJson)}",
+                )
                 tryCompareAndMergeBackwardStrict(
                     appCtx,
                     latestSeg,
@@ -5827,7 +6316,15 @@ object SegmentSummaryManager {
                     aiConfig,
                     stageReporter = stageReporter,
                 )
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict mergeCheckDone seg=${latestSeg.id}",
+                )
             } else {
+                logBackfillDiag(
+                    appCtx,
+                    "rebuildWindowStrict noUsableResult seg=${seg.id} action=mark_completed_without_merge",
+                )
                 try { SegmentDatabaseHelper.updateSegmentStatus(appCtx, seg.id, "completed") } catch (_: Exception) {}
             }
             stageReporter?.invoke(
@@ -5836,18 +6333,43 @@ object SegmentSummaryManager {
                 "段落 #${seg.id} 已完成重建",
                 seg.id,
             )
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict done seg=${seg.id} summaryReady=$summaryReady " +
+                    "hasUsable=${_hasUsableSegmentResult(outputText, structuredJson)}",
+            )
             return seg.id
         } catch (e: DynamicRebuildCancelledException) {
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict cancelled seg=${seg?.id ?: 0L} message=${e.message ?: e.toString()}",
+            )
             throw e
         } catch (e: DynamicRebuildStepException) {
             if (!summaryReady) {
-                seg?.id?.takeIf { it > 0L }?.let { cleanupRebuildSegment(appCtx, it) }
+                seg?.id?.takeIf { it > 0L }?.let {
+                    logBackfillDiag(appCtx, "rebuildWindowStrict cleanupAfterStepException seg=$it reason=summary_not_ready")
+                    cleanupRebuildSegment(appCtx, it)
+                }
             }
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict stepException seg=${seg?.id ?: 0L} summaryReady=$summaryReady " +
+                    "message=${e.message ?: e.toString()}",
+            )
             throw e
         } catch (e: Exception) {
             if (!summaryReady) {
-                seg?.id?.takeIf { it > 0L }?.let { cleanupRebuildSegment(appCtx, it) }
+                seg?.id?.takeIf { it > 0L }?.let {
+                    logBackfillDiag(appCtx, "rebuildWindowStrict cleanupAfterException seg=$it reason=summary_not_ready")
+                    cleanupRebuildSegment(appCtx, it)
+                }
             }
+            logBackfillDiag(
+                appCtx,
+                "rebuildWindowStrict exception seg=${seg?.id ?: 0L} summaryReady=$summaryReady " +
+                    "type=${e.javaClass.simpleName} message=${e.message ?: e.toString()}",
+            )
             throw DynamicRebuildStepException(
                 "动态重建失败：${e.message ?: e.toString()}",
                 seg?.id ?: 0L,
@@ -5862,6 +6384,46 @@ object SegmentSummaryManager {
         if (paths.isNotEmpty()) {
             try { SegmentDatabaseHelper.deleteAiImageMetaByFilePaths(ctx, paths) } catch (_: Exception) {}
         }
+    }
+
+    private fun resultRepairReason(outputText: String?, structuredJson: String?): String {
+        val out = outputText?.trim().orEmpty()
+        val sj = structuredJson?.trim().orEmpty()
+        val outBlank = out.isEmpty() || out.equals("null", ignoreCase = true)
+        val jsonBlank = sj.isEmpty() || sj.equals("null", ignoreCase = true)
+        if (outBlank && jsonBlank) return "blank_output_and_json"
+        if (jsonBlank) return "blank_structured_json"
+        val obj = try {
+            JSONObject(sj)
+        } catch (e: Exception) {
+            return "invalid_structured_json:${e.javaClass.simpleName}"
+        }
+        val meta = obj.optJSONObject("_meta")
+        val manualRetry = when (val raw = meta?.opt("needs_manual_retry")) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> {
+                val v = raw.trim().lowercase()
+                v == "true" || v == "1" || v == "yes"
+            }
+            else -> false
+        }
+        if (manualRetry) return "needs_manual_retry"
+        return "none"
+    }
+
+    private fun segmentDiag(ctx: Context, seg: SegmentDatabaseHelper.Segment): String {
+        val reason = resultRepairReasonForSegment(ctx, seg.id)
+        return "seg=${seg.id} ${fmt(seg.startTime)}-${fmt(seg.endTime)} status=${seg.status} reason=$reason"
+    }
+
+    private fun resultRepairReasonForSegment(ctx: Context, segmentId: Long): String {
+        val result = try {
+            SegmentDatabaseHelper.getResultForSegment(ctx, segmentId)
+        } catch (_: Exception) {
+            Pair(null, null)
+        }
+        return resultRepairReason(result.first, result.second)
     }
 
     private fun _hasUsableSegmentResult(outputText: String?, structuredJson: String?): Boolean {

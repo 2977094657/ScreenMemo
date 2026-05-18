@@ -3,6 +3,7 @@ package com.fqyw.screen_memo.database
 import com.fqyw.screen_memo.R
 
 import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.logging.OutputFileLogger
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
@@ -23,6 +24,7 @@ object SegmentDatabaseHelper {
     private const val MASTER_DB_DIR_RELATIVE = "output/databases"
     private const val MASTER_DB_FILE_NAME = "screenshot_memo.db"
     private const val SHARDS_DIR_RELATIVE = "output/databases/shards"
+    private const val STRUCTURED_JSON_PREVIEW_LIMIT = 4096
 
     data class Segment(
         val id: Long,
@@ -81,6 +83,139 @@ object SegmentDatabaseHelper {
     private fun rootSegmentWhere(alias: String): String {
         val p = if (alias.isBlank()) "" else "$alias."
         return "(${p}merged_into_id IS NULL OR ${p}merged_into_id <= 0 OR NOT EXISTS (SELECT 1 FROM segments root WHERE root.id = ${p}merged_into_id))"
+    }
+
+    private fun isBlankResultText(value: String?): Boolean {
+        val v = value?.trim()
+        return v.isNullOrEmpty() || v.equals("null", ignoreCase = true)
+    }
+
+    private fun isTruthyJsonFlag(value: Any?): Boolean {
+        return when (value) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            is String -> {
+                val v = value.trim().lowercase()
+                v == "true" || v == "1" || v == "yes"
+            }
+            else -> false
+        }
+    }
+
+    fun isDynamicStructuredJsonCompliant(structuredJson: String?): Boolean {
+        val sj = structuredJson?.trim()
+        if (sj.isNullOrEmpty() || sj.equals("null", ignoreCase = true)) return false
+        val obj = try {
+            JSONObject(sj)
+        } catch (_: Exception) {
+            return false
+        }
+        val meta = obj.optJSONObject("_meta")
+        if (meta != null && isTruthyJsonFlag(meta.opt("needs_manual_retry"))) {
+            return false
+        }
+        return true
+    }
+
+    fun needsDynamicSummaryRepair(outputText: String?, structuredJson: String?): Boolean {
+        if (isBlankResultText(outputText) && isBlankResultText(structuredJson)) return true
+        return !isDynamicStructuredJsonCompliant(structuredJson)
+    }
+
+    private fun dynamicSummaryRepairReason(outputText: String?, structuredJson: String?): String {
+        if (isBlankResultText(outputText) && isBlankResultText(structuredJson)) return "blank_output_and_json"
+        if (isBlankResultText(structuredJson)) return "blank_structured_json"
+        val obj = try {
+            JSONObject(structuredJson!!.trim())
+        } catch (e: Exception) {
+            return "invalid_structured_json:${e.javaClass.simpleName}"
+        }
+        val meta = obj.optJSONObject("_meta")
+        if (meta != null && isTruthyJsonFlag(meta.opt("needs_manual_retry"))) {
+            return "needs_manual_retry"
+        }
+        return "none"
+    }
+
+    private fun dynamicSummaryRepairReasonFromPreview(
+        outputTextIsBlank: Boolean,
+        structuredJsonIsBlank: Boolean,
+        structuredJsonLength: Int,
+        manualRetryHint: Boolean,
+        structuredTail: String?,
+        structuredPreview: String?,
+    ): String {
+        if (outputTextIsBlank && structuredJsonIsBlank) return "blank_output_and_json"
+        if (structuredJsonIsBlank) return "blank_structured_json"
+        if (manualRetryHint) return "needs_manual_retry"
+        val rawPreview = structuredPreview.orEmpty()
+        val preview = rawPreview.trim()
+        if (preview.isEmpty()) return "blank_structured_json"
+        // preview 被截断时无法代表完整 JSON；没有明确重试标记时按已有结果处理，避免把大 JSON 误扫进补全队列。
+        if (structuredJsonLength > rawPreview.length) {
+            if (!preview.startsWith("{")) return "invalid_structured_json:not_object"
+            if (structuredTail?.trim() != "}") return "invalid_structured_json:truncated"
+            return "none"
+        }
+        val obj = try {
+            JSONObject(preview)
+        } catch (e: Exception) {
+            return "invalid_structured_json:${e.javaClass.simpleName}"
+        }
+        val meta = obj.optJSONObject("_meta")
+        if (meta != null && isTruthyJsonFlag(meta.opt("needs_manual_retry"))) {
+            return "needs_manual_retry"
+        }
+        return "none"
+    }
+
+    private fun dynamicSummaryRepairSqlProjection(prefix: String = "r."): String {
+        val p = prefix
+        return """
+            CASE WHEN ${p}output_text IS NULL OR LENGTH(TRIM(${p}output_text)) = 0 OR LOWER(TRIM(SUBSTR(${p}output_text, 1, 32))) = 'null' THEN 1 ELSE 0 END AS output_blank,
+            CASE WHEN ${p}structured_json IS NULL OR LENGTH(TRIM(${p}structured_json)) = 0 OR LOWER(TRIM(SUBSTR(${p}structured_json, 1, 32))) = 'null' THEN 1 ELSE 0 END AS structured_blank,
+            CASE WHEN ${p}structured_json IS NULL THEN 0 ELSE LENGTH(${p}structured_json) END AS structured_len,
+            CASE WHEN ${p}structured_json LIKE '%"needs_manual_retry":true%'
+                   OR ${p}structured_json LIKE '%"needs_manual_retry": true%'
+                   OR ${p}structured_json LIKE '%"needs_manual_retry":"true"%'
+                   OR ${p}structured_json LIKE '%"needs_manual_retry": "true"%'
+                   OR ${p}structured_json LIKE '%"needs_manual_retry":1%'
+                   OR ${p}structured_json LIKE '%"needs_manual_retry": 1%'
+                 THEN 1 ELSE 0 END AS manual_retry_hint,
+            SUBSTR(TRIM(${p}structured_json), -1, 1) AS structured_tail,
+            SUBSTR(${p}structured_json, 1, $STRUCTURED_JSON_PREVIEW_LIMIT) AS structured_preview
+        """.trimIndent()
+    }
+
+    private fun dynamicSummaryRepairReasonFromCursor(
+        cursor: Cursor,
+        outputBlankIndex: Int,
+        structuredBlankIndex: Int,
+        structuredLengthIndex: Int,
+        manualRetryHintIndex: Int,
+        structuredTailIndex: Int,
+        structuredPreviewIndex: Int,
+    ): String {
+        return dynamicSummaryRepairReasonFromPreview(
+            outputTextIsBlank = cursor.getInt(outputBlankIndex) == 1,
+            structuredJsonIsBlank = cursor.getInt(structuredBlankIndex) == 1,
+            structuredJsonLength = cursor.getInt(structuredLengthIndex),
+            manualRetryHint = cursor.getInt(manualRetryHintIndex) == 1,
+            structuredTail = cursor.getStringOrNull(structuredTailIndex),
+            structuredPreview = cursor.getStringOrNull(structuredPreviewIndex),
+        )
+    }
+
+    private fun logBackfillDiag(context: Context, message: String) {
+        val normalized = message
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .trim()
+        if (normalized.isEmpty()) return
+        val appCtx = try { context.applicationContext } catch (_: Exception) { context }
+        try {
+            OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+        } catch (_: Exception) {}
     }
 
     // =============== 基础 ===============
@@ -1352,14 +1487,19 @@ object SegmentDatabaseHelper {
      * 补全任务会按截图重新推导标准时间窗；若此前相邻窗口已经被合并为一条更长动态，
      * 这里用覆盖关系跳过，避免为已合并内容重复创建动态。
      */
-    fun hasUsableResultCoveringWindow(context: Context, startMillis: Long, endMillis: Long): Boolean {
+    fun hasUsableResultCoveringWindow(
+        context: Context,
+        startMillis: Long,
+        endMillis: Long,
+        requireCompliantJson: Boolean = false,
+    ): Boolean {
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        return try {
+        try {
             db = openMasterDb(context, writable = false) ?: return false
             cursor = db.rawQuery(
                 """
-                SELECT 1
+                SELECT ${dynamicSummaryRepairSqlProjection("r.")}
                 FROM segments s
                 JOIN segment_results r ON r.segment_id = s.id
                 WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
@@ -1370,12 +1510,27 @@ object SegmentDatabaseHelper {
                     (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
                     OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
                   )
-                LIMIT 1
                 """.trimIndent(),
                 arrayOf(startMillis.toString(), endMillis.toString())
             )
-            cursor.moveToFirst()
-        } catch (_: Exception) { false } finally {
+            while (cursor.moveToNext()) {
+                val reason = dynamicSummaryRepairReasonFromCursor(
+                    cursor = cursor,
+                    outputBlankIndex = 0,
+                    structuredBlankIndex = 1,
+                    structuredLengthIndex = 2,
+                    manualRetryHintIndex = 3,
+                    structuredTailIndex = 4,
+                    structuredPreviewIndex = 5,
+                )
+                if (!requireCompliantJson || reason == "none") {
+                    return true
+                }
+            }
+            return false
+        } catch (_: Exception) {
+            return false
+        } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
@@ -1847,6 +2002,42 @@ object SegmentDatabaseHelper {
         }
     }
 
+    fun hasCompliantResultForSegment(context: Context, segmentId: Long): Boolean {
+        if (segmentId <= 0L) return false
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return false
+            cursor = db.rawQuery(
+                """
+                SELECT ${dynamicSummaryRepairSqlProjection("")}
+                FROM segment_results
+                WHERE segment_id = ?
+                LIMIT 1
+                """.trimIndent(),
+                arrayOf(segmentId.toString()),
+            )
+            if (!cursor.moveToFirst()) {
+                false
+            } else {
+                dynamicSummaryRepairReasonFromCursor(
+                    cursor = cursor,
+                    outputBlankIndex = 0,
+                    structuredBlankIndex = 1,
+                    structuredLengthIndex = 2,
+                    manualRetryHintIndex = 3,
+                    structuredTailIndex = 4,
+                    structuredPreviewIndex = 5,
+                ) == "none"
+            }
+        } catch (_: Exception) {
+            false
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
     fun resetAllDynamicRebuildArtifacts(context: Context) {
         var db: SQLiteDatabase? = null
         try {
@@ -2210,7 +2401,7 @@ object SegmentDatabaseHelper {
     }
 
     /**
-     * 列出需要补救总结的段落（已完成、无结果但有样本），可按起始时间筛选并限制数量。
+     * 列出需要补救总结的段落（已完成、缺结果或 structured_json 不合规），可按起始时间筛选并限制数量。
      */
     fun listSegmentsNeedingSummary(
         context: Context,
@@ -2221,11 +2412,15 @@ object SegmentDatabaseHelper {
         val list = ArrayList<Segment>()
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
+        var scannedRows = 0
+        var compliantRows = 0
+        val candidatePreview = ArrayList<String>()
+        val compliantPreview = ArrayList<String>()
         try {
             db = openMasterDb(context, writable = false) ?: return emptyList()
             val effLimit = limit.coerceAtLeast(1)
             val where = StringBuilder(
-                "(s.segment_kind IS NULL OR s.segment_kind = 'global') AND ${rootSegmentWhere("s")} AND s.status = 'completed' AND (r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('', 'null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('', 'null'))))"
+                "(s.segment_kind IS NULL OR s.segment_kind = 'global') AND ${rootSegmentWhere("s")} AND s.status = 'completed'"
             )
             val args = ArrayList<String>()
             if (sinceMillis != null) {
@@ -2236,10 +2431,16 @@ object SegmentDatabaseHelper {
                 where.append(" AND s.start_time <= ?")
                 args.add(endMillis.toString())
             }
-            args.add(effLimit.toString())
+            val scanLimit = if (effLimit == Int.MAX_VALUE) {
+                Int.MAX_VALUE
+            } else {
+                (effLimit * 50).coerceAtLeast(100).coerceAtMost(5000)
+            }
+            args.add(scanLimit.toString())
             cursor = db.rawQuery(
                 """
-                SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
+                SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status,
+                       ${dynamicSummaryRepairSqlProjection("r.")}
                 FROM segments s
                 LEFT JOIN segment_results r ON r.segment_id = s.id
                 WHERE ${where.toString()}
@@ -2249,18 +2450,56 @@ object SegmentDatabaseHelper {
                 args.toTypedArray()
             )
             while (cursor.moveToNext()) {
-                list.add(
-                    Segment(
-                        id = cursor.getLong(0),
-                        startTime = cursor.getLong(1),
-                        endTime = cursor.getLong(2),
-                        durationSec = cursor.getInt(3),
-                        sampleIntervalSec = cursor.getInt(4),
-                        status = cursor.getString(5)
-                    )
+                scannedRows += 1
+                val reason = dynamicSummaryRepairReasonFromCursor(
+                    cursor = cursor,
+                    outputBlankIndex = 6,
+                    structuredBlankIndex = 7,
+                    structuredLengthIndex = 8,
+                    manualRetryHintIndex = 9,
+                    structuredTailIndex = 10,
+                    structuredPreviewIndex = 11,
                 )
+                val segmentId = cursor.getLong(0)
+                val startTime = cursor.getLong(1)
+                val endTimeValue = cursor.getLong(2)
+                if (reason != "none") {
+                    list.add(
+                        Segment(
+                            id = segmentId,
+                            startTime = startTime,
+                            endTime = endTimeValue,
+                            durationSec = cursor.getInt(3),
+                            sampleIntervalSec = cursor.getInt(4),
+                            status = cursor.getString(5),
+                        ),
+                    )
+                    if (candidatePreview.size < 80) {
+                        candidatePreview.add("seg=$segmentId start=$startTime end=$endTimeValue reason=$reason")
+                    }
+                    if (list.size >= effLimit) break
+                } else {
+                    compliantRows += 1
+                    if (compliantPreview.size < 40) {
+                        compliantPreview.add("seg=$segmentId start=$startTime end=$endTimeValue reason=compliant")
+                    }
+                }
             }
-        } catch (_: Exception) {
+            logBackfillDiag(
+                context,
+                "listSegmentsNeedingSummary done limit=$limit effLimit=$effLimit scanLimit=$scanLimit " +
+                    "since=${sinceMillis ?: "null"} end=${endMillis ?: "null"} scanned=$scannedRows " +
+                    "candidates=${list.size} compliant=$compliantRows " +
+                    "candidatePreview=${candidatePreview.joinToString(";")} " +
+                    "compliantPreview=${compliantPreview.joinToString(";")}",
+            )
+        } catch (e: Exception) {
+            logBackfillDiag(
+                context,
+                "listSegmentsNeedingSummary failed limit=$limit since=${sinceMillis ?: "null"} " +
+                    "end=${endMillis ?: "null"} scanned=$scannedRows candidates=${list.size} " +
+                    "type=${e.javaClass.simpleName} message=${e.message ?: e.toString()}",
+            )
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
