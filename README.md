@@ -151,6 +151,7 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 - 当前内置提供商类型包括 `OpenAI`、`Azure OpenAI`、`Claude`、`Gemini` 和 `Custom`
 - `Custom` 适合接入兼容 OpenAI 风格接口的自建或第三方中转服务
 - 不同 AI 上下文可以分别绑定不同的提供商与模型
+- AI 对话支持本轮图片附件分析，并可在输入栏主动切换画图模式；画图结果会进入对话历史，后续聊天可继续引用生成图上下文
 </details>
 
 <details>

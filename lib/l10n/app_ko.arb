@@ -2146,5 +2146,29 @@
   },
   "updateInstallPermissionTitle": "설치 권한 필요",
   "updateInstallPermissionMessage": "ScreenMemo가 알 수 없는 앱을 설치하도록 허용한 다음 돌아와서 다운로드를 다시 누르세요.",
-  "updateOpenInstallSettingsAction": "설정 열기"
+  "updateOpenInstallSettingsAction": "설정 열기",
+  "composerAttachImageTooltip": "이미지 첨부",
+  "composerDrawingModeOnTooltip": "그리기 모드 켜짐",
+  "composerEnableDrawingModeTooltip": "그리기 모드 켜기",
+  "composerDrawingModeEnabledToast": "그리기 모드를 켰습니다",
+  "composerDrawingModeDisabledToast": "그리기 모드를 껐습니다",
+  "composerStopTooltip": "중지",
+  "composerGenerateImageTooltip": "이미지 생성",
+  "composerSendTooltip": "보내기",
+  "composerGeneratingImage": "이미지를 생성하는 중",
+  "composerGeneratingWithReferences": "참조 이미지로 생성하는 중",
+  "composerImageLimitToast": "처음 {count}개의 이미지만 첨부됩니다.",
+  "@composerImageLimitToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "composerImageSelectionFailed": "이미지를 선택하지 못했습니다: {error}",
+  "@composerImageSelectionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "composerImagePromptRequired": "이미지를 생성할 프롬프트를 입력하세요.",
+  "composerAnalyzeImageFallbackPrompt": "이 이미지를 분석해 주세요."
 }

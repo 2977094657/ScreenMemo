@@ -128,6 +128,148 @@ void main() {
     );
   });
 
+  test('image edit endpoint URI does not duplicate v1 path', () {
+    expect(
+      AIImageGenerationService.buildImagesEditsUri(
+        'https://api.openai.com',
+      ).toString(),
+      'https://api.openai.com/v1/images/edits',
+    );
+    expect(
+      AIImageGenerationService.buildImagesEditsUri(
+        'https://api.openai.com/v1',
+      ).toString(),
+      'https://api.openai.com/v1/images/edits',
+    );
+    expect(
+      AIImageGenerationService.buildImagesEditsUri(
+        'https://example.com/openai/v1/',
+      ).toString(),
+      'https://example.com/openai/v1/images/edits',
+    );
+  });
+
+  test('reference image edit request uses multipart edits endpoint', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'screen_memo_generated_images_edit_',
+    );
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    var editCalls = 0;
+    var generationCalls = 0;
+    Future<void>? serverDone;
+    try {
+      final Directory root = Directory(p.join(tmp.path, 'root'));
+      await root.create(recursive: true);
+      await ScreenshotDatabase.instance.initializeForDesktop(root.path);
+
+      final File reference = File(p.join(tmp.path, 'reference.png'));
+      await reference.writeAsBytes(
+        img.encodePng(img.Image(width: 1, height: 1)),
+      );
+
+      serverDone = () async {
+        await for (final HttpRequest req in server) {
+          final String path = req.uri.path;
+          final ContentType? contentType = req.headers.contentType;
+          if (req.method == 'POST' && path == '/v1/images/edits') {
+            editCalls += 1;
+            expect(contentType?.mimeType, startsWith('multipart/form-data'));
+            final String boundary = contentType?.parameters['boundary'] ?? '';
+            expect(boundary, isNotEmpty);
+            final String body = await latin1.decoder.bind(req).join();
+            expect(body, contains('name="model"'));
+            expect(body, contains('gpt-image-test'));
+            expect(body, contains('name="prompt"'));
+            expect(body, contains('edit with reference'));
+            expect(body, contains('name="image"'));
+            expect(body, contains('filename="reference.png"'));
+            expect(body.toLowerCase(), contains('content-type: image/png'));
+            req.response.statusCode = HttpStatus.ok;
+            req.response.headers.contentType = ContentType.json;
+            req.response.write(
+              jsonEncode(<String, dynamic>{
+                'data': <Map<String, dynamic>>[
+                  <String, dynamic>{'b64_json': _onePixelPngBase64},
+                ],
+              }),
+            );
+            await req.response.close();
+            continue;
+          }
+
+          if (req.method == 'POST' && path == '/v1/images/generations') {
+            generationCalls += 1;
+            await utf8.decoder.bind(req).join();
+            req.response.statusCode = HttpStatus.internalServerError;
+            await req.response.close();
+            continue;
+          }
+
+          await utf8.decoder.bind(req).join();
+          req.response.statusCode = HttpStatus.notFound;
+          await req.response.close();
+        }
+      }();
+
+      final String baseUrl = 'http://127.0.0.1:${server.port}';
+      final int? providerId = await AIProvidersService.instance.createProvider(
+        name: 'Edit image provider',
+        type: AIProviderTypes.openai,
+        baseUrl: baseUrl,
+        models: const <String>['gpt-image-test'],
+        apiKey: 'sk-test',
+        isDefault: true,
+      );
+      expect(providerId, isNotNull);
+      await ScreenshotDatabase.instance.setAIContext(
+        context: kAiImageGenerationContext,
+        providerId: providerId!,
+        model: 'gpt-image-test',
+      );
+
+      final AIImageGenerationResult result = await HttpOverrides.runZoned(
+        () {
+          return AIImageGenerationService.instance.generate(
+            params: AIImageGenerationParams(
+              prompt: 'edit with reference',
+              referenceImagePaths: <String>[reference.path],
+            ),
+            conversationId: 'cid-edit-test',
+            assistantCreatedAtMs: 123,
+            toolCallId: 'call_edit',
+          );
+        },
+        createHttpClient: (SecurityContext? context) {
+          return _RealHttpOverrides().createHttpClient(context);
+        },
+      );
+
+      expect(result.ok, isTrue, reason: result.error);
+      expect(editCalls, 1);
+      expect(generationCalls, 0);
+      expect(result.images.single['marker'], contains('[generated-image:'));
+      expect(result.images.single['reference_image_count'], 1);
+      final List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
+          .listAiGeneratedImagesByToolCallId('call_edit');
+      expect(rows, hasLength(1));
+      expect(rows.single['file_path'], result.images.single['file_path']);
+    } finally {
+      await server.close(force: true);
+      if (serverDone != null) {
+        await serverDone.timeout(const Duration(seconds: 1), onTimeout: () {});
+      }
+      try {
+        await ScreenshotDatabase.instance.disposeDesktop();
+      } catch (_) {}
+      if (await tmp.exists()) {
+        await tmp.delete(recursive: true);
+      }
+    }
+  });
+
   test(
     'image generation context must be explicitly configured without fallback',
     () async {
@@ -254,6 +396,168 @@ void main() {
             }, includeDeleted: true);
         expect(includeDeleted['sample.png'], image.path);
       } finally {
+        try {
+          await ScreenshotDatabase.instance.disposeDesktop();
+        } catch (_) {}
+        if (await tmp.exists()) {
+          await tmp.delete(recursive: true);
+        }
+      }
+    },
+  );
+
+  test(
+    'chat follow-up attaches previous generated images for context',
+    () async {
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'screen_memo_generated_image_context_',
+      );
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      Map<String, dynamic>? chatRequest;
+      Future<void>? serverDone;
+      try {
+        final Directory root = Directory(p.join(tmp.path, 'root'));
+        await root.create(recursive: true);
+        await ScreenshotDatabase.instance.initializeForDesktop(root.path);
+
+        final File image = File(
+          p.join(
+            root.path,
+            'output',
+            'ai',
+            'generated_images',
+            '2026-05',
+            'followup.png',
+          ),
+        );
+        await image.parent.create(recursive: true);
+        await image.writeAsBytes(base64Decode(_onePixelPngBase64));
+
+        await ScreenshotDatabase.instance.insertAiGeneratedImage(
+          conversationId: 'cid-generated-context',
+          assistantCreatedAt: 2,
+          toolCallId: 'manual_call',
+          prompt: 'draw a sample',
+          model: 'gpt-image-test',
+          providerId: 7,
+          filePath: image.path,
+          mimeType: 'image/png',
+          size: '1024x1024',
+          quality: 'medium',
+          outputFormat: 'png',
+        );
+        await AISettingsService.instance
+            .saveChatHistoryByCid('cid-generated-context', <AIMessage>[
+              AIMessage(role: 'user', content: 'draw a sample'),
+              AIMessage(
+                role: 'assistant',
+                content: '[generated-image: followup.png]',
+              ),
+            ]);
+
+        serverDone = () async {
+          await for (final HttpRequest req in server) {
+            final String path = req.uri.path;
+            final String body = await utf8.decoder.bind(req).join();
+            if (req.method == 'POST' && path == '/v1/chat/completions') {
+              chatRequest = jsonDecode(body) as Map<String, dynamic>;
+              req.response.statusCode = HttpStatus.ok;
+              req.response.headers.contentType = ContentType.json;
+              req.response.write(
+                jsonEncode(<String, dynamic>{
+                  'choices': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'message': <String, dynamic>{
+                        'role': 'assistant',
+                        'content': 'I can see the previous generated image.',
+                      },
+                    },
+                  ],
+                  'model': 'chat-test',
+                }),
+              );
+              await req.response.close();
+              continue;
+            }
+
+            req.response.statusCode = HttpStatus.notFound;
+            await req.response.close();
+          }
+        }();
+
+        final String baseUrl = 'http://127.0.0.1:${server.port}';
+        final int? providerId = await AIProvidersService.instance
+            .createProvider(
+              name: 'Generated context provider',
+              type: AIProviderTypes.openai,
+              baseUrl: baseUrl,
+              models: const <String>['chat-test'],
+              apiKey: 'sk-test',
+              isDefault: true,
+            );
+        expect(providerId, isNotNull);
+        await ScreenshotDatabase.instance.setAIContext(
+          context: 'chat',
+          providerId: providerId!,
+          model: 'chat-test',
+        );
+
+        await HttpOverrides.runZoned(
+          () async {
+            await AIChatService.instance.sendMessageWithDisplayOverride(
+              'what is in the image?',
+              'what is in the image?',
+              includeHistory: true,
+              persistHistory: true,
+              persistHistoryTail: true,
+              conversationCid: 'cid-generated-context',
+            );
+          },
+          createHttpClient: (SecurityContext? context) {
+            return _RealHttpOverrides().createHttpClient(context);
+          },
+        );
+
+        expect(chatRequest, isNotNull);
+        final List<dynamic> messages =
+            chatRequest!['messages'] as List<dynamic>;
+        final Map<String, dynamic> userMessage = Map<String, dynamic>.from(
+          messages.last as Map,
+        );
+        final List<dynamic> content = userMessage['content'] as List<dynamic>;
+        expect(
+          content.where(
+            (dynamic item) =>
+                item is Map &&
+                item['type'] == 'text' &&
+                (item['text'] as String).contains(
+                  'Previous generated images from this conversation',
+                ),
+          ),
+          isNotEmpty,
+        );
+        expect(
+          content.where(
+            (dynamic item) =>
+                item is Map &&
+                item['type'] == 'image_url' &&
+                ((item['image_url'] as Map)['url'] as String).startsWith(
+                  'data:image/png;base64,',
+                ),
+          ),
+          hasLength(1),
+        );
+      } finally {
+        await server.close(force: true);
+        if (serverDone != null) {
+          await serverDone.timeout(
+            const Duration(seconds: 1),
+            onTimeout: () {},
+          );
+        }
         try {
           await ScreenshotDatabase.instance.disposeDesktop();
         } catch (_) {}

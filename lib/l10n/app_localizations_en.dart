@@ -4073,4 +4073,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateOpenInstallSettingsAction => 'Open settings';
+
+  @override
+  String get composerAttachImageTooltip => 'Attach image';
+
+  @override
+  String get composerDrawingModeOnTooltip => 'Drawing mode on';
+
+  @override
+  String get composerEnableDrawingModeTooltip => 'Enable drawing mode';
+
+  @override
+  String get composerDrawingModeEnabledToast => 'Drawing mode enabled';
+
+  @override
+  String get composerDrawingModeDisabledToast => 'Drawing mode disabled';
+
+  @override
+  String get composerStopTooltip => 'Stop';
+
+  @override
+  String get composerGenerateImageTooltip => 'Generate image';
+
+  @override
+  String get composerSendTooltip => 'Send';
+
+  @override
+  String get composerGeneratingImage => 'Generating image';
+
+  @override
+  String get composerGeneratingWithReferences => 'Generating with references';
+
+  @override
+  String composerImageLimitToast(Object count) {
+    return 'Only the first $count images are attached.';
+  }
+
+  @override
+  String composerImageSelectionFailed(Object error) {
+    return 'Failed to select image: $error';
+  }
+
+  @override
+  String get composerImagePromptRequired =>
+      'Enter a prompt to generate an image.';
+
+  @override
+  String get composerAnalyzeImageFallbackPrompt => 'Please analyze the image.';
 }

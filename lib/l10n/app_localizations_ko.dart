@@ -3977,4 +3977,50 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get updateOpenInstallSettingsAction => '설정 열기';
+
+  @override
+  String get composerAttachImageTooltip => '이미지 첨부';
+
+  @override
+  String get composerDrawingModeOnTooltip => '그리기 모드 켜짐';
+
+  @override
+  String get composerEnableDrawingModeTooltip => '그리기 모드 켜기';
+
+  @override
+  String get composerDrawingModeEnabledToast => '그리기 모드를 켰습니다';
+
+  @override
+  String get composerDrawingModeDisabledToast => '그리기 모드를 껐습니다';
+
+  @override
+  String get composerStopTooltip => '중지';
+
+  @override
+  String get composerGenerateImageTooltip => '이미지 생성';
+
+  @override
+  String get composerSendTooltip => '보내기';
+
+  @override
+  String get composerGeneratingImage => '이미지를 생성하는 중';
+
+  @override
+  String get composerGeneratingWithReferences => '참조 이미지로 생성하는 중';
+
+  @override
+  String composerImageLimitToast(Object count) {
+    return '처음 $count개의 이미지만 첨부됩니다.';
+  }
+
+  @override
+  String composerImageSelectionFailed(Object error) {
+    return '이미지를 선택하지 못했습니다: $error';
+  }
+
+  @override
+  String get composerImagePromptRequired => '이미지를 생성할 프롬프트를 입력하세요.';
+
+  @override
+  String get composerAnalyzeImageFallbackPrompt => '이 이미지를 분석해 주세요.';
 }

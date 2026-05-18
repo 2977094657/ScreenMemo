@@ -2146,5 +2146,29 @@
   },
   "updateInstallPermissionTitle": "Install permission required",
   "updateInstallPermissionMessage": "Allow ScreenMemo to install unknown apps, then return and tap Download again.",
-  "updateOpenInstallSettingsAction": "Open settings"
+  "updateOpenInstallSettingsAction": "Open settings",
+  "composerAttachImageTooltip": "Attach image",
+  "composerDrawingModeOnTooltip": "Drawing mode on",
+  "composerEnableDrawingModeTooltip": "Enable drawing mode",
+  "composerDrawingModeEnabledToast": "Drawing mode enabled",
+  "composerDrawingModeDisabledToast": "Drawing mode disabled",
+  "composerStopTooltip": "Stop",
+  "composerGenerateImageTooltip": "Generate image",
+  "composerSendTooltip": "Send",
+  "composerGeneratingImage": "Generating image",
+  "composerGeneratingWithReferences": "Generating with references",
+  "composerImageLimitToast": "Only the first {count} images are attached.",
+  "@composerImageLimitToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "composerImageSelectionFailed": "Failed to select image: {error}",
+  "@composerImageSelectionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "composerImagePromptRequired": "Enter a prompt to generate an image.",
+  "composerAnalyzeImageFallbackPrompt": "Please analyze the image."
 }

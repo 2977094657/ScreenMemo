@@ -1762,7 +1762,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
   String _buildMessageCopyText(AIMessage m, int messageIndex) {
     final bool isAssistant = m.role == 'assistant';
 
-    if (!isAssistant) return m.content.trim();
+    if (!isAssistant) return _stripComposerImageMarkers(m.content).trim();
 
     // Interleave blocks/segs in the same order as the bubble UI.
     final List<_ThinkingBlock> blocks = _blocksForMessageIndex(messageIndex);

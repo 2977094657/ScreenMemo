@@ -227,6 +227,44 @@ class ChatContextService {
 
   final Map<String, Future<void>> _serialized = <String, Future<void>>{};
 
+  String _stripComposerImageMarkersForPrompt(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'^[ \t]*\[\[composer-image:[^|\]]+(?:\|[^\]]*)?\]\][ \t]*$',
+            multiLine: true,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  AIMessage _promptSafeMessage(AIMessage message) {
+    if (message.role != 'user') return message;
+    final String stripped = _stripComposerImageMarkersForPrompt(
+      message.content,
+    );
+    if (stripped == message.content) return message;
+    return AIMessage(
+      role: message.role,
+      content: stripped,
+      createdAt: message.createdAt,
+      reasoningContent: message.reasoningContent,
+      reasoningDuration: message.reasoningDuration,
+      uiThinkingJson: message.uiThinkingJson,
+      usagePromptTokens: message.usagePromptTokens,
+      usageCompletionTokens: message.usageCompletionTokens,
+      usageTotalTokens: message.usageTotalTokens,
+      usageCacheHitTokens: message.usageCacheHitTokens,
+      usageCacheMissTokens: message.usageCacheMissTokens,
+      responseDuration: message.responseDuration,
+      apiContent: message.apiContent,
+      toolCalls: message.toolCalls,
+      toolCallId: message.toolCallId,
+    );
+  }
+
   Future<void> recordPromptTokens({
     required String cid,
     required int tokensApprox,
@@ -422,8 +460,14 @@ class ChatContextService {
 
       if (desc.isEmpty) return const <AIMessage>[];
       final List<AIMessage> msgs = desc.reversed.toList(growable: false);
-      if (maxTokens <= 0) return msgs;
-      return PromptBudget.keepTailUnderTokenBudget(msgs, maxTokens: maxTokens);
+      final List<AIMessage> promptSafe = msgs
+          .map(_promptSafeMessage)
+          .toList(growable: false);
+      if (maxTokens <= 0) return promptSafe;
+      return PromptBudget.keepTailUnderTokenBudget(
+        promptSafe,
+        maxTokens: maxTokens,
+      );
     } catch (_) {
       return const <AIMessage>[];
     }
@@ -1131,7 +1175,13 @@ class ChatContextService {
 
       if (desc.isEmpty) return const <AIMessage>[];
       final List<AIMessage> msgs = desc.reversed.toList(growable: false);
-      return PromptBudget.keepTailUnderTokenBudget(msgs, maxTokens: maxTokens);
+      final List<AIMessage> promptSafe = msgs
+          .map(_promptSafeMessage)
+          .toList(growable: false);
+      return PromptBudget.keepTailUnderTokenBudget(
+        promptSafe,
+        maxTokens: maxTokens,
+      );
     } catch (_) {
       return const <AIMessage>[];
     }

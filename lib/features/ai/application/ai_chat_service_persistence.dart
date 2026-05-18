@@ -1,6 +1,9 @@
 part of 'ai_chat_service.dart';
 
 extension AIChatServicePersistenceExt on AIChatService {
+  String get _generatedImageContextNote =>
+      'Previous generated images from this conversation are attached for context.';
+
   String _systemPromptForLocale({bool allowCharts = false}) {
     final Locale locale = _effectivePromptLocale();
     final String languagePolicy = lookupAppLocalizations(
@@ -83,10 +86,175 @@ Rules:
     return const Locale('en');
   }
 
+  String _mimeForGeneratedImagePath(String path) {
+    final String ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'image/png';
+    }
+  }
+
+  List<String> _generatedImageFilenamesFromMessages(
+    Iterable<AIMessage> messages, {
+    int limit = 8,
+  }) {
+    if (limit <= 0) return const <String>[];
+    final RegExp markerPattern = RegExp(
+      r'\[\s*generated-image\s*:\s*([^\]\s]+)\s*\]',
+      caseSensitive: false,
+    );
+    final List<String> names = <String>[];
+    final Set<String> seen = <String>{};
+    for (final AIMessage message in messages) {
+      for (final RegExpMatch match in markerPattern.allMatches(
+        message.content,
+      )) {
+        final String name = (match.group(1) ?? '').trim();
+        if (name.isEmpty) continue;
+        if (!seen.add(name)) continue;
+        names.add(name);
+      }
+    }
+    if (names.length <= limit) return names;
+    return names.sublist(names.length - limit);
+  }
+
+  Future<List<Map<String, Object?>>> _generatedImagePartsForMessages(
+    Iterable<AIMessage> messages, {
+    int limit = 8,
+  }) async {
+    final List<String> names = _generatedImageFilenamesFromMessages(
+      messages,
+      limit: limit,
+    );
+    if (names.isEmpty) return const <Map<String, Object?>>[];
+    final Map<String, String> paths = await ScreenshotDatabase.instance
+        .findAiGeneratedImagePathsByFilenames(names.toSet());
+    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
+    for (final String name in names) {
+      final String path = (paths[name] ?? '').trim();
+      if (path.isEmpty) continue;
+      try {
+        final File file = File(path);
+        if (!await file.exists()) continue;
+        final Uint8List bytes = await file.readAsBytes();
+        if (bytes.isEmpty) continue;
+        final String mime = _mimeForGeneratedImagePath(path);
+        parts.add(<String, Object?>{
+          'type': 'image_url',
+          'image_url': <String, Object?>{
+            'url': 'data:$mime;base64,${base64Encode(bytes)}',
+          },
+        });
+      } catch (_) {}
+      if (parts.length >= limit) break;
+    }
+    return parts;
+  }
+
+  Future<Object?> _withGeneratedImageContextFromMessages(
+    Object? userApiContent,
+    String userMessage,
+    Iterable<AIMessage> messages,
+  ) async {
+    final List<Map<String, Object?>> imageParts =
+        await _generatedImagePartsForMessages(messages);
+    if (imageParts.isEmpty) return userApiContent;
+    bool hasGeneratedImageContextNote(Object? apiContent) {
+      if (apiContent is! List) return false;
+      for (final Object? item in apiContent) {
+        if (item is! Map) continue;
+        if ((item['type'] ?? '').toString() != 'text') continue;
+        if ((item['text'] ?? '').toString().contains(
+          _generatedImageContextNote,
+        )) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    String? imageUrlForPart(Object? item) {
+      if (item is! Map) return null;
+      if ((item['type'] ?? '').toString() != 'image_url') return null;
+      final Object? rawImageUrl = item['image_url'];
+      if (rawImageUrl is! Map) return null;
+      final String url = (rawImageUrl['url'] ?? '').toString().trim();
+      return url.isEmpty ? null : url;
+    }
+
+    final bool alreadyHasContextNote = hasGeneratedImageContextNote(
+      userApiContent,
+    );
+
+    if (userApiContent is List) {
+      final List<Object?> out = <Object?>[];
+      bool inserted = false;
+      final Set<String> existingImageUrls = <String>{};
+      for (final Object? item in userApiContent) {
+        final String? url = imageUrlForPart(item);
+        if (url != null) existingImageUrls.add(url);
+        if (item is Map) {
+          final Map<String, Object?> map = Map<String, Object?>.from(item);
+          if (!alreadyHasContextNote &&
+              !inserted &&
+              (map['type'] ?? '').toString() == 'text') {
+            map['text'] =
+                '${(map['text'] ?? '').toString()}\n\n$_generatedImageContextNote';
+            inserted = true;
+          }
+          out.add(map);
+        } else {
+          out.add(item);
+        }
+      }
+      if (!alreadyHasContextNote && !inserted) {
+        out.insert(0, <String, Object?>{
+          'type': 'text',
+          'text': '$userMessage\n\n$_generatedImageContextNote',
+        });
+      }
+      for (final Map<String, Object?> part in imageParts) {
+        final String? url = imageUrlForPart(part);
+        if (url != null && !existingImageUrls.add(url)) continue;
+        out.add(part);
+      }
+      return out;
+    }
+    return <Map<String, Object?>>[
+      <String, Object?>{
+        'type': 'text',
+        'text': '$userMessage\n\n$_generatedImageContextNote',
+      },
+      ...imageParts,
+    ];
+  }
+
+  String _stripComposerImageMarkersForPrompt(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'^[ \t]*\[\[composer-image:[^|\]]+(?:\|[^\]]*)?\]\][ \t]*$',
+            multiLine: true,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
   List<AIMessage> _composeMessages({
     required String systemMessage,
     required List<AIMessage> history,
     required String userMessage,
+    Object? userApiContent,
     Iterable<String> extraSystemMessages = const <String>[],
     bool includeHistory = true,
     int? historyMaxTokens,
@@ -109,7 +277,9 @@ Rules:
         trimmedHistory.map(
           (msg) => AIMessage(
             role: msg.role,
-            content: msg.content,
+            content: msg.role == 'user'
+                ? _stripComposerImageMarkersForPrompt(msg.content)
+                : msg.content,
             reasoningContent: msg.reasoningContent,
             reasoningDuration: msg.reasoningDuration,
             apiContent: msg.apiContent,
@@ -119,7 +289,9 @@ Rules:
         ),
       );
     }
-    messages.add(AIMessage(role: 'user', content: userMessage));
+    messages.add(
+      AIMessage(role: 'user', content: userMessage, apiContent: userApiContent),
+    );
     return messages;
   }
 
@@ -127,21 +299,29 @@ Rules:
     required String cid,
     required List<AIMessage> history,
     required String userMessage,
+    String? localUserMessageForHistory,
     int? userCreatedAtMs,
     required AIMessage assistant,
     required String modelUsed,
     required Map<String, Map<String, dynamic>> toolSignatureDigests,
+    Object? userApiContent,
     List<AIMessage> rawTurnTranscript = const <AIMessage>[],
     bool persistHistory = true,
     bool persistHistoryTail = true,
     String? conversationTitle,
   }) async {
     if (!persistHistory) return;
+    final String localUserMessage =
+        (localUserMessageForHistory ?? '').trim().isNotEmpty
+        ? localUserMessageForHistory!.trim()
+        : userMessage.trim();
     int? turnCreatedAtMs = userCreatedAtMs;
     for (int i = history.length - 1; i >= 0; i--) {
       if ((turnCreatedAtMs ?? 0) > 0) break;
       final AIMessage m = history[i];
-      if (m.role == 'user' && m.content.trim() == userMessage.trim()) {
+      if (m.role == 'user' &&
+          _stripComposerImageMarkersForPrompt(m.content) ==
+              userMessage.trim()) {
         turnCreatedAtMs = m.createdAt.millisecondsSinceEpoch;
         break;
       }
@@ -173,7 +353,7 @@ Rules:
           }
           final List<AIMessage> merged = mergeCompletedTurnIntoHistory(
             existingHistory: existing,
-            userMessage: userMessage,
+            userMessage: localUserMessage,
             assistantFinal: assistant,
           );
           await _settings.saveChatHistoryByCid(cid, merged);
@@ -199,7 +379,8 @@ Rules:
         int userIdx = -1;
         for (int i = historyForContext.length - 1; i >= 0; i--) {
           final AIMessage m = historyForContext[i];
-          if (m.role == 'user' && m.content.trim() == userTrim) {
+          if (m.role == 'user' &&
+              _stripComposerImageMarkersForPrompt(m.content) == userTrim) {
             userIdx = i;
             break;
           }
@@ -236,7 +417,7 @@ Rules:
         );
         await _chatContext.appendCompletedTurn(
           cid: cid,
-          userMessage: userMessage,
+          userMessage: localUserMessage,
           assistantMessage: assistant.content,
           userCreatedAtMs: userAtMs,
           assistantCreatedAtMs: assistantAtMs,
@@ -260,7 +441,11 @@ Rules:
           return;
         }
         final List<AIMessage> rawToAppend = <AIMessage>[
-          AIMessage(role: 'user', content: userMessage),
+          AIMessage(
+            role: 'user',
+            content: localUserMessage,
+            apiContent: userApiContent,
+          ),
           ...rawTurnTranscript,
           AIMessage(
             role: 'assistant',

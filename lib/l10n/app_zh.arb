@@ -2146,5 +2146,29 @@
   },
   "updateInstallPermissionTitle": "需要安装权限",
   "updateInstallPermissionMessage": "请允许屏忆安装未知来源应用，然后返回后重新点击下载。",
-  "updateOpenInstallSettingsAction": "打开设置"
+  "updateOpenInstallSettingsAction": "打开设置",
+  "composerAttachImageTooltip": "添加图片",
+  "composerDrawingModeOnTooltip": "画图模式已开启",
+  "composerEnableDrawingModeTooltip": "开启画图模式",
+  "composerDrawingModeEnabledToast": "已开启画图模式",
+  "composerDrawingModeDisabledToast": "已关闭画图模式",
+  "composerStopTooltip": "停止",
+  "composerGenerateImageTooltip": "生成图片",
+  "composerSendTooltip": "发送",
+  "composerGeneratingImage": "正在生成图片",
+  "composerGeneratingWithReferences": "正在根据参考图生成",
+  "composerImageLimitToast": "仅添加前 {count} 张图片。",
+  "@composerImageLimitToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "composerImageSelectionFailed": "选择图片失败：{error}",
+  "@composerImageSelectionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "composerImagePromptRequired": "请输入用于生成图片的提示词。",
+  "composerAnalyzeImageFallbackPrompt": "请分析这张图片。"
 }

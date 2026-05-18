@@ -2146,5 +2146,29 @@
   },
   "updateInstallPermissionTitle": "インストール権限が必要です",
   "updateInstallPermissionMessage": "ScreenMemo に不明なアプリのインストールを許可し、戻ってからもう一度ダウンロードをタップしてください。",
-  "updateOpenInstallSettingsAction": "設定を開く"
+  "updateOpenInstallSettingsAction": "設定を開く",
+  "composerAttachImageTooltip": "画像を添付",
+  "composerDrawingModeOnTooltip": "描画モードはオンです",
+  "composerEnableDrawingModeTooltip": "描画モードを有効にする",
+  "composerDrawingModeEnabledToast": "描画モードを有効にしました",
+  "composerDrawingModeDisabledToast": "描画モードを無効にしました",
+  "composerStopTooltip": "停止",
+  "composerGenerateImageTooltip": "画像を生成",
+  "composerSendTooltip": "送信",
+  "composerGeneratingImage": "画像を生成しています",
+  "composerGeneratingWithReferences": "参照画像を使って生成しています",
+  "composerImageLimitToast": "最初の {count} 枚の画像のみ添付されます。",
+  "@composerImageLimitToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "composerImageSelectionFailed": "画像の選択に失敗しました：{error}",
+  "@composerImageSelectionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "composerImagePromptRequired": "画像生成用のプロンプトを入力してください。",
+  "composerAnalyzeImageFallbackPrompt": "この画像を分析してください。"
 }

@@ -179,6 +179,72 @@ void main() {
   );
 
   test(
+    'mergeCompletedTurnIntoHistory matches user messages with composer image markers',
+    () {
+      const marker =
+          '[[composer-image:C%3A%5Cchat%5Cselected.png|selected.png]]';
+      final DateTime userAt = DateTime.fromMillisecondsSinceEpoch(1000);
+      final DateTime assistantAt = DateTime.fromMillisecondsSinceEpoch(2000);
+      final existing = <AIMessage>[
+        AIMessage(
+          role: 'user',
+          content: 'Describe this image\n\n$marker',
+          createdAt: userAt,
+        ),
+        AIMessage(
+          role: 'assistant',
+          content: 'partial',
+          createdAt: assistantAt,
+          uiThinkingJson: _uiThinkingV2(
+            createdAtMs: assistantAt.millisecondsSinceEpoch,
+          ),
+        ),
+      ];
+
+      final merged = mergeCompletedTurnIntoHistory(
+        existingHistory: existing,
+        userMessage: 'Describe this image',
+        assistantFinal: AIMessage(role: 'assistant', content: 'Final answer'),
+        nowMs: 999999,
+      );
+
+      expect(merged.length, 2);
+      expect(merged[0].role, 'user');
+      expect(merged[0].createdAt, userAt);
+      expect(merged[0].content, contains(marker));
+      expect(merged[1].role, 'assistant');
+      expect(merged[1].content, 'Final answer');
+    },
+  );
+
+  test(
+    'mergeCompletedTurnIntoHistory accepts a local user message with image markers',
+    () {
+      const marker =
+          '[[composer-image:C%3A%5Cchat%5Cselected.png|selected.png]]';
+      final existing = <AIMessage>[
+        AIMessage(role: 'user', content: 'Describe this image\n\n$marker'),
+        AIMessage(
+          role: 'assistant',
+          content: 'partial',
+          uiThinkingJson: _uiThinkingV2(createdAtMs: 2000),
+        ),
+      ];
+
+      final merged = mergeCompletedTurnIntoHistory(
+        existingHistory: existing,
+        userMessage: 'Describe this image\n\n$marker',
+        assistantFinal: AIMessage(role: 'assistant', content: 'Final answer'),
+        nowMs: 999999,
+      );
+
+      expect(merged.length, 2);
+      expect(merged[0].content, contains(marker));
+      expect(merged[1].content, 'Final answer');
+    },
+  );
+
+  test(
     'mergeCompletedTurnIntoHistory cleans up duplicate user+assistant pair after placeholder',
     () {
       final DateTime assistantAt = DateTime.fromMillisecondsSinceEpoch(2000);

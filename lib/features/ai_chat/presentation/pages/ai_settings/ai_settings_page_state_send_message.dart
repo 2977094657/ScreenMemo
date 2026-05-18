@@ -29,6 +29,463 @@ String _filterReasoningChunkForUi(String raw) {
 }
 
 extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
+  String _mimeForComposerImagePath(String path) {
+    final String ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'image/png';
+    }
+  }
+
+  Future<String> _copyComposerImageToTemp(String sourcePath) async {
+    final File source = File(sourcePath);
+    if (!await source.exists()) {
+      throw Exception('Selected image file does not exist.');
+    }
+    final Uint8List bytes = await source.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('Selected image file is empty.');
+    }
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      throw Exception('Selected image format is not supported.');
+    }
+    img.Image normalized = img.bakeOrientation(decoded);
+    final int longest = normalized.width > normalized.height
+        ? normalized.width
+        : normalized.height;
+    if (longest > _maxComposerImageEdge) {
+      normalized = img.copyResize(
+        normalized,
+        width: normalized.width >= normalized.height
+            ? _maxComposerImageEdge
+            : null,
+        height: normalized.height > normalized.width
+            ? _maxComposerImageEdge
+            : null,
+        interpolation: img.Interpolation.average,
+      );
+    }
+    final Uint8List pngBytes = Uint8List.fromList(img.encodePng(normalized));
+    final DateTime now = DateTime.now();
+    final String month = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final Directory? dir = await PathService.getInternalAppDir(
+      'output/ai/chat_attachments/$month',
+    );
+    if (dir == null) {
+      throw Exception('Failed to resolve chat attachment output directory.');
+    }
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final String name = 'selected_${DateTime.now().microsecondsSinceEpoch}.png';
+    final File out = File('${dir.path}${Platform.pathSeparator}$name');
+    await out.writeAsBytes(pngBytes, flush: true);
+    return out.path;
+  }
+
+  Future<void> _pickComposerImages() async {
+    if (_pickingComposerImages) return;
+    _setState(() {
+      _pickingComposerImages = true;
+      _composerImageSkeletonCount = 0;
+    });
+    final List<String> createdTempPaths = <String>[];
+    bool committed = false;
+    final Stopwatch skeletonWatch = Stopwatch();
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+      final int remainingSlots = (_maxComposerImages - _composerImages.length)
+          .clamp(0, _maxComposerImages);
+      final int pendingCount = result.files.length
+          .clamp(1, remainingSlots <= 0 ? 1 : remainingSlots)
+          .toInt();
+      _setState(() {
+        _processingComposerImages = true;
+        _composerImageSkeletonCount = pendingCount;
+      });
+      skeletonWatch.start();
+      await WidgetsBinding.instance.endOfFrame;
+      final List<_ComposerImageAttachment> next =
+          List<_ComposerImageAttachment>.from(_composerImages);
+      final Set<String> existing = next.map((e) => e.path).toSet();
+      final int initialCount = next.length;
+      for (final PlatformFile file in result.files) {
+        if (next.length >= _maxComposerImages) break;
+        final String? rawPath = file.path?.trim();
+        if (rawPath == null || rawPath.isEmpty) continue;
+        final String tempPath = await _copyComposerImageToTemp(rawPath);
+        createdTempPaths.add(tempPath);
+        if (!existing.add(tempPath)) {
+          unawaited(File(tempPath).delete().catchError((_) => File(tempPath)));
+          continue;
+        }
+        next.add(
+          _ComposerImageAttachment(
+            path: tempPath,
+            name: file.name.trim().isEmpty ? 'image.png' : file.name.trim(),
+            mimeType: 'image/png',
+          ),
+        );
+      }
+      final int remainingSkeletonMs = 240 - skeletonWatch.elapsedMilliseconds;
+      if (remainingSkeletonMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: remainingSkeletonMs));
+      }
+      if (!mounted) return;
+      _setState(() {
+        _composerImages = next;
+      });
+      committed = true;
+      if (result.files.length > next.length - initialCount) {
+        UINotifier.info(
+          context,
+          AppLocalizations.of(
+            context,
+          ).composerImageLimitToast(_maxComposerImages),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).composerImageSelectionFailed(e.toString()),
+      );
+    } finally {
+      if (mounted) {
+        _setState(() {
+          _pickingComposerImages = false;
+        });
+      } else {
+        _pickingComposerImages = false;
+      }
+      if (mounted) {
+        _setState(() {
+          _processingComposerImages = false;
+          _composerImageSkeletonCount = 0;
+        });
+      } else {
+        _processingComposerImages = false;
+        _composerImageSkeletonCount = 0;
+      }
+      if (!committed) {
+        for (final String path in createdTempPaths) {
+          unawaited(File(path).delete().catchError((_) => File(path)));
+        }
+      }
+    }
+  }
+
+  List<EvidenceImageAttachment> _composerImagesToMessageAttachments(
+    List<_ComposerImageAttachment> images,
+  ) {
+    return images
+        .map(
+          (image) => EvidenceImageAttachment(
+            path: image.path,
+            label: image.name.trim().isEmpty ? 'image' : image.name.trim(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  String _composerImageAttachmentMarker(EvidenceImageAttachment image) {
+    final String path = Uri.encodeComponent(image.path.trim());
+    final String label = Uri.encodeComponent(image.label.trim());
+    if (path.isEmpty) return '';
+    return '[[composer-image:$path|$label]]';
+  }
+
+  String _withComposerImageMarkers(
+    String text,
+    List<EvidenceImageAttachment> images,
+  ) {
+    if (images.isEmpty) return text;
+    final List<String> markers = images
+        .map(_composerImageAttachmentMarker)
+        .where((marker) => marker.trim().isNotEmpty)
+        .toList(growable: false);
+    if (markers.isEmpty) return text;
+    return '$text\n\n${markers.join('\n')}';
+  }
+
+  void _removeComposerImage(String path) {
+    final String target = path.trim();
+    if (target.isEmpty) return;
+    _setState(() {
+      _composerImages = _composerImages
+          .where((item) => item.path != target)
+          .toList(growable: false);
+    });
+    unawaited(File(target).delete().catchError((_) => File(target)));
+  }
+
+  void _clearComposerImages({bool deleteFiles = true}) {
+    final List<_ComposerImageAttachment> old =
+        List<_ComposerImageAttachment>.from(_composerImages);
+    _setState(() {
+      _composerImages = <_ComposerImageAttachment>[];
+    });
+    if (deleteFiles) {
+      for (final _ComposerImageAttachment item in old) {
+        unawaited(File(item.path).delete().catchError((_) => File(item.path)));
+      }
+    }
+  }
+
+  Future<List<Map<String, Object?>>> _buildComposerImageApiParts(
+    List<_ComposerImageAttachment> images,
+  ) async {
+    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
+    for (final _ComposerImageAttachment image in images) {
+      final File file = File(image.path);
+      if (!await file.exists()) {
+        throw Exception('Selected image file does not exist.');
+      }
+      final Uint8List bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        throw Exception('Selected image file is empty.');
+      }
+      final String mime = image.mimeType.trim().isEmpty
+          ? _mimeForComposerImagePath(image.path)
+          : image.mimeType.trim();
+      parts.add(<String, Object?>{
+        'type': 'image_url',
+        'image_url': <String, Object?>{
+          'url': 'data:$mime;base64,${base64Encode(bytes)}',
+        },
+      });
+    }
+    return parts;
+  }
+
+  List<String> _generatedImageFilenamesFromVisibleHistory({
+    required int limit,
+  }) {
+    if (limit <= 0) return const <String>[];
+    final RegExp markerPattern = RegExp(
+      r'\[\s*generated-image\s*:\s*([^\]\s]+)\s*\]',
+      caseSensitive: false,
+    );
+    final List<String> names = <String>[];
+    final Set<String> seen = <String>{};
+    for (final AIMessage message in _messages) {
+      for (final RegExpMatch match in markerPattern.allMatches(
+        message.content,
+      )) {
+        final String name = (match.group(1) ?? '').trim();
+        if (name.isEmpty) continue;
+        if (!seen.add(name)) continue;
+        names.add(name);
+      }
+    }
+    if (names.length <= limit) return names;
+    return names.sublist(names.length - limit);
+  }
+
+  Future<List<_ComposerImageAttachment>>
+  _buildGeneratedImageHistoryAttachments({required int limit}) async {
+    final List<String> names = _generatedImageFilenamesFromVisibleHistory(
+      limit: limit,
+    );
+    if (names.isEmpty) return const <_ComposerImageAttachment>[];
+    final Map<String, String> paths = await ScreenshotDatabase.instance
+        .findAiGeneratedImagePathsByFilenames(names.toSet());
+    final List<_ComposerImageAttachment> out = <_ComposerImageAttachment>[];
+    for (final String name in names) {
+      final String path = (paths[name] ?? '').trim();
+      if (path.isEmpty) continue;
+      try {
+        if (!await File(path).exists()) continue;
+      } catch (_) {
+        continue;
+      }
+      out.add(
+        _ComposerImageAttachment(
+          path: path,
+          name: name,
+          mimeType: _mimeForComposerImagePath(path),
+        ),
+      );
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  Future<Object?> _buildChatUserApiContent({
+    required String text,
+    required List<_ComposerImageAttachment> currentImages,
+  }) async {
+    final int historyLimit = (_maxComposerImages - currentImages.length)
+        .clamp(0, _maxComposerImages)
+        .toInt();
+    final List<_ComposerImageAttachment> generatedHistoryImages =
+        await _buildGeneratedImageHistoryAttachments(limit: historyLimit);
+    final List<_ComposerImageAttachment> allImages = <_ComposerImageAttachment>[
+      ...generatedHistoryImages,
+      ...currentImages,
+    ];
+    if (allImages.isEmpty) return null;
+    final String apiText = generatedHistoryImages.isEmpty
+        ? text
+        : '$text\n\nPrevious generated images from this conversation are attached for context.';
+    return <Map<String, Object?>>[
+      <String, Object?>{'type': 'text', 'text': apiText},
+      ...await _buildComposerImageApiParts(allImages),
+    ];
+  }
+
+  Future<void> _sendImageGenerationMessage({
+    required String text,
+    required List<_ComposerImageAttachment> images,
+    required String requestCid,
+    required int sendEpoch,
+  }) async {
+    void setStateIfActive(VoidCallback fn) {
+      if (!mounted) return;
+      if (_activeSendEpoch != sendEpoch) return;
+      _setState(fn);
+    }
+
+    final DateTime userCreatedAt = DateTime.now();
+    final DateTime assistantCreatedAt = DateTime.now();
+    final int assistantIdx = _messages.length + 1;
+    final String callId =
+        'manual_${DateTime.now().millisecondsSinceEpoch}_$sendEpoch';
+    final String loadingContent = _generatedImageLoadingMarkers(
+      callId,
+      1,
+    ).join('\n\n');
+    final List<EvidenceImageAttachment> userAttachments =
+        _composerImagesToMessageAttachments(images);
+    setStateIfActive(() {
+      _messages = List<AIMessage>.from(_messages)
+        ..add(
+          AIMessage(
+            role: 'user',
+            content: _withComposerImageMarkers(text, userAttachments),
+            createdAt: userCreatedAt,
+          ),
+        )
+        ..add(
+          AIMessage(
+            role: 'assistant',
+            content: loadingContent,
+            createdAt: assistantCreatedAt,
+          ),
+        );
+      _inStreaming = true;
+      _thinkingText = '';
+      _showThinkingContent = false;
+      _currentAssistantIndex = assistantIdx;
+      _reasoningByIndex[assistantIdx] = '';
+      _reasoningDurationByIndex.remove(assistantIdx);
+      _thinkingBlocksByIndex[assistantIdx] = <_ThinkingBlock>[
+        _ThinkingBlock(createdAt: assistantCreatedAt),
+      ];
+      _setTransientThinkingStep(
+        assistantIdx,
+        title: images.isEmpty
+            ? AppLocalizations.of(context).composerGeneratingImage
+            : AppLocalizations.of(context).composerGeneratingWithReferences,
+        icon: Icons.image_outlined,
+      );
+      _contentSegmentsByIndex[assistantIdx] = loadingContent.trim().isEmpty
+          ? <String>[]
+          : <String>[loadingContent];
+      _nextContentStartsNewSegmentByIndex[assistantIdx] = false;
+      if (userAttachments.isNotEmpty) {
+        _attachmentsByIndex[assistantIdx - 1] = userAttachments;
+        _sentComposerImagePaths.addAll(images.map((e) => e.path));
+      }
+    });
+    _markInFlightHistoryDirty();
+    _inputController.clear();
+    _clearComposerImages(deleteFiles: false);
+    _scheduleAutoScroll();
+
+    try {
+      final AIImageGenerationResult result = await AIImageGenerationService
+          .instance
+          .generate(
+            params: AIImageGenerationParams(
+              prompt: text,
+              referenceImagePaths: images.map((e) => e.path).toList(),
+            ),
+            conversationId: requestCid,
+            assistantCreatedAtMs: assistantCreatedAt.millisecondsSinceEpoch,
+            toolCallId: callId,
+          );
+      if (!result.ok) {
+        throw Exception(result.error ?? 'Image generation failed.');
+      }
+      final List<String> markers = result.images
+          .map((e) => (e['marker'] ?? '').toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+      final String content = markers.isEmpty
+          ? (result.error ?? 'Image generation completed without images.')
+          : markers.join('\n\n');
+      setStateIfActive(() {
+        if (assistantIdx >= 0 && assistantIdx < _messages.length) {
+          final AIMessage current = _messages[assistantIdx];
+          _messages[assistantIdx] = AIMessage(
+            role: 'assistant',
+            content: content,
+            createdAt: current.createdAt,
+            responseDuration: DateTime.now().difference(assistantCreatedAt),
+          );
+          _contentSegmentsByIndex[assistantIdx] = <String>[content];
+          _finishActiveThinkingBlock(assistantIdx);
+        }
+      });
+      await _enqueueChatHistorySaveByCid(
+        requestCid,
+        _mergeReasoningForPersistence(List<AIMessage>.from(_messages)),
+      );
+    } catch (e) {
+      final String message = e.toString().replaceFirst('Exception: ', '');
+      setStateIfActive(() {
+        if (assistantIdx >= 0 && assistantIdx < _messages.length) {
+          final AIMessage current = _messages[assistantIdx];
+          _messages[assistantIdx] = AIMessage(
+            role: 'error',
+            content: message,
+            createdAt: current.createdAt,
+          );
+          _contentSegmentsByIndex[assistantIdx] = <String>[message];
+          _finishActiveThinkingBlock(assistantIdx);
+        }
+      });
+      if (mounted) UINotifier.error(context, message);
+      await _enqueueChatHistorySaveByCid(
+        requestCid,
+        _mergeReasoningForPersistence(List<AIMessage>.from(_messages)),
+      );
+    } finally {
+      setStateIfActive(() {
+        _sending = false;
+        _inStreaming = false;
+        _currentAssistantIndex = null;
+      });
+      _inFlightConversationCid = null;
+      _scheduleAutoScroll();
+    }
+  }
+
   Future<void> _retryMessageAt(int index) async {
     if (_sending) return;
     if (index < 0 || index >= _messages.length) return;
@@ -87,16 +544,30 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
   Future<void> _sendMessage({String? overrideText}) async {
     if (_sending) return;
     final String? override = overrideText?.trim();
-    final text = (override != null && override.isNotEmpty)
+    final rawText = (override != null && override.isNotEmpty)
         ? override
         : _inputController.text.trim();
-    if (text.isEmpty) {
+    final List<_ComposerImageAttachment> sendImages =
+        (override != null && override.isNotEmpty)
+        ? const <_ComposerImageAttachment>[]
+        : List<_ComposerImageAttachment>.from(_composerImages);
+    if (rawText.isEmpty && sendImages.isEmpty) {
       UINotifier.error(
         context,
         AppLocalizations.of(context).messageCannotBeEmpty,
       );
       return;
     }
+    if (_imageDrawMode && override == null && rawText.isEmpty) {
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).composerImagePromptRequired,
+      );
+      return;
+    }
+    final text = rawText.isNotEmpty
+        ? rawText
+        : AppLocalizations.of(context).composerAnalyzeImageFallbackPrompt;
     _setState(() {
       _sending = true;
     });
@@ -111,6 +582,20 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       }
       requestCid = requestCid.trim();
       _inFlightConversationCid = requestCid.isEmpty ? null : requestCid;
+      if (_imageDrawMode && override == null) {
+        await _sendImageGenerationMessage(
+          text: text,
+          images: sendImages,
+          requestCid: requestCid,
+          sendEpoch: sendEpoch,
+        );
+        return;
+      }
+
+      final Object? userApiContent = await _buildChatUserApiContent(
+        text: text,
+        currentImages: sendImages,
+      );
       void setStateIfActive(VoidCallback fn) {
         if (!mounted) return;
         if (_activeSendEpoch != sendEpoch) return;
@@ -119,14 +604,30 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
 
       // 先本地追加用户消息，提升即时反馈
       final DateTime userCreatedAt = DateTime.now();
+      final int userIdx = _messages.length;
+      final List<EvidenceImageAttachment> userAttachments =
+          _composerImagesToMessageAttachments(sendImages);
+      final String localUserContent = _withComposerImageMarkers(
+        text,
+        userAttachments,
+      );
       setStateIfActive(() {
         _messages = List<AIMessage>.from(_messages)
           ..add(
-            AIMessage(role: 'user', content: text, createdAt: userCreatedAt),
+            AIMessage(
+              role: 'user',
+              content: localUserContent,
+              createdAt: userCreatedAt,
+            ),
           );
+        if (userAttachments.isNotEmpty) {
+          _attachmentsByIndex[userIdx] = userAttachments;
+          _sentComposerImagePaths.addAll(sendImages.map((e) => e.path));
+        }
       });
       if (override == null || override.isEmpty) {
         _inputController.clear();
+        _clearComposerImages(deleteFiles: false);
       }
       _scheduleAutoScroll();
 
@@ -474,6 +975,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               uiUserCreatedAtMs: userCreatedAt.millisecondsSinceEpoch,
               uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
               reasoningLevel: _reasoningLevel,
+              userApiContent: userApiContent,
+              localUserMessageForHistory: localUserContent,
             );
           }
 
@@ -1214,6 +1717,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             uiUserCreatedAtMs: userCreatedAt.millisecondsSinceEpoch,
             uiAssistantCreatedAtMs: assistantCreatedAt.millisecondsSinceEpoch,
             reasoningLevel: _reasoningLevel,
+            userApiContent: userApiContent,
+            localUserMessageForHistory: localUserContent,
             emitEvent: (evt) {
               if (!mounted) return;
               if (_activeSendEpoch != sendEpoch) return;

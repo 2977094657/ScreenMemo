@@ -1595,6 +1595,7 @@ extension AIChatServiceSendExt on AIChatService {
           assistant: assistant,
           modelUsed: result.modelUsed,
           toolSignatureDigests: const <String, Map<String, dynamic>>{},
+          userApiContent: null,
           rawTurnTranscript: const <AIMessage>[],
         );
       } catch (_) {}
@@ -1663,6 +1664,8 @@ extension AIChatServiceSendExt on AIChatService {
     AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     int? uiUserCreatedAtMs,
     int? uiAssistantCreatedAtMs,
+    Object? userApiContent,
+    String? localUserMessageForHistory,
   }) async {
     if (tools.isNotEmpty) {
       final String cid = (conversationCid ?? '').trim().isNotEmpty
@@ -1740,6 +1743,8 @@ extension AIChatServiceSendExt on AIChatService {
             uiUserCreatedAtMs: uiUserCreatedAtMs,
             uiAssistantCreatedAtMs: uiAssistantCreatedAtMs,
             uiThinkingJsonProvider: () => timelinePersister?.uiThinkingJson,
+            userApiContent: userApiContent,
+            localUserMessageForHistory: localUserMessageForHistory,
           );
       // ignore: discarded_futures
       completed
@@ -1855,6 +1860,8 @@ extension AIChatServiceSendExt on AIChatService {
       extraSystemMessages: extraSystemMessages,
       reasoningLevel: reasoningLevel,
       uiUserCreatedAtMs: uiUserCreatedAtMs,
+      userApiContent: userApiContent,
+      localUserMessageForHistory: localUserMessageForHistory,
     );
     if (trackDailyPerf) {
       DynamicEntryPerfService.instance.mark(
@@ -1880,6 +1887,8 @@ extension AIChatServiceSendExt on AIChatService {
     List<String> extraSystemMessages = const <String>[],
     AIReasoningLevel reasoningLevel = AIReasoningLevel.auto,
     int? uiUserCreatedAtMs,
+    Object? userApiContent,
+    String? localUserMessageForHistory,
   }) async {
     final String cid = conversationCid.trim();
     final String modelForBudget = endpoints.isNotEmpty
@@ -1985,6 +1994,7 @@ extension AIChatServiceSendExt on AIChatService {
                 systemMessage: systemPrompt,
                 history: effectiveHistory,
                 userMessage: userMessage,
+                userApiContent: userApiContent,
                 extraSystemMessages: effectiveExtras,
                 includeHistory: includeHistoryEffective,
                 historyMaxTokens: 1 << 30,
@@ -2011,6 +2021,12 @@ extension AIChatServiceSendExt on AIChatService {
         }
       }
     }
+    Object? effectiveUserApiContent =
+        await _withGeneratedImageContextFromMessages(
+          userApiContent,
+          userMessage,
+          <AIMessage>[...effectiveHistory, ...history],
+        );
 
     final int promptEstBefore =
         toolsSchemaTokens +
@@ -2019,6 +2035,7 @@ extension AIChatServiceSendExt on AIChatService {
             systemMessage: systemPrompt,
             history: effectiveHistory,
             userMessage: userMessage,
+            userApiContent: effectiveUserApiContent,
             extraSystemMessages: effectiveExtras,
             includeHistory: includeHistoryEffective,
             historyMaxTokens: 1 << 30,
@@ -2037,6 +2054,7 @@ extension AIChatServiceSendExt on AIChatService {
             : historyMaxTokens,
       ),
       userMessage: userMessage,
+      userApiContent: effectiveUserApiContent,
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistoryEffective,
       historyMaxTokens: (strictFullAttempted && !fallbackTriggered)
@@ -2115,6 +2133,11 @@ extension AIChatServiceSendExt on AIChatService {
             effectiveHistory = requestHistory ?? history;
           }
         }
+        effectiveUserApiContent = await _withGeneratedImageContextFromMessages(
+          userApiContent,
+          userMessage,
+          <AIMessage>[...effectiveHistory, ...history],
+        );
         requestMessages = _composeMessages(
           systemMessage: systemPrompt,
           history: _trimHistoryTailWithEvent(
@@ -2125,6 +2148,7 @@ extension AIChatServiceSendExt on AIChatService {
             maxTokens: historyMaxTokens,
           ),
           userMessage: userMessage,
+          userApiContent: effectiveUserApiContent,
           extraSystemMessages: extras2,
           includeHistory: includeHistoryEffective,
           historyMaxTokens: historyMaxTokens,
@@ -2216,10 +2240,12 @@ extension AIChatServiceSendExt on AIChatService {
               cid: cid,
               history: history,
               userMessage: displayUserMessage,
+              localUserMessageForHistory: localUserMessageForHistory,
               userCreatedAtMs: turnCreatedAtMs,
               assistant: assistant,
               modelUsed: result.modelUsed,
               toolSignatureDigests: const <String, Map<String, dynamic>>{},
+              userApiContent: effectiveUserApiContent,
               rawTurnTranscript: const <AIMessage>[],
               persistHistoryTail: persistHistoryTail,
             );
@@ -2254,6 +2280,8 @@ extension AIChatServiceSendExt on AIChatService {
     void Function(AIStreamEvent event)? emitEvent,
     int? uiUserCreatedAtMs,
     int? uiAssistantCreatedAtMs,
+    Object? userApiContent,
+    String? localUserMessageForHistory,
   }) async {
     String? effectiveConversationCid = conversationCid;
     _ToolUiThinkingPersister? timelinePersister;
@@ -2317,6 +2345,8 @@ extension AIChatServiceSendExt on AIChatService {
         uiUserCreatedAtMs: uiUserCreatedAtMs,
         uiAssistantCreatedAtMs: uiAssistantCreatedAtMs,
         uiThinkingJsonProvider: () => timelinePersister?.uiThinkingJson,
+        userApiContent: userApiContent,
+        localUserMessageForHistory: localUserMessageForHistory,
       );
     } finally {
       if (timelinePersister != null) {
@@ -2351,6 +2381,8 @@ extension AIChatServiceSendExt on AIChatService {
     int? uiUserCreatedAtMs,
     int? uiAssistantCreatedAtMs,
     String? Function()? uiThinkingJsonProvider,
+    Object? userApiContent,
+    String? localUserMessageForHistory,
   }) async {
     if (tools.isNotEmpty) {
       _emitProgress(emitEvent, _loc('准备 agent loop…', 'Preparing agent loop…'));
@@ -2469,6 +2501,7 @@ extension AIChatServiceSendExt on AIChatService {
                 systemMessage: systemPrompt,
                 history: filteredHistory,
                 userMessage: actualUserMessage,
+                userApiContent: userApiContent,
                 extraSystemMessages: effectiveExtras,
                 includeHistory: includeHistoryEffective,
                 historyMaxTokens: 1 << 30,
@@ -2499,6 +2532,12 @@ extension AIChatServiceSendExt on AIChatService {
         }
       }
     }
+    Object? effectiveUserApiContent =
+        await _withGeneratedImageContextFromMessages(
+          userApiContent,
+          actualUserMessage,
+          <AIMessage>[...filteredHistory, ...history],
+        );
 
     List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
@@ -2514,6 +2553,7 @@ extension AIChatServiceSendExt on AIChatService {
             : historyMaxTokens,
       ),
       userMessage: actualUserMessage,
+      userApiContent: effectiveUserApiContent,
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistoryEffective,
       historyMaxTokens: (strictFullAttempted && !fallbackTriggered)
@@ -2595,6 +2635,11 @@ extension AIChatServiceSendExt on AIChatService {
                 .toList();
           }
         }
+        effectiveUserApiContent = await _withGeneratedImageContextFromMessages(
+          userApiContent,
+          actualUserMessage,
+          <AIMessage>[...filteredHistory, ...history],
+        );
         requestMessages = _composeMessages(
           systemMessage: systemPrompt,
           history: _trimHistoryTailWithEvent(
@@ -2607,6 +2652,7 @@ extension AIChatServiceSendExt on AIChatService {
             maxTokens: historyMax2,
           ),
           userMessage: actualUserMessage,
+          userApiContent: effectiveUserApiContent,
           extraSystemMessages: extras2,
           includeHistory: includeHistoryEffective,
           historyMaxTokens: historyMax2,
@@ -2646,6 +2692,7 @@ extension AIChatServiceSendExt on AIChatService {
             systemMessage: systemPrompt,
             history: filteredHistory,
             userMessage: actualUserMessage,
+            userApiContent: effectiveUserApiContent,
             extraSystemMessages: effectiveExtras,
             includeHistory: includeHistoryEffective,
             historyMaxTokens: 1 << 30,
@@ -3762,11 +3809,13 @@ extension AIChatServiceSendExt on AIChatService {
             cid: cid,
             history: history,
             userMessage: displayUserMessage,
+            localUserMessageForHistory: localUserMessageForHistory,
             userCreatedAtMs: pinnedUserCreatedAtMs,
             assistant: assistant,
             modelUsed: result.modelUsed,
             conversationTitle: displayUserMessage,
             toolSignatureDigests: signatureDigests,
+            userApiContent: effectiveUserApiContent,
             rawTurnTranscript: rawTurnTranscript,
             persistHistoryTail: persistHistoryTail,
           );

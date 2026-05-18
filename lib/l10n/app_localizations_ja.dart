@@ -3976,4 +3976,50 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get updateOpenInstallSettingsAction => '設定を開く';
+
+  @override
+  String get composerAttachImageTooltip => '画像を添付';
+
+  @override
+  String get composerDrawingModeOnTooltip => '描画モードはオンです';
+
+  @override
+  String get composerEnableDrawingModeTooltip => '描画モードを有効にする';
+
+  @override
+  String get composerDrawingModeEnabledToast => '描画モードを有効にしました';
+
+  @override
+  String get composerDrawingModeDisabledToast => '描画モードを無効にしました';
+
+  @override
+  String get composerStopTooltip => '停止';
+
+  @override
+  String get composerGenerateImageTooltip => '画像を生成';
+
+  @override
+  String get composerSendTooltip => '送信';
+
+  @override
+  String get composerGeneratingImage => '画像を生成しています';
+
+  @override
+  String get composerGeneratingWithReferences => '参照画像を使って生成しています';
+
+  @override
+  String composerImageLimitToast(Object count) {
+    return '最初の $count 枚の画像のみ添付されます。';
+  }
+
+  @override
+  String composerImageSelectionFailed(Object error) {
+    return '画像の選択に失敗しました：$error';
+  }
+
+  @override
+  String get composerImagePromptRequired => '画像生成用のプロンプトを入力してください。';
+
+  @override
+  String get composerAnalyzeImageFallbackPrompt => 'この画像を分析してください。';
 }

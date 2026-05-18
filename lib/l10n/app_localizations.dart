@@ -7133,6 +7133,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open settings'**
   String get updateOpenInstallSettingsAction;
+
+  /// No description provided for @composerAttachImageTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach image'**
+  String get composerAttachImageTooltip;
+
+  /// No description provided for @composerDrawingModeOnTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing mode on'**
+  String get composerDrawingModeOnTooltip;
+
+  /// No description provided for @composerEnableDrawingModeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable drawing mode'**
+  String get composerEnableDrawingModeTooltip;
+
+  /// No description provided for @composerDrawingModeEnabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing mode enabled'**
+  String get composerDrawingModeEnabledToast;
+
+  /// No description provided for @composerDrawingModeDisabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing mode disabled'**
+  String get composerDrawingModeDisabledToast;
+
+  /// No description provided for @composerStopTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get composerStopTooltip;
+
+  /// No description provided for @composerGenerateImageTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate image'**
+  String get composerGenerateImageTooltip;
+
+  /// No description provided for @composerSendTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get composerSendTooltip;
+
+  /// No description provided for @composerGeneratingImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating image'**
+  String get composerGeneratingImage;
+
+  /// No description provided for @composerGeneratingWithReferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating with references'**
+  String get composerGeneratingWithReferences;
+
+  /// No description provided for @composerImageLimitToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first {count} images are attached.'**
+  String composerImageLimitToast(Object count);
+
+  /// No description provided for @composerImageSelectionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to select image: {error}'**
+  String composerImageSelectionFailed(Object error);
+
+  /// No description provided for @composerImagePromptRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a prompt to generate an image.'**
+  String get composerImagePromptRequired;
+
+  /// No description provided for @composerAnalyzeImageFallbackPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Please analyze the image.'**
+  String get composerAnalyzeImageFallbackPrompt;
 }
 
 class _AppLocalizationsDelegate

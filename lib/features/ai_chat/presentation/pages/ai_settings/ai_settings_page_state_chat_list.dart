@@ -211,10 +211,13 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
           );
         }
 
+        final String displayContent = isUser
+            ? _stripComposerImageMarkers(m.content)
+            : m.content;
         final Widget mdWidget = _buildMarkdownForMessage(
           message: m,
           messageIndex: index,
-          content: m.content,
+          content: displayContent,
           fg: fg,
           isCurrentStreaming: isCurrentStreaming,
         ); /* Legacy inline markdown builder:
@@ -430,7 +433,8 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                 );
               })(); */
 
-        // 取消底部缩略图展示：图片仅通过正文中的 [evidence: FILENAME.EXT] 内联渲染
+        final List<EvidenceImageAttachment> messageAttachments =
+            _attachmentsForMessage(index, m);
 
         // 组合：上方时间，中间消息气泡，下方操作区
         return Column(
@@ -470,7 +474,14 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [mdWidget],
+                  children: [
+                    if (isUser && messageAttachments.isNotEmpty) ...[
+                      _buildUserMessageAttachments(messageAttachments),
+                      if (displayContent.trim().isNotEmpty)
+                        const SizedBox(height: AppTheme.spacing2),
+                    ],
+                    mdWidget,
+                  ],
                 ),
               ),
             ),
@@ -522,6 +533,180 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildUserMessageAttachments(List<EvidenceImageAttachment> images) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 132,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        shrinkWrap: true,
+        itemCount: images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppTheme.spacing2),
+        itemBuilder: (context, index) {
+          final EvidenceImageAttachment image = images[index];
+          return Tooltip(
+            message: image.label,
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                onTap: () => _showComposerImagePreview(image),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  child: Container(
+                    width: 132,
+                    height: 132,
+                    color: theme.colorScheme.surfaceVariant.withOpacity(0.45),
+                    child: Image.file(
+                      File(image.path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.broken_image_outlined,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<EvidenceImageAttachment> _attachmentsForMessage(
+    int index,
+    AIMessage message,
+  ) {
+    final List<EvidenceImageAttachment> indexed =
+        _attachmentsByIndex[index] ?? const <EvidenceImageAttachment>[];
+    final List<EvidenceImageAttachment> marked = _composerImageMarkersFromText(
+      message.content,
+    );
+    if (indexed.isEmpty) return marked;
+    if (marked.isEmpty) return indexed;
+    final List<EvidenceImageAttachment> out = <EvidenceImageAttachment>[];
+    final Set<String> seen = <String>{};
+    for (final EvidenceImageAttachment image in <EvidenceImageAttachment>[
+      ...indexed,
+      ...marked,
+    ]) {
+      final String path = image.path.trim();
+      if (path.isEmpty || !seen.add(path)) continue;
+      out.add(image);
+    }
+    return out;
+  }
+
+  List<EvidenceImageAttachment> _composerImageMarkersFromText(String text) {
+    final RegExp pattern = RegExp(
+      r'\[\[composer-image:([^|\]]+)(?:\|([^\]]*))?\]\]',
+    );
+    final List<EvidenceImageAttachment> out = <EvidenceImageAttachment>[];
+    final Set<String> seen = <String>{};
+    for (final RegExpMatch match in pattern.allMatches(text)) {
+      final String encodedPath = (match.group(1) ?? '').trim();
+      if (encodedPath.isEmpty) continue;
+      String path;
+      String label;
+      try {
+        path = Uri.decodeComponent(encodedPath).trim();
+        label = Uri.decodeComponent((match.group(2) ?? '').trim()).trim();
+      } catch (_) {
+        path = encodedPath;
+        label = (match.group(2) ?? '').trim();
+      }
+      if (path.isEmpty || !seen.add(path)) continue;
+      out.add(
+        EvidenceImageAttachment(
+          path: path,
+          label: label.isEmpty ? _basenameFromPath(path) : label,
+        ),
+      );
+    }
+    return out;
+  }
+
+  String _stripComposerImageMarkers(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'^[ \t]*\[\[composer-image:[^|\]]+(?:\|[^\]]*)?\]\][ \t]*$',
+            multiLine: true,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  Future<void> _showComposerImagePreview(EvidenceImageAttachment image) async {
+    final String path = image.path.trim();
+    if (path.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          insetPadding: const EdgeInsets.all(AppTheme.spacing4),
+          backgroundColor: theme.colorScheme.surface,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          image.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: MaterialLocalizations.of(
+                          dialogContext,
+                        ).closeButtonTooltip,
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: ClipRect(
+                    child: InteractiveViewer(
+                      minScale: 0.6,
+                      maxScale: 5,
+                      child: Image.file(
+                        File(path),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Padding(
+                          padding: const EdgeInsets.all(AppTheme.spacing6),
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 48,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -953,12 +1138,139 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
     );
   }
 
-  // 新的底部输入栏（现代化圆角胶囊样式，带流光边框效果和展开按钮）
+  Widget _buildComposerIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    Color? color,
+    Color? background,
+  }) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Material(
+          color: background ?? Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: Icon(
+              icon,
+              size: 22,
+              color: onTap == null
+                  ? theme.colorScheme.onSurfaceVariant.withOpacity(0.38)
+                  : (color ?? theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerAttachments() {
+    final int skeletonCount = _processingComposerImages
+        ? (_composerImageSkeletonCount <= 0 ? 1 : _composerImageSkeletonCount)
+        : 0;
+    if (_composerImages.isEmpty && skeletonCount == 0) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+        itemCount: _composerImages.length + skeletonCount,
+        separatorBuilder: (_, __) => const SizedBox(width: AppTheme.spacing2),
+        itemBuilder: (context, index) {
+          if (index >= _composerImages.length) {
+            return _buildComposerImageSkeleton();
+          }
+          final _ComposerImageAttachment item = _composerImages[index];
+          final EvidenceImageAttachment previewImage = EvidenceImageAttachment(
+            path: item.path,
+            label: item.name.trim().isEmpty
+                ? _basenameFromPath(item.path)
+                : item.name,
+          );
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  onTap: () => _showComposerImagePreview(previewImage),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      color: theme.colorScheme.surfaceVariant,
+                      child: Image.file(File(item.path), fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: -7,
+                right: -7,
+                child: Material(
+                  color: theme.colorScheme.inverseSurface,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => _removeComposerImage(item.path),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: theme.colorScheme.onInverseSurface,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildComposerImageSkeleton() {
+    final theme = Theme.of(context);
+    final Color base = theme.colorScheme.surfaceVariant;
+    final Color highlight = theme.colorScheme.surface;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      child: _Shimmer(
+        active: true,
+        baseColor: base,
+        highlightColor: highlight,
+        period: const Duration(milliseconds: 1100),
+        child: Container(
+          width: 56,
+          height: 56,
+          color: base,
+          child: Center(
+            child: Icon(
+              Icons.image_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.45),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 常规底部输入栏：圆角容器内第一行输入，第二行功能键。
   Widget _buildComposerBar() {
     final theme = Theme.of(context);
-    final Color reasoningAccent = _reasoningLevel.isEnabled
-        ? theme.colorScheme.primary
-        : theme.colorScheme.outlineVariant;
     String _middleEllipsis(String s, int maxChars) {
       if (s.length <= maxChars) return s;
       if (maxChars <= 3) return s.substring(0, maxChars);
@@ -977,94 +1289,67 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
     final placeholder = AppLocalizations.of(
       context,
     ).sendMessageToModelPlaceholder(modelLabel);
+    final Color drawColor = _imageDrawMode
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant.withOpacity(0.45);
+    final l10n = AppLocalizations.of(context);
+    final String sendTooltip = _sending
+        ? l10n.composerStopTooltip
+        : (_imageDrawMode
+              ? l10n.composerGenerateImageTooltip
+              : l10n.composerSendTooltip);
+    final Color sendBackground = _sending
+        ? Color.alphaBlend(
+            theme.colorScheme.error.withValues(alpha: 0.12),
+            theme.colorScheme.surfaceContainerHighest,
+          )
+        : theme.colorScheme.primary;
+    final Color sendForeground = _sending
+        ? theme.colorScheme.error
+        : theme.colorScheme.onPrimary;
 
-    Widget barInner = Container(
+    final Widget barInner = Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(24), // 胶囊形状
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.65),
+        ),
         boxShadow: [
           BoxShadow(
-            color: theme.colorScheme.shadow.withOpacity(0.05),
-            blurRadius: 8,
+            color: theme.colorScheme.shadow.withOpacity(0.08),
+            blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing3,
-        vertical: AppTheme.spacing2,
+      padding: EdgeInsets.fromLTRB(
+        AppTheme.spacing3,
+        AppTheme.spacing2,
+        AppTheme.spacing3,
+        AppTheme.spacing2,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // 左侧思考等级入口
-          Tooltip(
-            message: _reasoningLevelLabel(_reasoningLevel),
-            preferBelow: false,
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: _reasoningLevel.isEnabled
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          theme.colorScheme.primaryContainer,
-                          theme.colorScheme.primaryContainer.withOpacity(0.78),
-                        ],
-                      )
-                    : null,
-                color: _reasoningLevel.isEnabled
-                    ? null
-                    : theme.colorScheme.surfaceVariant,
-                boxShadow: [
-                  BoxShadow(
-                    color:
-                        (_reasoningLevel.isEnabled
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.shadow)
-                            .withOpacity(
-                              _reasoningLevel.isEnabled ? 0.18 : 0.06,
-                            ),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                border: Border.all(
-                  color: reasoningAccent.withOpacity(
-                    _reasoningLevel.isEnabled ? 0.32 : 0.8,
-                  ),
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: _showReasoningLevelSheet,
-                  child: Center(
-                    child: Icon(
-                      _reasoningLevelIcon(_reasoningLevel),
-                      size: 20,
-                      color: reasoningAccent,
-                    ),
-                  ),
-                ),
-              ),
+          _buildComposerAttachments(),
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: _composerInputRowHeight,
+              maxHeight: _composerInputRowHeight * 6.0,
             ),
-          ),
-          const SizedBox(width: AppTheme.spacing1),
-          Expanded(
             child: TextField(
               controller: _inputController,
-              minLines: _inputExpanded ? 3 : 1,
-              maxLines: null,
-              textAlignVertical: TextAlignVertical.center,
+              keyboardType: TextInputType.multiline,
+              minLines: 1,
+              maxLines: _composerInputMaxLines,
+              textInputAction: TextInputAction.newline,
+              textAlignVertical: TextAlignVertical.top,
+              scrollPhysics: const ClampingScrollPhysics(),
               style: theme.textTheme.bodyMedium,
               decoration: InputDecoration(
                 hintText: placeholder,
-                hintMaxLines: 1,
+                hintMaxLines: 2,
                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
                 ),
@@ -1075,75 +1360,127 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                 disabledBorder: InputBorder.none,
                 errorBorder: InputBorder.none,
                 focusedErrorBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacing2,
-                  vertical: AppTheme.spacing2,
-                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 filled: false,
               ),
               onTap: () {
                 _setState(() {
-                  _connExpanded = false; // 点击输入收起连接设置
+                  _connExpanded = false;
                 });
               },
             ),
           ),
-          const SizedBox(width: AppTheme.spacing2),
-          // 圆形发送/停止按钮（保持触达安全但略微更紧凑）
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: _sending
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        theme.colorScheme.error,
-                        theme.colorScheme.error.withOpacity(0.8),
-                      ],
-                    )
-                  : LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        theme.colorScheme.primary,
-                        theme.colorScheme.primary.withOpacity(0.8),
-                      ],
-                    ),
-              boxShadow: [
-                BoxShadow(
-                  color:
-                      (_sending
-                              ? theme.colorScheme.error
-                              : theme.colorScheme.primary)
-                          .withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: _sending ? _cancelRequest : _sendMessage,
-                child: Center(
-                  child: Icon(
-                    _sending ? Icons.close_rounded : Icons.arrow_upward_rounded,
-                    color: theme.colorScheme.onPrimary,
-                    size: 20,
-                  ),
-                ),
+          const SizedBox(height: AppTheme.spacing2),
+          Row(
+            children: [
+              _buildComposerIconButton(
+                icon: Icons.add_rounded,
+                tooltip: l10n.composerAttachImageTooltip,
+                onTap: _pickingComposerImages ? null : _pickComposerImages,
               ),
-            ),
+              const SizedBox(width: AppTheme.spacing1),
+              _buildComposerIconButton(
+                icon: Icons.image_outlined,
+                tooltip: _imageDrawMode
+                    ? l10n.composerDrawingModeOnTooltip
+                    : l10n.composerEnableDrawingModeTooltip,
+                color: drawColor,
+                background: _imageDrawMode
+                    ? theme.colorScheme.primaryContainer.withOpacity(0.55)
+                    : null,
+                onTap: () {
+                  final bool next = !_imageDrawMode;
+                  _setState(() {
+                    _imageDrawMode = next;
+                  });
+                  UINotifier.info(
+                    context,
+                    next
+                        ? l10n.composerDrawingModeEnabledToast
+                        : l10n.composerDrawingModeDisabledToast,
+                  );
+                },
+              ),
+              const Spacer(),
+              _buildReasoningMenuButton(),
+              const SizedBox(width: AppTheme.spacing2),
+              _buildComposerIconButton(
+                icon: _sending
+                    ? Icons.close_rounded
+                    : Icons.arrow_upward_rounded,
+                tooltip: sendTooltip,
+                color: sendForeground,
+                background: sendBackground,
+                onTap: _sending ? _cancelRequest : _sendMessage,
+              ),
+            ],
           ),
         ],
       ),
     );
 
-    return _ShimmerBorder(active: _inStreaming || _sending, child: barInner);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppTheme.spacing4,
+        AppTheme.spacing2,
+        AppTheme.spacing4,
+        MediaQuery.of(context).padding.bottom + AppTheme.spacing4,
+      ),
+      child: barInner,
+    );
+  }
+
+  Widget _buildReasoningMenuButton() {
+    final theme = Theme.of(context);
+    final Color foreground = _reasoningLevel.isEnabled
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    return UIActionMenuButton<AIReasoningLevel>(
+      tooltip: _reasoningLevelLabel(_reasoningLevel),
+      selectedValue: _reasoningLevel,
+      minWidth: 180,
+      maxWidth: 220,
+      offset: const Offset(0, -8),
+      onSelected: (level) async {
+        _setState(() {
+          _reasoningLevel = level;
+        });
+        await _settings.setChatReasoningLevel(level);
+      },
+      items: AIReasoningLevel.values
+          .map(
+            (level) => UIActionMenuItem<AIReasoningLevel>(
+              value: level,
+              label: _reasoningLevelLabel(level),
+            ),
+          )
+          .toList(growable: false),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing2,
+          vertical: AppTheme.spacing1,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 108),
+              child: Text(
+                _reasoningLevelLabel(_reasoningLevel),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: foreground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down_rounded, size: 18, color: foreground),
+          ],
+        ),
+      ),
+    );
   }
 
   String _reasoningLevelLabel(AIReasoningLevel level) {
@@ -1162,162 +1499,6 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
       case AIReasoningLevel.xhigh:
         return zh ? '思考：超高' : 'Reasoning: XHigh';
     }
-  }
-
-  IconData _reasoningLevelIcon(AIReasoningLevel level) {
-    switch (level) {
-      case AIReasoningLevel.off:
-        return Icons.lightbulb_outline_rounded;
-      case AIReasoningLevel.auto:
-        return Icons.auto_awesome_rounded;
-      case AIReasoningLevel.low:
-        return Icons.lightbulb_outline_rounded;
-      case AIReasoningLevel.medium:
-        return Icons.tips_and_updates_rounded;
-      case AIReasoningLevel.high:
-        return Icons.psychology_alt_rounded;
-      case AIReasoningLevel.xhigh:
-        return Icons.psychology_rounded;
-    }
-  }
-
-  Future<void> _showReasoningLevelSheet() async {
-    final theme = Theme.of(context);
-    AIReasoningLevel selected = _reasoningLevel;
-    double sliderValue = selected.index.toDouble();
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            Future<void> updateLevel(AIReasoningLevel level) async {
-              setSheetState(() {
-                selected = level;
-                sliderValue = level.index.toDouble();
-              });
-              _setState(() {
-                _reasoningLevel = level;
-              });
-              await _settings.setChatReasoningLevel(level);
-            }
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _isZhLocale() ? '思考等级' : 'Reasoning level',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _isZhLocale()
-                          ? '调整模型推理强度；自动会交给模型或服务端决定。'
-                          : 'Adjust model reasoning effort. Auto lets the model or provider decide.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 18),
-                    Icon(
-                      _reasoningLevelIcon(selected),
-                      size: 34,
-                      color: selected.isEnabled
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _reasoningLevelLabel(selected),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 14),
-                    Slider(
-                      value: sliderValue,
-                      min: 0,
-                      max: (AIReasoningLevel.values.length - 1).toDouble(),
-                      divisions: AIReasoningLevel.values.length - 1,
-                      onChanged: (value) {
-                        setSheetState(() => sliderValue = value);
-                      },
-                      onChangeEnd: (value) {
-                        final int index = value.round().clamp(
-                          0,
-                          AIReasoningLevel.values.length - 1,
-                        );
-                        updateLevel(AIReasoningLevel.values[index]);
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: AIReasoningLevel.values
-                          .map((level) {
-                            final bool active = level == selected;
-                            return Expanded(
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => updateLevel(level),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 2,
-                                    vertical: 8,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 160,
-                                        ),
-                                        width: active ? 22 : 16,
-                                        height: active ? 6 : 4,
-                                        decoration: BoxDecoration(
-                                          color: active
-                                              ? theme.colorScheme.primary
-                                              : theme
-                                                    .colorScheme
-                                                    .outlineVariant,
-                                          borderRadius: BorderRadius.circular(
-                                            99,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _reasoningLevelLabel(level)
-                                            .split(_isZhLocale() ? '：' : ': ')
-                                            .last,
-                                        textAlign: TextAlign.center,
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: active
-                                                  ? theme.colorScheme.primary
-                                                  : theme
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          })
-                          .toList(growable: false),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   // 统一的小型选项芯片

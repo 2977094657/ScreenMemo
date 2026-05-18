@@ -3937,4 +3937,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateOpenInstallSettingsAction => '打开设置';
+
+  @override
+  String get composerAttachImageTooltip => '添加图片';
+
+  @override
+  String get composerDrawingModeOnTooltip => '画图模式已开启';
+
+  @override
+  String get composerEnableDrawingModeTooltip => '开启画图模式';
+
+  @override
+  String get composerDrawingModeEnabledToast => '已开启画图模式';
+
+  @override
+  String get composerDrawingModeDisabledToast => '已关闭画图模式';
+
+  @override
+  String get composerStopTooltip => '停止';
+
+  @override
+  String get composerGenerateImageTooltip => '生成图片';
+
+  @override
+  String get composerSendTooltip => '发送';
+
+  @override
+  String get composerGeneratingImage => '正在生成图片';
+
+  @override
+  String get composerGeneratingWithReferences => '正在根据参考图生成';
+
+  @override
+  String composerImageLimitToast(Object count) {
+    return '仅添加前 $count 张图片。';
+  }
+
+  @override
+  String composerImageSelectionFailed(Object error) {
+    return '选择图片失败：$error';
+  }
+
+  @override
+  String get composerImagePromptRequired => '请输入用于生成图片的提示词。';
+
+  @override
+  String get composerAnalyzeImageFallbackPrompt => '请分析这张图片。';
 }

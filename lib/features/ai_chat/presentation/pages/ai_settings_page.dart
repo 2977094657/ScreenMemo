@@ -8,11 +8,15 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:shimmer/shimmer.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
+import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
+import 'package:screen_memo/features/ai/application/ai_image_generation_service.dart';
 import 'package:screen_memo/features/ai/application/chat_context_service.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/core/widgets/ui_select_field.dart';
@@ -25,9 +29,9 @@ import 'package:screen_memo/features/gallery/presentation/widgets/screenshot_ima
 import 'package:screen_memo/features/apps/application/app_selection_service.dart';
 import 'package:screen_memo/features/ai/application/intent_analysis_service.dart';
 import 'package:screen_memo/features/ai/application/query_context_service.dart';
-import 'package:screen_memo/features/ai/application/prompt_budget.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
+import 'package:screen_memo/data/platform/path_service.dart';
 import 'package:screen_memo/features/nsfw/application/nsfw_preference_service.dart';
 import 'package:screen_memo/core/performance/ui_perf_logger.dart';
 import 'package:screen_memo/features/timeline/application/dynamic_entry_perf_service.dart';
@@ -49,6 +53,10 @@ part 'ai_settings/ai_settings_page_widgets.dart';
 const Color _thinkingTextColor = Color(0xFF71717A);
 // Warm "platinum/white-gold" shimmer highlight used while thinking.
 const Color _thinkingShimmerHighlightColor = Color(0xFFFFFBEB);
+const int _maxComposerImages = 16;
+const int _maxComposerImageEdge = 2048;
+const double _composerInputRowHeight = 40.0;
+const int _composerInputMaxLines = 10;
 
 enum _ClarifyReason { missingTime, tooBroad }
 
@@ -72,6 +80,18 @@ class _ProbeCandidate {
     required this.title,
     required this.subtitle,
   });
+}
+
+class _ComposerImageAttachment {
+  const _ComposerImageAttachment({
+    required this.path,
+    required this.name,
+    required this.mimeType,
+  });
+
+  final String path;
+  final String name;
+  final String mimeType;
 }
 
 class _ClarifyState {
@@ -216,7 +236,6 @@ class AISettingsPage extends StatefulWidget {
 
 class _AISettingsPageState extends State<AISettingsPage>
     with SingleTickerProviderStateMixin {
-  static const double _inputRowHeight = 40.0;
   final AISettingsService _settings = AISettingsService.instance;
   final AIChatService _chat = AIChatService.instance;
 
@@ -284,6 +303,12 @@ class _AISettingsPageState extends State<AISettingsPage>
   // ——— AI 交互样式与流式状态（仅影响本页 UI，不改动全局样式） ———
   AIReasoningLevel _reasoningLevel = AIReasoningLevel.auto;
   bool _webSearch = false; // "联网搜索"开关（先做样式，后续可接搜索参数）
+  bool _imageDrawMode = false;
+  bool _pickingComposerImages = false;
+  bool _processingComposerImages = false;
+  int _composerImageSkeletonCount = 0;
+  List<_ComposerImageAttachment> _composerImages = <_ComposerImageAttachment>[];
+  final Set<String> _sentComposerImagePaths = <String>{};
   bool _inStreaming = false; // 当前是否处于助手流式回复中（驱动"思考中"可视化）
   // 实时"思考过程"内容（仅当前流式过程显示）
   String _thinkingText = '';
@@ -366,9 +391,6 @@ class _AISettingsPageState extends State<AISettingsPage>
   // 底部弹窗查询输入持久化，避免键盘开合导致重建清空
   String _providerQueryText = '';
   String _modelQueryText = '';
-  // 输入框展开状态（默认单行，自适应随内容增高）
-  bool _inputExpanded = false;
-
   // 默认提示词模板内容仅在系统内部维护，不在前端暴露。
   String get _defaultSegmentPromptPreview => '';
 
@@ -597,6 +619,11 @@ class _AISettingsPageState extends State<AISettingsPage>
     _promptSegmentController.dispose();
     _promptMergeController.dispose();
     _promptDailyController.dispose();
+    for (final _ComposerImageAttachment image in _composerImages) {
+      unawaited(File(image.path).delete().catchError((_) => File(image.path)));
+    }
+    _composerImages = <_ComposerImageAttachment>[];
+    _sentComposerImagePaths.clear();
     _chatScrollController.dispose();
     _reasoningPanelScrollController.dispose();
     _dotsTimer?.cancel();
@@ -730,15 +757,7 @@ class _AISettingsPageState extends State<AISettingsPage>
               children: [
                 const SizedBox(height: AppTheme.spacing1),
                 Expanded(child: _buildChatList()),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.spacing4,
-                    AppTheme.spacing2,
-                    AppTheme.spacing4,
-                    AppTheme.spacing4,
-                  ),
-                  child: _buildComposerBar(),
-                ),
+                _buildComposerBar(),
               ],
             ),
           );

@@ -253,6 +253,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           return score;
         }
 
+        bool hasComposerImageMarker(AIMessage m) {
+          return m.content.contains(
+            RegExp(r'\[\[composer-image:[^|\]]+(?:\|[^\]]*)?\]\]'),
+          );
+        }
+
         final Set<int> usedTailIdx = <int>{};
         final List<AIMessage> merged = <AIMessage>[];
 
@@ -299,21 +305,43 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
 
           usedTailIdx.add(matchedIdx);
           final AIMessage t = tail[matchedIdx];
-          final AIMessage patched = metaScore(t) <= 0
+          final bool keepTailDisplayContent =
+              m.role == 'user' && hasComposerImageMarker(t);
+          final bool keepTailMetadata = metaScore(t) > 0;
+          final AIMessage patched =
+              (!keepTailDisplayContent && !keepTailMetadata)
               ? m
               : AIMessage(
                   role: m.role,
-                  content: m.content,
+                  content: keepTailDisplayContent ? t.content : m.content,
                   createdAt: t.createdAt,
-                  reasoningContent: t.reasoningContent,
-                  reasoningDuration: t.reasoningDuration,
-                  uiThinkingJson: t.uiThinkingJson,
-                  usagePromptTokens: t.usagePromptTokens,
-                  usageCompletionTokens: t.usageCompletionTokens,
-                  usageTotalTokens: t.usageTotalTokens,
-                  usageCacheHitTokens: t.usageCacheHitTokens,
-                  usageCacheMissTokens: t.usageCacheMissTokens,
-                  responseDuration: t.responseDuration,
+                  reasoningContent: keepTailMetadata
+                      ? t.reasoningContent
+                      : m.reasoningContent,
+                  reasoningDuration: keepTailMetadata
+                      ? t.reasoningDuration
+                      : m.reasoningDuration,
+                  uiThinkingJson: keepTailMetadata
+                      ? t.uiThinkingJson
+                      : m.uiThinkingJson,
+                  usagePromptTokens: keepTailMetadata
+                      ? t.usagePromptTokens
+                      : m.usagePromptTokens,
+                  usageCompletionTokens: keepTailMetadata
+                      ? t.usageCompletionTokens
+                      : m.usageCompletionTokens,
+                  usageTotalTokens: keepTailMetadata
+                      ? t.usageTotalTokens
+                      : m.usageTotalTokens,
+                  usageCacheHitTokens: keepTailMetadata
+                      ? t.usageCacheHitTokens
+                      : m.usageCacheHitTokens,
+                  usageCacheMissTokens: keepTailMetadata
+                      ? t.usageCacheMissTokens
+                      : m.usageCacheMissTokens,
+                  responseDuration: keepTailMetadata
+                      ? t.responseDuration
+                      : m.responseDuration,
                 );
           merged.add(patched);
         }
@@ -343,7 +371,9 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           if (m.role == 'user' &&
               cleaned.isNotEmpty &&
               cleaned.last.role == 'user' &&
-              cleaned.last.content.trim() == m.content.trim()) {
+              (cleaned.last.content.trim() == m.content.trim() ||
+                  _stripComposerImageMarkers(cleaned.last.content) ==
+                      _stripComposerImageMarkers(m.content))) {
             continue;
           }
           cleaned.add(m);

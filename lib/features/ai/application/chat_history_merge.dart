@@ -2,7 +2,20 @@ import 'dart:convert';
 
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 
-String _norm(String s) => s.trim();
+String _stripComposerImageMarkers(String s) {
+  return s
+      .replaceAll(
+        RegExp(
+          r'^[ \t]*\[\[composer-image:[^|\]]+(?:\|[^\]]*)?\]\][ \t]*$',
+          multiLine: true,
+        ),
+        '',
+      )
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+}
+
+String _norm(String s) => _stripComposerImageMarkers(s);
 
 int _asInt(Object? v) {
   if (v == null) return 0;
@@ -141,7 +154,7 @@ String? patchUiThinkingJsonFinish(
 }
 
 bool _isUserMatch(AIMessage m, String userTrim) =>
-    m.role == 'user' && _norm(m.content) == userTrim;
+    m.role == 'user' && _norm(m.content) == _norm(userTrim);
 
 /// Merge a completed assistant turn into the current persisted chat history.
 ///
@@ -156,7 +169,7 @@ List<AIMessage> mergeCompletedTurnIntoHistory({
   required AIMessage assistantFinal,
   int? nowMs,
 }) {
-  final String userTrim = userMessage.trim();
+  final String userTrim = _norm(userMessage);
   final List<AIMessage> out = List<AIMessage>.from(existingHistory);
   final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
 
