@@ -171,16 +171,10 @@ class _MainNavigationPageState extends State<MainNavigationPage>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            IconTheme.merge(
-                              data: IconThemeData(
-                                color: selected
-                                    ? selectedColor
-                                    : unselectedColor,
-                                size: selected ? selectedSize : unselectedSize,
-                              ),
-                              child: Icon(
-                                selected ? item.activeIcon : item.icon,
-                              ),
+                            item.buildIcon(
+                              selected: selected,
+                              color: selected ? selectedColor : unselectedColor,
+                              size: selected ? selectedSize : unselectedSize,
                             ),
                             const SizedBox(height: 3),
                             Padding(

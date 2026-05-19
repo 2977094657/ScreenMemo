@@ -822,7 +822,7 @@ class _EventHomePageState extends State<EventHomePage> {
                             ),
                             _buildSidebarTile(
                               context: context,
-                              icon: Icons.dynamic_feed_outlined,
+                              icon: Icons.interests_outlined,
                               title: l10n.segmentStatusTitle,
                               onTap: () {
                                 NavigationService.instance.openSegmentStatus();

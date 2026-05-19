@@ -33,7 +33,7 @@ class AppSideDrawer extends StatelessWidget {
             // 动态
             _buildMenuItem(
               context: context,
-              icon: Icons.dynamic_feed_outlined,
+              icon: Icons.interests_outlined,
               title: t.segmentStatusTitle,
               isFirst: true,
               onTap: () {
@@ -177,6 +177,7 @@ class AppSideDrawer extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
+    final Color iconColor = theme.colorScheme.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -193,18 +194,10 @@ class AppSideDrawer extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         child: Row(
           children: [
-            Container(
+            SizedBox(
               width: 36,
               height: 36,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: Icon(
-                icon,
-                color: theme.colorScheme.onSecondaryContainer,
-                size: 18,
-              ),
+              child: Center(child: Icon(icon, color: iconColor, size: 20)),
             ),
             const SizedBox(width: AppTheme.spacing3),
             Expanded(

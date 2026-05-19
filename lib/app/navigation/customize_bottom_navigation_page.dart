@@ -260,7 +260,7 @@ class _CandidateCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(item.icon, size: 30, color: iconColor),
+                    item.buildIcon(selected: false, color: iconColor, size: 30),
                     const SizedBox(height: AppTheme.spacing3),
                     Text(
                       item.label,
@@ -509,7 +509,7 @@ class _SelectedNavGlyph extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(item.icon, size: 24, color: color),
+        item.buildIcon(selected: false, color: color, size: 24),
         const SizedBox(height: 2),
         Text(
           item.label,

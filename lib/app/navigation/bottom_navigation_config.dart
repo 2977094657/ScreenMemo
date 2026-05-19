@@ -137,6 +137,14 @@ class BottomNavItemPresentation {
   final IconData activeIcon;
   final String label;
   final String description;
+
+  Widget buildIcon({
+    required bool selected,
+    required Color color,
+    required double size,
+  }) {
+    return Icon(selected ? activeIcon : icon, size: size, color: color);
+  }
 }
 
 BottomNavItemPresentation bottomNavItemPresentation(
@@ -188,8 +196,8 @@ BottomNavItemPresentation bottomNavItemPresentation(
     case BottomNavItemId.dynamic:
       return BottomNavItemPresentation(
         id: id,
-        icon: Icons.dynamic_feed_outlined,
-        activeIcon: Icons.dynamic_feed,
+        icon: Icons.interests_outlined,
+        activeIcon: Icons.interests,
         label: l10n.bottomNavDynamic,
         description: l10n.bottomNavDynamicDesc,
       );
