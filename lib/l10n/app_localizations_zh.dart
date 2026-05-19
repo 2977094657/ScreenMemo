@@ -36,6 +36,63 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dialogDone => '完成';
 
   @override
+  String get actionConfirm => '确认';
+
+  @override
+  String get customizeBottomNavTitle => '自定义底部导航';
+
+  @override
+  String get customizeBottomNavSubtitle => '添加、移除或重新排列底部导航，快速直达常用功能。';
+
+  @override
+  String get bottomNavHome => '首页';
+
+  @override
+  String get bottomNavHomeDesc => '监控应用概览';
+
+  @override
+  String get bottomNavFavorites => '收藏';
+
+  @override
+  String get bottomNavFavoritesDesc => '已收藏截图';
+
+  @override
+  String get bottomNavAi => 'AI';
+
+  @override
+  String get bottomNavAiDesc => '回顾与对话';
+
+  @override
+  String get bottomNavTimeline => '时间线';
+
+  @override
+  String get bottomNavTimelineDesc => '浏览屏幕历史';
+
+  @override
+  String get bottomNavSettings => '设置';
+
+  @override
+  String get bottomNavSettingsDesc => '应用偏好';
+
+  @override
+  String get bottomNavDynamic => '动态';
+
+  @override
+  String get bottomNavDynamicDesc => 'AI 动态总结';
+
+  @override
+  String get bottomNavStorage => '存储';
+
+  @override
+  String get bottomNavStorageDesc => '存储占用详情';
+
+  @override
+  String get bottomNavMinTabsToast => '至少保留 3 个菜单';
+
+  @override
+  String get bottomNavMaxTabsToast => '最多只能添加 6 个菜单';
+
+  @override
   String get permissionStatusTitle => '权限状态检查';
 
   @override

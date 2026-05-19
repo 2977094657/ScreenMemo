@@ -36,6 +36,64 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dialogDone => 'Done';
 
   @override
+  String get actionConfirm => 'Confirm';
+
+  @override
+  String get customizeBottomNavTitle => 'Customize bottom navigation';
+
+  @override
+  String get customizeBottomNavSubtitle =>
+      'Add, remove, or reorder bottom navigation for quick access to frequent features.';
+
+  @override
+  String get bottomNavHome => 'Home';
+
+  @override
+  String get bottomNavHomeDesc => 'Monitored apps overview';
+
+  @override
+  String get bottomNavFavorites => 'Favorites';
+
+  @override
+  String get bottomNavFavoritesDesc => 'Saved screenshots';
+
+  @override
+  String get bottomNavAi => 'AI';
+
+  @override
+  String get bottomNavAiDesc => 'Review and chat';
+
+  @override
+  String get bottomNavTimeline => 'Timeline';
+
+  @override
+  String get bottomNavTimelineDesc => 'Browse screen history';
+
+  @override
+  String get bottomNavSettings => 'Settings';
+
+  @override
+  String get bottomNavSettingsDesc => 'App preferences';
+
+  @override
+  String get bottomNavDynamic => 'Activity';
+
+  @override
+  String get bottomNavDynamicDesc => 'AI activity summaries';
+
+  @override
+  String get bottomNavStorage => 'Storage';
+
+  @override
+  String get bottomNavStorageDesc => 'Storage usage details';
+
+  @override
+  String get bottomNavMinTabsToast => 'Keep at least 3 tabs';
+
+  @override
+  String get bottomNavMaxTabsToast => 'You can add up to 6 tabs';
+
+  @override
   String get permissionStatusTitle => 'Permission Status';
 
   @override

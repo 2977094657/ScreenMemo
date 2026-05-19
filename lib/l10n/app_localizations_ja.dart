@@ -36,6 +36,64 @@ class AppLocalizationsJa extends AppLocalizations {
   String get dialogDone => '完了';
 
   @override
+  String get actionConfirm => '確認';
+
+  @override
+  String get customizeBottomNavTitle => '下部ナビをカスタマイズ';
+
+  @override
+  String get customizeBottomNavSubtitle =>
+      'よく使う機能へ素早く移動できるよう、下部ナビを追加、削除、並べ替えできます。';
+
+  @override
+  String get bottomNavHome => 'ホーム';
+
+  @override
+  String get bottomNavHomeDesc => '監視アプリの概要';
+
+  @override
+  String get bottomNavFavorites => 'お気に入り';
+
+  @override
+  String get bottomNavFavoritesDesc => '保存したスクリーンショット';
+
+  @override
+  String get bottomNavAi => 'AI';
+
+  @override
+  String get bottomNavAiDesc => '振り返りとチャット';
+
+  @override
+  String get bottomNavTimeline => 'タイムライン';
+
+  @override
+  String get bottomNavTimelineDesc => '画面履歴を閲覧';
+
+  @override
+  String get bottomNavSettings => '設定';
+
+  @override
+  String get bottomNavSettingsDesc => 'アプリ設定';
+
+  @override
+  String get bottomNavDynamic => '動的';
+
+  @override
+  String get bottomNavDynamicDesc => 'AI アクティビティ要約';
+
+  @override
+  String get bottomNavStorage => 'ストレージ';
+
+  @override
+  String get bottomNavStorageDesc => 'ストレージ使用状況';
+
+  @override
+  String get bottomNavMinTabsToast => '少なくとも3個のタブを残してください';
+
+  @override
+  String get bottomNavMaxTabsToast => '追加できるタブは最大6個です';
+
+  @override
   String get permissionStatusTitle => '権限ステータス';
 
   @override

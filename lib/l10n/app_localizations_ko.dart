@@ -36,6 +36,64 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dialogDone => '완료';
 
   @override
+  String get actionConfirm => '확인';
+
+  @override
+  String get customizeBottomNavTitle => '하단 내비게이션 사용자화';
+
+  @override
+  String get customizeBottomNavSubtitle =>
+      '자주 쓰는 기능에 빠르게 접근하도록 하단 내비게이션을 추가, 제거, 재정렬합니다.';
+
+  @override
+  String get bottomNavHome => '홈';
+
+  @override
+  String get bottomNavHomeDesc => '모니터링 앱 개요';
+
+  @override
+  String get bottomNavFavorites => '즐겨찾기';
+
+  @override
+  String get bottomNavFavoritesDesc => '저장한 스크린샷';
+
+  @override
+  String get bottomNavAi => 'AI';
+
+  @override
+  String get bottomNavAiDesc => '리뷰와 채팅';
+
+  @override
+  String get bottomNavTimeline => '타임라인';
+
+  @override
+  String get bottomNavTimelineDesc => '화면 기록 보기';
+
+  @override
+  String get bottomNavSettings => '설정';
+
+  @override
+  String get bottomNavSettingsDesc => '앱 환경설정';
+
+  @override
+  String get bottomNavDynamic => '활동';
+
+  @override
+  String get bottomNavDynamicDesc => 'AI 활동 요약';
+
+  @override
+  String get bottomNavStorage => '저장소';
+
+  @override
+  String get bottomNavStorageDesc => '저장소 사용량';
+
+  @override
+  String get bottomNavMinTabsToast => '탭을 최소 3개 유지하세요';
+
+  @override
+  String get bottomNavMaxTabsToast => '탭은 최대 6개까지 추가할 수 있습니다';
+
+  @override
   String get permissionStatusTitle => '권한 상태';
 
   @override

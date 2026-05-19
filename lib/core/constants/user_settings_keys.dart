@@ -6,6 +6,7 @@ class UserSettingKeys {
   static const String displayMode = 'display_mode';
   static const String sortMode = 'sort_mode';
   static const String privacyModeEnabled = 'privacy_mode_enabled';
+  static const String bottomNavigationItems = 'bottom_navigation_items';
 
   // 截屏基础配置
   static const String screenshotInterval = 'screenshot_interval';

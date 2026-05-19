@@ -156,6 +156,120 @@ abstract class AppLocalizations {
   /// **'Done'**
   String get dialogDone;
 
+  /// No description provided for @actionConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get actionConfirm;
+
+  /// No description provided for @customizeBottomNavTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize bottom navigation'**
+  String get customizeBottomNavTitle;
+
+  /// No description provided for @customizeBottomNavSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add, remove, or reorder bottom navigation for quick access to frequent features.'**
+  String get customizeBottomNavSubtitle;
+
+  /// No description provided for @bottomNavHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get bottomNavHome;
+
+  /// No description provided for @bottomNavHomeDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Monitored apps overview'**
+  String get bottomNavHomeDesc;
+
+  /// No description provided for @bottomNavFavorites.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get bottomNavFavorites;
+
+  /// No description provided for @bottomNavFavoritesDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved screenshots'**
+  String get bottomNavFavoritesDesc;
+
+  /// No description provided for @bottomNavAi.
+  ///
+  /// In en, this message translates to:
+  /// **'AI'**
+  String get bottomNavAi;
+
+  /// No description provided for @bottomNavAiDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Review and chat'**
+  String get bottomNavAiDesc;
+
+  /// No description provided for @bottomNavTimeline.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeline'**
+  String get bottomNavTimeline;
+
+  /// No description provided for @bottomNavTimelineDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse screen history'**
+  String get bottomNavTimelineDesc;
+
+  /// No description provided for @bottomNavSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get bottomNavSettings;
+
+  /// No description provided for @bottomNavSettingsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'App preferences'**
+  String get bottomNavSettingsDesc;
+
+  /// No description provided for @bottomNavDynamic.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get bottomNavDynamic;
+
+  /// No description provided for @bottomNavDynamicDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'AI activity summaries'**
+  String get bottomNavDynamicDesc;
+
+  /// No description provided for @bottomNavStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get bottomNavStorage;
+
+  /// No description provided for @bottomNavStorageDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage usage details'**
+  String get bottomNavStorageDesc;
+
+  /// No description provided for @bottomNavMinTabsToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep at least 3 tabs'**
+  String get bottomNavMinTabsToast;
+
+  /// No description provided for @bottomNavMaxTabsToast.
+  ///
+  /// In en, this message translates to:
+  /// **'You can add up to 6 tabs'**
+  String get bottomNavMaxTabsToast;
+
   /// No description provided for @permissionStatusTitle.
   ///
   /// In en, this message translates to:
