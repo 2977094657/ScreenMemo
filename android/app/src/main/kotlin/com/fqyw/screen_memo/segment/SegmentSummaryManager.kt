@@ -759,7 +759,7 @@ object SegmentSummaryManager {
         return "$y-$m-$d"
     }
 
-    private fun dayBoundsMillis(dayKey: String): Pair<Long, Long>? {
+    fun dayBoundsMillis(dayKey: String): Pair<Long, Long>? {
         val parts = dayKey.split('-')
         if (parts.size != 3) return null
         val y = parts[0].toIntOrNull() ?: return null
@@ -5681,27 +5681,63 @@ object SegmentSummaryManager {
         }
     }
 
-    fun buildMissingBackfillWorklist(ctx: Context, durationSec: Int): List<DynamicRebuildWindow> {
+    fun buildMissingBackfillWorklist(
+        ctx: Context,
+        durationSec: Int,
+        targetDayKey: String? = null,
+    ): List<DynamicRebuildWindow> {
         val safeDurationSec = durationSec.coerceAtLeast(60)
         val durationMs = safeDurationSec * 1000L
-        val shots = SegmentDatabaseHelper.listAllShotsAscending(ctx)
+        val normalizedTargetDayKey = targetDayKey?.trim().orEmpty()
+        val targetDayBounds = if (normalizedTargetDayKey.isNotBlank()) {
+            dayBoundsMillis(normalizedTargetDayKey)
+        } else {
+            null
+        }
+        if (normalizedTargetDayKey.isNotBlank() && targetDayBounds == null) {
+            logBackfillDiag(
+                ctx,
+                "buildMissingWorklist empty reason=invalid_target_day targetDayKey=$normalizedTargetDayKey",
+            )
+            return emptyList()
+        }
+        val shots = if (targetDayBounds != null) {
+            SegmentDatabaseHelper.listShotsBetween(
+                ctx,
+                targetDayBounds.first,
+                kotlin.math.min(System.currentTimeMillis(), targetDayBounds.second + durationMs),
+                perTableLimit = Int.MAX_VALUE,
+            )
+        } else {
+            SegmentDatabaseHelper.listAllShotsAscending(ctx)
+        }
         logBackfillDiag(
             ctx,
-            "buildMissingWorklist start durationSec=$durationSec safeDurationSec=$safeDurationSec shots=${shots.size}",
+            "buildMissingWorklist start durationSec=$durationSec safeDurationSec=$safeDurationSec " +
+                "targetDayKey=${normalizedTargetDayKey.ifBlank { "none" }} shots=${shots.size}",
         )
-        if (shots.isEmpty()) {
+        if (shots.isEmpty() && targetDayBounds == null) {
             logBackfillDiag(ctx, "buildMissingWorklist empty reason=no_shots")
             return emptyList()
         }
         val now = System.currentTimeMillis()
-        val scanStart = shots.first().captureTime
-        val scanEnd = kotlin.math.min(now, shots.last().captureTime + durationMs)
+        val scanStart = targetDayBounds?.first ?: shots.first().captureTime
+        val scanEnd = if (targetDayBounds != null) {
+            kotlin.math.min(now, targetDayBounds.second + durationMs)
+        } else {
+            kotlin.math.min(now, shots.last().captureTime + durationMs)
+        }
         val scanStartForExisting = kotlin.math.max(0L, scanStart - durationMs)
         logBackfillDiag(
             ctx,
             "buildMissingWorklist scanRange scanStart=${fmt(scanStart)}($scanStart) " +
                 "scanEnd=${fmt(scanEnd)}($scanEnd) scanStartForExisting=${fmt(scanStartForExisting)}($scanStartForExisting) " +
-                "now=${fmt(now)}($now) firstShot=${fmt(shots.first().captureTime)} lastShot=${fmt(shots.last().captureTime)}",
+                "now=${fmt(now)}($now) " +
+                if (shots.isNotEmpty()) {
+                    "firstShot=${fmt(shots.first().captureTime)} lastShot=${fmt(shots.last().captureTime)}"
+                } else {
+                    "firstShot=none lastShot=none"
+                },
         )
         val existingAll = try {
             SegmentDatabaseHelper.listRootSegmentsOverlappingWindow(
@@ -5769,12 +5805,17 @@ object SegmentSummaryManager {
             "buildMissingWorklist existingWithResults raw=$existingRawCount compliant=$existingCompliantCount " +
                 "rejectedPreview=${existingRejectedPreview.joinToString(";")}",
         )
-        val plan = planNonOverlappingWindows(
-            shotTimes = shots.map { it.captureTime },
-            existingWindows = existingAll,
-            durationMs = durationMs,
-            nowMillis = now,
-        )
+        val plan = if (shots.isNotEmpty()) {
+            planNonOverlappingWindows(
+                shotTimes = shots.map { it.captureTime },
+                existingWindows = existingAll,
+                durationMs = durationMs,
+                nowMillis = now,
+                dayEndMillis = targetDayBounds?.second,
+            )
+        } else {
+            DynamicWindowPlanResult(emptyList(), skippedCovered = 0, mergedShortGaps = 0)
+        }
         logBackfillDiag(
             ctx,
             "buildMissingWorklist plan windows=${plan.windows.size} skippedCovered=${plan.skippedCovered} " +
@@ -5809,6 +5850,12 @@ object SegmentSummaryManager {
         var skippedExistingNowCompliant = 0
         val skippedExistingPreview = ArrayList<String>()
         for (seg in existingRepairScan) {
+            if (
+                normalizedTargetDayKey.isNotBlank() &&
+                dateKeyFromMillis(seg.startTime) != normalizedTargetDayKey
+            ) {
+                continue
+            }
             if (seg.startTime >= seg.endTime || seg.endTime > now) {
                 skippedExistingFutureOrInvalid += 1
                 if (skippedExistingPreview.size < 40) {

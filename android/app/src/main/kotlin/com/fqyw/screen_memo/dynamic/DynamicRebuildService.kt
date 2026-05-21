@@ -577,6 +577,11 @@ class DynamicRebuildService : Service() {
             },
         )
         if (backfillMode) {
+            val targetBounds = if (targetDayKey.isNotBlank()) {
+                SegmentSummaryManager.dayBoundsMillis(targetDayKey)
+            } else {
+                null
+            }
             recordStage(
                 state = state,
                 stage = "prepare_normalize_overlap",
@@ -584,7 +589,12 @@ class DynamicRebuildService : Service() {
                 detail = "正在归一化已有顶层动态时间交错，避免补全后列表交叉",
             )
             val normalized = try {
-                SegmentSummaryManager.normalizeExistingRootOverlaps(this, limitClusters = 50)
+                SegmentSummaryManager.normalizeExistingRootOverlaps(
+                    ctx = this,
+                    startMillis = targetBounds?.first,
+                    endMillis = targetBounds?.second,
+                    limitClusters = 50,
+                )
             } catch (_: Exception) {
                 0
             }
@@ -602,7 +612,11 @@ class DynamicRebuildService : Service() {
             }
         }
         val allWindows = if (backfillMode) {
-            SegmentSummaryManager.buildMissingBackfillWorklist(this, durationSec)
+            SegmentSummaryManager.buildMissingBackfillWorklist(
+                this,
+                durationSec,
+                targetDayKey = targetDayKey,
+            )
         } else {
             SegmentSummaryManager.buildFullRebuildWorklist(this, durationSec)
         }
