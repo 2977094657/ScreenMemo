@@ -123,24 +123,45 @@ extension _HomePageDataPart on _HomePageState {
   Future<void> _loadData({bool soft = true}) async {
     StartupProfiler.begin('HomePage._loadData');
     // 始终走软刷新：不触发全屏加载动画
+    if (mounted && _selectedApps.isEmpty) {
+      _homeSetState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
       // 统计信息与应用安装列表互不依赖，先并发启动，避免首页顶部长时间显示 0。
       final Future<void> earlyTotalsFuture = _loadTotals();
       final Future<void> earlyStatsFuture = _loadStats();
 
-      // 加载用户设置
+      // 先加载用户设置和已保存的监控应用，避免已安装应用扫描拖慢首屏列表。
       final selectedApps = await _appService.getSelectedApps();
-      final installedApps = await _appService.getAllInstalledApps();
       final cachedAppsByPackage = await _appService.getCachedAppInfoByPackage();
       final sortMode = await _appService.getSortMode();
       final screenshotEnabled = await _appService.getScreenshotEnabled();
       final screenshotInterval = await _appService.getScreenshotInterval();
 
-      // 先更新轻量数据，避免出现短暂空状态
       if (mounted) {
         _homeSetState(() {
           _savedSelectedApps = List<AppInfo>.from(selectedApps);
+          _cachedAppsByPackage = cachedAppsByPackage;
+          _selectedApps = List<AppInfo>.from(selectedApps);
+          _sortMode = sortMode;
+          _screenshotEnabled = screenshotEnabled;
+          _screenshotInterval = screenshotInterval;
+          _sortApps();
+          _isLoading = false;
+        });
+      }
+
+      // 根据当前选中应用刷新每应用自定义标记
+      // ignore: unawaited_futures
+      _loadPerAppCustomFlags(selectedApps);
+
+      final installedApps = await _appService.getAllInstalledApps();
+
+      if (mounted) {
+        _homeSetState(() {
           _installedPackages = installedApps
               .map((app) => app.packageName)
               .where((pkg) => pkg.trim().isNotEmpty)
@@ -149,19 +170,10 @@ extension _HomePageDataPart on _HomePageState {
             for (final AppInfo app in installedApps)
               if (app.packageName.trim().isNotEmpty) app.packageName: app,
           };
-          _cachedAppsByPackage = cachedAppsByPackage;
           _installedAppsLoaded = true;
-          _selectedApps = List<AppInfo>.from(selectedApps);
-          _sortMode = sortMode;
-          _screenshotEnabled = screenshotEnabled;
-          _screenshotInterval = screenshotInterval;
-          _isLoading = false;
+          _sortApps();
         });
       }
-
-      // 根据当前选中应用刷新每应用自定义标记
-      // ignore: unawaited_futures
-      _loadPerAppCustomFlags(selectedApps);
 
       // 等首批缓存/快速统计完成，再用 app_stats 快速刷新一次，修正旧缓存。
       await Future.wait([earlyTotalsFuture, earlyStatsFuture]);
@@ -178,7 +190,11 @@ extension _HomePageDataPart on _HomePageState {
       _checkScreenshotToggleState();
     } catch (e) {
       print('加载数据失败: $e');
-      // 出错也不显示全屏加载
+      if (mounted) {
+        _homeSetState(() {
+          _isLoading = false;
+        });
+      }
     }
     StartupProfiler.end('HomePage._loadData');
   }

@@ -187,6 +187,8 @@ Flutter 代码按分层架构整理：
   - `lib/features/ai_chat/presentation/widgets/chat_context_sheet*.dart`：对话上下文面板按状态刷新、导出/操作和展示卡片拆分
 - `lib/models/` 与 `lib/l10n/`：保留共享模型与生成的国际化代码
 
+首页首屏加载需要保持“缓存优先、后台刷新”的节奏：`home_page_data_part.dart` 先读取已保存监控应用和统计缓存并渲染列表，再等待已安装应用扫描、最新统计和权限检查。不要把“列表尚未加载完成”直接展示为“暂无监控应用”；应用列表缓存过期时也应先返回旧缓存，再在后台刷新安装状态和图标。
+
 Android 原生层按职责建立子包，入口类保留在 `android/app/src/main/kotlin/com/fqyw/screen_memo/`，其余能力按下列目录组织：
 
 - `app/`：原生应用上下文基础设施

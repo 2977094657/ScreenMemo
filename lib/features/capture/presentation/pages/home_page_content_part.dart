@@ -167,6 +167,7 @@ extension _HomePageContentPart on _HomePageState {
 
   Widget _buildAppsList(ScrollPhysics physics) {
     final bool hasApps = _selectedApps.isNotEmpty;
+    final bool showInitialLoading = _isLoading && !hasApps;
     return CustomScrollView(
       physics: physics,
       slivers: [
@@ -182,6 +183,11 @@ extension _HomePageContentPart on _HomePageState {
                 return _buildAppListItem(app, index);
               }, childCount: _selectedApps.length),
             ),
+          )
+        else if (showInitialLoading)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: UILoadingState(compact: true),
           )
         else
           SliverFillRemaining(hasScrollBody: false, child: _buildEmptyState()),

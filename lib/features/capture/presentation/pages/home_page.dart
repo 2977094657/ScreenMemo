@@ -19,7 +19,6 @@ import 'package:screen_memo/features/apps/presentation/widgets/app_selection_wid
 import 'package:screen_memo/features/capture/data/per_app_screenshot_settings_service.dart';
 import 'package:screen_memo/features/daily_summary/application/daily_summary_service.dart';
 import 'package:screen_memo/features/daily_summary/presentation/pages/daily_summary_page.dart';
-import 'package:screen_memo/features/capture/presentation/pages/exclusion_help_page.dart';
 import 'package:screen_memo/features/settings/presentation/pages/settings_page.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'dart:async';
@@ -78,8 +77,7 @@ class _HomePageState extends State<HomePage>
   bool _sortOrderAsc = false; // 新增：排序顺序，false为降序，true为升序
   bool _screenshotEnabled = false;
   int _screenshotInterval = 5;
-  bool _isLoading = false; // 不显示全屏加载动画
-  bool _initialized = true; // 直接认为已初始化，避免首屏Loading
+  bool _isLoading = true; // 首批首页数据到达前避免误显示空状态
   bool _hasPermissionIssues = false; // 权限问题状态
   _HomeRuntimeDiagnostic? _runtimeDiagnostic;
   bool _runtimeDiagnosticExpanded = false;

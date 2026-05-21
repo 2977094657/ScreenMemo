@@ -34,6 +34,7 @@ class AppSelectionService {
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
   bool _privacyModeEnabled = true; // 默认开启
+  Future<void>? _installedAppsRefreshFuture;
 
   // 排序模式变更广播（用于通知首页自动刷新排序）
   static final StreamController<String> _sortModeController =
@@ -57,13 +58,13 @@ class AppSelectionService {
 
       final prefs = await SharedPreferences.getInstance();
 
-      // 2) 本地缓存（带TTL）
+      // 2) 本地缓存：过期缓存也先返回，避免首屏等待全量应用扫描。
       if (!forceRefresh) {
         final ts = prefs.getInt(_appsCacheTsKey) ?? 0;
         final now = DateTime.now().millisecondsSinceEpoch;
         final isFresh = ts > 0 && (now - ts) <= _appsCacheTtlSeconds * 1000;
         final cached = prefs.getString(_appsCacheKey);
-        if (isFresh && cached != null && cached.isNotEmpty) {
+        if (cached != null && cached.isNotEmpty) {
           try {
             final List<dynamic> list = jsonDecode(cached);
             _allApps = list
@@ -86,13 +87,17 @@ class AppSelectionService {
               );
             }
             await _mergeAndSaveAppIdentityCache(_allApps, prefs);
-            // 如果即将过期（<60秒），提前后台续期
-            final remainingMs = _appsCacheTtlSeconds * 1000 - (now - ts);
-            if (remainingMs <= 60000) {
+            if (!isFresh) {
+              // 缓存过期时仍先返回旧数据，并在后台刷新安装状态与图标。
               // ignore: unawaited_futures
-              getAllInstalledApps(
-                forceRefresh: true,
-              ).catchError((_) => _allApps);
+              _refreshInstalledAppsInBackground();
+            } else {
+              // 如果即将过期（<60秒），提前后台续期。
+              final remainingMs = _appsCacheTtlSeconds * 1000 - (now - ts);
+              if (remainingMs <= 60000) {
+                // ignore: unawaited_futures
+                _refreshInstalledAppsInBackground();
+              }
             }
             StartupProfiler.end('AppSelectionService.getAllInstalledApps');
             return _allApps;
@@ -141,6 +146,23 @@ class AppSelectionService {
     }
   }
 
+  Future<void> _refreshInstalledAppsInBackground() {
+    final inFlight = _installedAppsRefreshFuture;
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> refresh;
+    refresh = getAllInstalledApps(forceRefresh: true)
+        .then<void>((_) {})
+        .catchError((_) {})
+        .whenComplete(() {
+          if (identical(_installedAppsRefreshFuture, refresh)) {
+            _installedAppsRefreshFuture = null;
+          }
+        });
+    _installedAppsRefreshFuture = refresh;
+    return refresh;
+  }
+
   /// 如果缓存过期则在后台刷新应用列表（不影响当前UI）
   Future<void> refreshAppsInBackgroundIfStale() async {
     try {
@@ -151,7 +173,7 @@ class AppSelectionService {
       if (!isFresh) {
         // 后台刷新，但不抛出异常
         // ignore: unawaited_futures
-        getAllInstalledApps(forceRefresh: true).catchError((_) => _allApps);
+        _refreshInstalledAppsInBackground();
       }
     } catch (_) {}
   }
