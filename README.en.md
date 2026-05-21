@@ -111,6 +111,101 @@ The screenshots below cover some of the pages people use most often. More detail
   </tr>
 </table>
 
+## Quick Start
+
+### Regular users: download the APK installer
+
+If you just want to use ScreenMemo on your phone, install the prebuilt APK from GitHub Releases. You do not need Flutter, Android Studio, or a local source build.
+
+1. Open [GitHub Releases](https://github.com/2977094657/ScreenMemo/releases) and go to the latest version.
+2. In **Assets**, download the `screen_memo-...-app-*-release.apk` package that matches your phone. Most modern Android phones should use `arm64-v8a`; if you are not sure, ask in the community chat with your phone model.
+3. Move the APK to your phone and install it. If Android warns about "unknown sources" or installation risk, make sure the file came from this project's Releases page, then allow your browser or file manager to install unknown apps.
+4. On first launch, follow the in-app prompts to grant required permissions. Automatic capture requires Android 11 (API 30)+, and Accessibility, Usage Access, and battery-optimization exemption are recommended.
+
+### Developers: run from source
+
+#### Requirements
+
+- **Flutter SDK**: `3.35.7` (current CI-verified version)
+- **Dart SDK**: `3.9.2` (bundled with Flutter `3.35.7`; the project constraint is `>=3.8.1`)
+- **JDK**: `17` recommended (CI uses `17`; Android source / target compatibility still emits Java 11 bytecode)
+- **Android SDK**: the release workflow uses `Platform 36`, `Build-Tools 36.0.0`, and `NDK 27.0.12077973`
+- **Current APK build config**: `minSdk 24`, `targetSdk 36`
+- **Main feature platform requirement**: automatic capture requires Android 11 (API 30)+
+- **IDE**: Android Studio / VS Code with the Flutter plugin
+
+#### Install and Run
+
+1. **Clone the repo**
+   ```bash
+   git clone <repository-url>
+   cd screen_memo
+   ```
+
+2. **Install dependencies**
+   ```bash
+   flutter pub get
+   ```
+
+3. **Generate localization code**
+   ```bash
+   flutter gen-l10n
+   ```
+
+4. **Run the app**
+   ```bash
+   flutter run
+   ```
+
+#### Test with an Android Emulator
+
+1. Create an Android 11+ AVD in Android Studio **Device Manager**
+2. Start the emulator, then run:
+   ```bash
+   flutter emulators
+   flutter devices
+   flutter run -d <device_id>
+   ```
+
+More maintainer development notes are available in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
+#### Development and Verification Commands
+
+```bash
+# Static analysis
+flutter analyze
+
+# Flutter tests
+flutter test
+
+# i18n audit
+dart run tool/i18n_audit.dart --check
+
+# Debug APK
+flutter build apk --debug
+
+# Release APKs (split per ABI)
+flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
+```
+
+> Local development builds use the default version `999.999.999+999999999` from `pubspec.yaml` unless `--build-name` is passed explicitly.
+> This prevents self-built packages from triggering cloud update prompts simply because their version is lower than the latest GitHub Release.
+> The official release workflow parses the real version from the Git tag and overrides this default with `--build-name` / `--build-number`. Android upgrade checks compare `versionCode` (the build number after `+`), not the user-facing `versionName`.
+
+Android JVM unit tests:
+
+**Windows**
+```powershell
+cd android
+.\gradlew.bat test
+```
+
+**macOS / Linux**
+```bash
+cd android
+./gradlew test
+```
+
 ## Community Chat
 
 <div align="center">
@@ -170,90 +265,6 @@ The screenshots below cover some of the pages people use most often. More detail
 - The biggest factors are capture interval, compression strategy, AI rebuild frequency, and how well the device keeps the app alive in the background
 - A practical setup is target-size compression, expiration cleanup, and app-specific capture policies so low-value apps are not recorded continuously
 </details>
-
-## Quick Start
-
-### Requirements
-
-- **Flutter SDK**: `3.35.7` (current CI-verified version)
-- **Dart SDK**: `3.9.2` (bundled with Flutter `3.35.7`; the project constraint is `>=3.8.1`)
-- **JDK**: `17` recommended (CI uses `17`; Android source / target compatibility still emits Java 11 bytecode)
-- **Android SDK**: the release workflow uses `Platform 36`, `Build-Tools 36.0.0`, and `NDK 27.0.12077973`
-- **Current APK build config**: `minSdk 24`, `targetSdk 36`
-- **Main feature platform requirement**: automatic capture requires Android 11 (API 30)+
-- **IDE**: Android Studio / VS Code with the Flutter plugin
-
-### Install and Run
-
-1. **Clone the repo**
-   ```bash
-   git clone <repository-url>
-   cd screen_memo
-   ```
-
-2. **Install dependencies**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Generate localization code**
-   ```bash
-   flutter gen-l10n
-   ```
-
-4. **Run the app**
-   ```bash
-   flutter run
-   ```
-
-### Test with an Android Emulator
-
-1. Create an Android 11+ AVD in Android Studio **Device Manager**
-2. Start the emulator, then run:
-   ```bash
-   flutter emulators
-   flutter devices
-   flutter run -d <device_id>
-   ```
-
-More maintainer development notes are available in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
-
-### Development and Verification Commands
-
-```bash
-# Static analysis
-flutter analyze
-
-# Flutter tests
-flutter test
-
-# i18n audit
-dart run tool/i18n_audit.dart --check
-
-# Debug APK
-flutter build apk --debug
-
-# Release APKs (split per ABI)
-flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
-```
-
-> Local development builds use the default version `999.999.999+999999999` from `pubspec.yaml` unless `--build-name` is passed explicitly.
-> This prevents self-built packages from triggering cloud update prompts simply because their version is lower than the latest GitHub Release.
-> The official release workflow parses the real version from the Git tag and overrides this default with `--build-name` / `--build-number`. Android upgrade checks compare `versionCode` (the build number after `+`), not the user-facing `versionName`.
-
-Android JVM unit tests:
-
-**Windows**
-```powershell
-cd android
-.\gradlew.bat test
-```
-
-**macOS / Linux**
-```bash
-cd android
-./gradlew test
-```
 
 ## Desktop Data Merger
 

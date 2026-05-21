@@ -111,6 +111,101 @@ ScreenMemo는 로컬에서 동작하는 스마트 스크린샷 기록 및 검색
   </tr>
 </table>
 
+## 빠른 시작
+
+### 일반 사용자: APK 설치 파일 다운로드
+
+휴대폰에서 ScreenMemo 를 사용하기만 하면 된다면 GitHub Releases 에서 미리 빌드된 APK 를 설치하는 것을 권장합니다. Flutter, Android Studio, 로컬 소스 빌드는 필요하지 않습니다.
+
+1. [GitHub Releases](https://github.com/2977094657/ScreenMemo/releases)를 열고 최신 버전으로 이동합니다.
+2. **Assets** 에서 휴대폰에 맞는 `screen_memo-...-app-*-release.apk` 패키지를 다운로드합니다. 최근 Android 휴대폰 대부분은 `arm64-v8a` 를 선택하면 됩니다. 확실하지 않다면 휴대폰 모델명을 함께 적어 커뮤니티 채팅에서 질문하세요.
+3. APK 를 휴대폰으로 옮겨 설치합니다. Android 가 "알 수 없는 출처" 또는 설치 위험을 경고하면, 파일이 이 프로젝트의 Releases 페이지에서 받은 것인지 확인한 뒤 브라우저나 파일 관리자에 알 수 없는 앱 설치를 허용하세요.
+4. 처음 실행한 뒤 앱 안내에 따라 필요한 권한을 켜세요. 자동 캡처 주요 기능은 Android 11 (API 30)+ 가 필요하며, 접근성 서비스, 사용 기록 접근, 배터리 최적화 예외 허용을 권장합니다.
+
+### 개발자: 소스에서 실행
+
+#### 요구 사항
+
+- **Flutter SDK**: `3.35.7` (현재 CI 검증 버전)
+- **Dart SDK**: `3.9.2` (Flutter `3.35.7` 에 포함, 프로젝트 제약은 `>=3.8.1`)
+- **JDK**: `17` 권장 (CI는 `17` 사용, Android bytecode target 은 Java 11)
+- **Android SDK**: Release 워크플로는 `Platform 36`, `Build-Tools 36.0.0`, `NDK 27.0.12077973` 사용
+- **현재 APK 빌드 설정**: `minSdk 24`, `targetSdk 36`
+- **주요 기능 플랫폼 요구 사항**: 자동 캡처는 Android 11 (API 30)+ 필요
+- **IDE**: Android Studio / VS Code + Flutter 플러그인
+
+#### 설치 및 실행
+
+1. **저장소 클론**
+   ```bash
+   git clone <repository-url>
+   cd screen_memo
+   ```
+
+2. **의존성 설치**
+   ```bash
+   flutter pub get
+   ```
+
+3. **다국어 코드 생성**
+   ```bash
+   flutter gen-l10n
+   ```
+
+4. **앱 실행**
+   ```bash
+   flutter run
+   ```
+
+#### Android 에뮬레이터에서 테스트
+
+1. Android Studio **Device Manager** 에서 Android 11+ AVD 생성
+2. 에뮬레이터를 시작한 뒤 다음 실행:
+   ```bash
+   flutter emulators
+   flutter devices
+   flutter run -d <device_id>
+   ```
+
+관리자용 개발 메모는 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)를 참고하세요.
+
+#### 개발 및 검증 명령
+
+```bash
+# 정적 분석
+flutter analyze
+
+# Flutter 테스트
+flutter test
+
+# i18n 감사
+dart run tool/i18n_audit.dart --check
+
+# Debug APK
+flutter build apk --debug
+
+# Release APK (ABI 분할)
+flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
+```
+
+> 로컬 개발 빌드에서 `--build-name` 을 명시하지 않으면 `pubspec.yaml` 의 기본 버전 `999.999.999+999999999` 이 사용됩니다.
+> 이렇게 하면 직접 빌드한 패키지가 GitHub Releases 최신 버전보다 낮다는 이유만으로 클라우드 업데이트 알림을 띄우는 일을 피할 수 있습니다.
+> 공식 릴리스 워크플로는 Git tag 에서 실제 버전을 파싱하고 `--build-name` / `--build-number` 로 이 기본값을 덮어씁니다. Android 덮어쓰기 설치에서 실제로 비교하는 값은 화면에 표시되는 `versionName` 이 아니라 `versionCode`(`+` 뒤의 build number)입니다.
+
+Android JVM 단위 테스트:
+
+**Windows**
+```powershell
+cd android
+.\gradlew.bat test
+```
+
+**macOS / Linux**
+```bash
+cd android
+./gradlew test
+```
+
 ## 커뮤니티 채팅
 
 <div align="center">
@@ -170,90 +265,6 @@ ScreenMemo는 로컬에서 동작하는 스마트 스크린샷 기록 및 검색
 - 주요 변수는 캡처 간격, 압축 정책, AI 재구축 빈도, 그리고 기기가 백그라운드에서 앱을 얼마나 잘 유지하는지입니다
 - 실사용에서는 목표 크기 압축, 만료 정리, 앱별 캡처 정책 조합을 권장합니다
 </details>
-
-## 빠른 시작
-
-### 요구 사항
-
-- **Flutter SDK**: `3.35.7` (현재 CI 검증 버전)
-- **Dart SDK**: `3.9.2` (Flutter `3.35.7` 에 포함, 프로젝트 제약은 `>=3.8.1`)
-- **JDK**: `17` 권장 (CI는 `17` 사용, Android bytecode target 은 Java 11)
-- **Android SDK**: Release 워크플로는 `Platform 36`, `Build-Tools 36.0.0`, `NDK 27.0.12077973` 사용
-- **현재 APK 빌드 설정**: `minSdk 24`, `targetSdk 36`
-- **주요 기능 플랫폼 요구 사항**: 자동 캡처는 Android 11 (API 30)+ 필요
-- **IDE**: Android Studio / VS Code + Flutter 플러그인
-
-### 설치 및 실행
-
-1. **저장소 클론**
-   ```bash
-   git clone <repository-url>
-   cd screen_memo
-   ```
-
-2. **의존성 설치**
-   ```bash
-   flutter pub get
-   ```
-
-3. **다국어 코드 생성**
-   ```bash
-   flutter gen-l10n
-   ```
-
-4. **앱 실행**
-   ```bash
-   flutter run
-   ```
-
-### Android 에뮬레이터에서 테스트
-
-1. Android Studio **Device Manager** 에서 Android 11+ AVD 생성
-2. 에뮬레이터를 시작한 뒤 다음 실행:
-   ```bash
-   flutter emulators
-   flutter devices
-   flutter run -d <device_id>
-   ```
-
-관리자용 개발 메모는 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)를 참고하세요.
-
-### 개발 및 검증 명령
-
-```bash
-# 정적 분석
-flutter analyze
-
-# Flutter 테스트
-flutter test
-
-# i18n 감사
-dart run tool/i18n_audit.dart --check
-
-# Debug APK
-flutter build apk --debug
-
-# Release APK (ABI 분할)
-flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
-```
-
-> 로컬 개발 빌드에서 `--build-name` 을 명시하지 않으면 `pubspec.yaml` 의 기본 버전 `999.999.999+999999999` 이 사용됩니다.
-> 이렇게 하면 직접 빌드한 패키지가 GitHub Releases 최신 버전보다 낮다는 이유만으로 클라우드 업데이트 알림을 띄우는 일을 피할 수 있습니다.
-> 공식 릴리스 워크플로는 Git tag 에서 실제 버전을 파싱하고 `--build-name` / `--build-number` 로 이 기본값을 덮어씁니다. Android 덮어쓰기 설치에서 실제로 비교하는 값은 화면에 표시되는 `versionName` 이 아니라 `versionCode`(`+` 뒤의 build number)입니다.
-
-Android JVM 단위 테스트:
-
-**Windows**
-```powershell
-cd android
-.\gradlew.bat test
-```
-
-**macOS / Linux**
-```bash
-cd android
-./gradlew test
-```
 
 ## 데스크톱 백업 병합 도구
 

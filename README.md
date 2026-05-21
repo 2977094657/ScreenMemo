@@ -111,6 +111,99 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
   </tr>
 </table>
 
+## 快速开始
+
+### 普通用户
+
+如果你只是想在手机上使用 ScreenMemo，推荐直接安装 GitHub Releases 中已经构建好的 APK
+
+1. 打开 [GitHub Releases](https://github.com/2977094657/ScreenMemo/releases)，进入最新版本。
+2. 在 **Assets** 中下载适合手机的 `screen_memo-...-app-*-release.apk` 安装包。大多数近几年的 Android 手机优先选择 `arm64-v8a`；
+
+### 开发者
+
+#### 环境要求
+
+- **Flutter SDK**：`3.35.7`（当前 CI 验证版本）
+- **Dart SDK**：`3.9.2`（随 Flutter `3.35.7` 提供；项目约束为 `>=3.8.1`）
+- **JDK**：推荐 `17`（CI 使用 `17`；Android 代码仍以 Java 11 字节码为目标）
+- **Android SDK**：发布工作流使用 `Platform 36`、`Build-Tools 36.0.0`、`NDK 27.0.12077973`
+- **APK 当前构建配置**：`minSdk 24`、`targetSdk 36`
+- **主功能平台要求**：自动截屏依赖 Android 11（API 30）及以上
+- **IDE**：Android Studio / VS Code + Flutter 插件
+
+#### 安装与运行
+
+1. **克隆项目**
+   ```bash
+   git clone <repository-url>
+   cd screen_memo
+   ```
+
+2. **安装依赖**
+   ```bash
+   flutter pub get
+   ```
+
+3. **生成国际化代码**
+   ```bash
+   flutter gen-l10n
+   ```
+
+4. **运行应用**
+   ```bash
+   flutter run
+   ```
+
+#### 在电脑上通过 Android 模拟器测试
+
+1. 在 Android Studio 的 **Device Manager** 中创建 Android 11+ 模拟器
+2. 启动模拟器后执行：
+   ```bash
+   flutter emulators
+   flutter devices
+   flutter run -d <device_id>
+   ```
+
+更多维护者开发说明见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
+
+#### 开发与验证命令
+
+```bash
+# 代码检查
+flutter analyze
+
+# Flutter 测试
+flutter test
+
+# i18n 审计
+dart run tool/i18n_audit.dart --check
+
+# Debug APK
+flutter build apk --debug
+
+# Release APK（按 ABI 拆分）
+flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
+```
+
+> 本地开发构建如果没有显式传入 `--build-name`，会使用 `pubspec.yaml` 中的默认版本 `999.999.999+999999999`。
+> 这样可避免自构建包因为低于 GitHub Releases 最新版本而触发云端更新提示。
+> 正式发布工作流会从 Git tag 解析真实版本，并通过 `--build-name` / `--build-number` 覆盖该默认值。Android 覆盖安装实际比较的是 `versionCode`（即 `+` 后面的 build number），不是界面显示的 `versionName`。
+
+Android 原生 JVM 单元测试：
+
+**Windows**
+```powershell
+cd android
+.\gradlew.bat test
+```
+
+**macOS / Linux**
+```bash
+cd android
+./gradlew test
+```
+
 ## 社区群聊
 
 <div align="center">
@@ -154,6 +247,16 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 </details>
 
 <details>
+<summary>AI 对话里的 token 进度条是怎么计算的？</summary>
+
+- 进度条表示最近一次实际发送给模型的上下文占用，会在请求发起时先按本地估算刷新，模型返回后再用服务端 usage 校准
+- 顶部进度条采用 Codex 风格的上下文窗口口径：以最近一次调用的 `last token usage` 为准，并扣除固定 baseline 后显示有效占用比例
+- 详情面板会拆分最近一次调用和本会话累计，包括非缓存输入、缓存输入、输出、推理输出和用于显示的 total
+- 文本估算采用 UTF-8 字节数约除以 4 的近似值；图片会按多模态内容占位符估算，不会把 base64 原始字符串当作文本 token 计入
+- 详情面板会区分系统提示、工具 schema、对话记忆、历史消息和本次输入等来源，便于定位上下文增长来自哪里
+</details>
+
+<details>
 <summary>如何备份 / 迁移数据？</summary>
 
 - 在“数据与备份”里可以导出 ZIP 备份；导出前会先扫描范围、生成 manifest，并展示分类进度
@@ -170,90 +273,6 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 - 主要取决于截屏间隔、压缩策略、AI 重建频率和后台保活状态
 - 建议启用目标大小压缩、过期清理，并按应用细分策略，避免对不重要应用持续采集
 </details>
-
-## 快速开始
-
-### 环境要求
-
-- **Flutter SDK**：`3.35.7`（当前 CI 验证版本）
-- **Dart SDK**：`3.9.2`（随 Flutter `3.35.7` 提供；项目约束为 `>=3.8.1`）
-- **JDK**：推荐 `17`（CI 使用 `17`；Android 代码仍以 Java 11 字节码为目标）
-- **Android SDK**：发布工作流使用 `Platform 36`、`Build-Tools 36.0.0`、`NDK 27.0.12077973`
-- **APK 当前构建配置**：`minSdk 24`、`targetSdk 36`
-- **主功能平台要求**：自动截屏依赖 Android 11（API 30）及以上
-- **IDE**：Android Studio / VS Code + Flutter 插件
-
-### 安装与运行
-
-1. **克隆项目**
-   ```bash
-   git clone <repository-url>
-   cd screen_memo
-   ```
-
-2. **安装依赖**
-   ```bash
-   flutter pub get
-   ```
-
-3. **生成国际化代码**
-   ```bash
-   flutter gen-l10n
-   ```
-
-4. **运行应用**
-   ```bash
-   flutter run
-   ```
-
-### 在电脑上通过 Android 模拟器测试
-
-1. 在 Android Studio 的 **Device Manager** 中创建 Android 11+ 模拟器
-2. 启动模拟器后执行：
-   ```bash
-   flutter emulators
-   flutter devices
-   flutter run -d <device_id>
-   ```
-
-更多维护者开发说明见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
-
-### 开发与验证命令
-
-```bash
-# 代码检查
-flutter analyze
-
-# Flutter 测试
-flutter test
-
-# i18n 审计
-dart run tool/i18n_audit.dart --check
-
-# Debug APK
-flutter build apk --debug
-
-# Release APK（按 ABI 拆分）
-flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
-```
-
-> 本地开发构建如果没有显式传入 `--build-name`，会使用 `pubspec.yaml` 中的默认版本 `999.999.999+999999999`。
-> 这样可避免自构建包因为低于 GitHub Releases 最新版本而触发云端更新提示。
-> 正式发布工作流会从 Git tag 解析真实版本，并通过 `--build-name` / `--build-number` 覆盖该默认值。Android 覆盖安装实际比较的是 `versionCode`（即 `+` 后面的 build number），不是界面显示的 `versionName`。
-
-Android 原生 JVM 单元测试：
-
-**Windows**
-```powershell
-cd android
-.\gradlew.bat test
-```
-
-**macOS / Linux**
-```bash
-cd android
-./gradlew test
-```
 
 ## 桌面数据合并工具
 
