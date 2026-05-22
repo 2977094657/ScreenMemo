@@ -4,6 +4,7 @@ import com.fqyw.screen_memo.capture.AccessibilityServiceWatchdog
 import com.fqyw.screen_memo.capture.AccessibilityStateMonitor
 import com.fqyw.screen_memo.capture.ScreenCaptureService
 import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.mcp.McpServerService
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -31,15 +32,18 @@ class RestartReceiver : BroadcastReceiver() {
             ACTION_RESTART_SERVICE -> {
                 FileLogger.e(TAG, "收到服务重启请求")
                 restartAccessibilityService(context)
+                restoreMcpServer(context)
             }
             Intent.ACTION_BOOT_COMPLETED -> {
                 FileLogger.e(TAG, "系统启动完成，检查是否需要重启服务")
                 checkAndRestartService(context)
+                restoreMcpServer(context)
             }
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_PACKAGE_REPLACED -> {
                 FileLogger.e(TAG, "应用更新完成，检查是否需要重启服务")
                 checkAndRestartService(context)
+                restoreMcpServer(context)
             }
         }
     }
@@ -126,6 +130,15 @@ class RestartReceiver : BroadcastReceiver() {
             
         } catch (e: Exception) {
             FileLogger.e(TAG, "检查服务状态失败", e)
+        }
+    }
+
+    private fun restoreMcpServer(context: Context) {
+        try {
+            McpServerService.restoreIfEnabled(context)
+            FileLogger.e(TAG, "MCP 服务启用状态已检查")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "恢复 MCP 服务失败", e)
         }
     }
 }

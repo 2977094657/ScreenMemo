@@ -4178,4 +4178,106 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerAnalyzeImageFallbackPrompt => 'Please analyze the image.';
+
+  @override
+  String get mcpServiceTitle => 'MCP Service';
+
+  @override
+  String get mcpLanServerTitle => 'LAN MCP Server';
+
+  @override
+  String mcpRunningOnPort(Object port) {
+    return 'Running on port $port';
+  }
+
+  @override
+  String get mcpStopped => 'Stopped';
+
+  @override
+  String get mcpLastErrorTitle => 'Last error';
+
+  @override
+  String get mcpEndpointLabel => 'Endpoint';
+
+  @override
+  String get mcpNoLanIpDetected => 'No LAN IP detected';
+
+  @override
+  String get mcpBearerTokenLabel => 'Bearer token';
+
+  @override
+  String get mcpTokenCopyLabel => 'Token';
+
+  @override
+  String get mcpUnavailable => 'Unavailable';
+
+  @override
+  String get mcpResetTokenTitle => 'Reset token';
+
+  @override
+  String get mcpResetTokenSubtitle =>
+      'Immediately invalidates the previous token.';
+
+  @override
+  String get mcpAiInstallTitle => 'Give this to an AI';
+
+  @override
+  String get mcpAiInstallCopyLabel => 'Copy setup instructions';
+
+  @override
+  String get mcpConnectionUnavailableHint =>
+      'Start the service and wait for a LAN IP to show copyable setup instructions here.';
+
+  @override
+  String mcpAiInstallPrompt(Object endpoint, Object token) {
+    return 'Please add ScreenMemo as an MCP service for me.\n\nConnection details:\n- Transport: Streamable HTTP MCP\n- URL: $endpoint\n- Header: Authorization: Bearer $token\n\nIf your client uses different field names, configure the same URL and Authorization header manually.';
+  }
+
+  @override
+  String get mcpResetTokenDialogTitle => 'Reset token?';
+
+  @override
+  String get mcpResetTokenDialogMessage =>
+      'Existing clients using the old token will lose access immediately.';
+
+  @override
+  String get mcpResetTokenConfirm => 'Reset';
+
+  @override
+  String get mcpTokenResetToast => 'Token reset';
+
+  @override
+  String mcpLoadStatusFailed(Object error) {
+    return 'Failed to load MCP status: $error';
+  }
+
+  @override
+  String mcpStartFailed(Object error) {
+    return 'Failed to start MCP server: $error';
+  }
+
+  @override
+  String mcpStopFailed(Object error) {
+    return 'Failed to stop MCP server: $error';
+  }
+
+  @override
+  String mcpResetTokenFailed(Object error) {
+    return 'Failed to reset token: $error';
+  }
+
+  @override
+  String mcpCopyValueEmpty(Object label) {
+    return '$label is empty';
+  }
+
+  @override
+  String mcpCopiedToast(Object label) {
+    return '$label copied';
+  }
+
+  @override
+  String mcpCopyFailed(Object label, Object error) {
+    return 'Failed to copy $label: $error';
+  }
 }

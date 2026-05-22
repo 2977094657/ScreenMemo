@@ -7331,6 +7331,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please analyze the image.'**
   String get composerAnalyzeImageFallbackPrompt;
+
+  /// No description provided for @mcpServiceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Service'**
+  String get mcpServiceTitle;
+
+  /// No description provided for @mcpLanServerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN MCP Server'**
+  String get mcpLanServerTitle;
+
+  /// No description provided for @mcpRunningOnPort.
+  ///
+  /// In en, this message translates to:
+  /// **'Running on port {port}'**
+  String mcpRunningOnPort(Object port);
+
+  /// No description provided for @mcpStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get mcpStopped;
+
+  /// No description provided for @mcpLastErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Last error'**
+  String get mcpLastErrorTitle;
+
+  /// No description provided for @mcpEndpointLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint'**
+  String get mcpEndpointLabel;
+
+  /// No description provided for @mcpNoLanIpDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'No LAN IP detected'**
+  String get mcpNoLanIpDetected;
+
+  /// No description provided for @mcpBearerTokenLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bearer token'**
+  String get mcpBearerTokenLabel;
+
+  /// No description provided for @mcpTokenCopyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Token'**
+  String get mcpTokenCopyLabel;
+
+  /// No description provided for @mcpUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get mcpUnavailable;
+
+  /// No description provided for @mcpResetTokenTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset token'**
+  String get mcpResetTokenTitle;
+
+  /// No description provided for @mcpResetTokenSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Immediately invalidates the previous token.'**
+  String get mcpResetTokenSubtitle;
+
+  /// No description provided for @mcpAiInstallTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Give this to an AI'**
+  String get mcpAiInstallTitle;
+
+  /// No description provided for @mcpAiInstallCopyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy setup instructions'**
+  String get mcpAiInstallCopyLabel;
+
+  /// No description provided for @mcpConnectionUnavailableHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start the service and wait for a LAN IP to show copyable setup instructions here.'**
+  String get mcpConnectionUnavailableHint;
+
+  /// No description provided for @mcpAiInstallPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Please add ScreenMemo as an MCP service for me.\n\nConnection details:\n- Transport: Streamable HTTP MCP\n- URL: {endpoint}\n- Header: Authorization: Bearer {token}\n\nIf your client uses different field names, configure the same URL and Authorization header manually.'**
+  String mcpAiInstallPrompt(Object endpoint, Object token);
+
+  /// No description provided for @mcpResetTokenDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset token?'**
+  String get mcpResetTokenDialogTitle;
+
+  /// No description provided for @mcpResetTokenDialogMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Existing clients using the old token will lose access immediately.'**
+  String get mcpResetTokenDialogMessage;
+
+  /// No description provided for @mcpResetTokenConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get mcpResetTokenConfirm;
+
+  /// No description provided for @mcpTokenResetToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Token reset'**
+  String get mcpTokenResetToast;
+
+  /// No description provided for @mcpLoadStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load MCP status: {error}'**
+  String mcpLoadStatusFailed(Object error);
+
+  /// No description provided for @mcpStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to start MCP server: {error}'**
+  String mcpStartFailed(Object error);
+
+  /// No description provided for @mcpStopFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to stop MCP server: {error}'**
+  String mcpStopFailed(Object error);
+
+  /// No description provided for @mcpResetTokenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to reset token: {error}'**
+  String mcpResetTokenFailed(Object error);
+
+  /// No description provided for @mcpCopyValueEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} is empty'**
+  String mcpCopyValueEmpty(Object label);
+
+  /// No description provided for @mcpCopiedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} copied'**
+  String mcpCopiedToast(Object label);
+
+  /// No description provided for @mcpCopyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to copy {label}: {error}'**
+  String mcpCopyFailed(Object label, Object error);
 }
 
 class _AppLocalizationsDelegate

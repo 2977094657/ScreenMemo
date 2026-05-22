@@ -2189,5 +2189,79 @@
     }
   },
   "composerImagePromptRequired": "画像生成用のプロンプトを入力してください。",
-  "composerAnalyzeImageFallbackPrompt": "この画像を分析してください。"
+  "composerAnalyzeImageFallbackPrompt": "この画像を分析してください。",
+  "mcpServiceTitle": "MCP サービス",
+  "mcpLanServerTitle": "LAN MCP サービス",
+  "mcpRunningOnPort": "ポート {port} で実行中",
+  "@mcpRunningOnPort": {
+    "placeholders": {
+      "port": {}
+    }
+  },
+  "mcpStopped": "停止中",
+  "mcpLastErrorTitle": "前回のエラー",
+  "mcpEndpointLabel": "エンドポイント",
+  "mcpNoLanIpDetected": "LAN IP が検出されていません",
+  "mcpBearerTokenLabel": "Bearer トークン",
+  "mcpTokenCopyLabel": "トークン",
+  "mcpUnavailable": "利用不可",
+  "mcpResetTokenTitle": "トークンをリセット",
+  "mcpResetTokenSubtitle": "以前のトークンは直ちに無効になります。",
+  "mcpAiInstallTitle": "AI に渡して設定",
+  "mcpAiInstallCopyLabel": "設定手順をコピー",
+  "mcpConnectionUnavailableHint": "サービスを起動し LAN IP が検出されると、ここにコピー可能な設定手順が表示されます。",
+  "mcpAiInstallPrompt": "ScreenMemo を MCP サービスとして追加してください。\n\n接続情報：\n- トランスポート：Streamable HTTP MCP\n- URL：{endpoint}\n- ヘッダー：Authorization: Bearer {token}\n\nクライアントのフィールド名が異なる場合は、同じ URL と Authorization ヘッダーを手動で設定してください。",
+  "@mcpAiInstallPrompt": {
+    "placeholders": {
+      "endpoint": {},
+      "token": {}
+    }
+  },
+  "mcpResetTokenDialogTitle": "トークンをリセットしますか？",
+  "mcpResetTokenDialogMessage": "古いトークンを使用している既存クライアントは直ちにアクセスできなくなります。",
+  "mcpResetTokenConfirm": "リセット",
+  "mcpTokenResetToast": "トークンをリセットしました",
+  "mcpLoadStatusFailed": "MCP 状態の読み込みに失敗しました：{error}",
+  "@mcpLoadStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStartFailed": "MCP サービスの起動に失敗しました：{error}",
+  "@mcpStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStopFailed": "MCP サービスの停止に失敗しました：{error}",
+  "@mcpStopFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpResetTokenFailed": "トークンのリセットに失敗しました：{error}",
+  "@mcpResetTokenFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpCopyValueEmpty": "{label} が空です",
+  "@mcpCopyValueEmpty": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopiedToast": "{label} をコピーしました",
+  "@mcpCopiedToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopyFailed": "{label} のコピーに失敗しました：{error}",
+  "@mcpCopyFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  }
 }

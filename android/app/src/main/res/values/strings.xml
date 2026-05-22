@@ -48,6 +48,11 @@
     <string name="dynamic_rebuild_notif_failed_generic">任务执行失败，请打开动态页查看详情</string>
     <string name="dynamic_rebuild_notif_cancelled_title">动态重建已停止</string>
     <string name="dynamic_rebuild_notif_cancelled_text">已停止在 %1$d/%2$d，可稍后继续</string>
+    <string name="mcp_server_channel_name">MCP 服务</string>
+    <string name="mcp_server_channel_desc">显示局域网 MCP 服务运行状态</string>
+    <string name="mcp_server_notification_title">屏忆 MCP 服务运行中</string>
+    <string name="mcp_server_notification_port_text">端口 %1$d 运行中，请使用此设备的局域网 IP 连接。</string>
+    <string name="mcp_fgs_special_use_subtype">在用户开启后保持局域网 MCP 服务常驻运行</string>
     <string name="replay_export_channel_name">回放生成</string>
     <string name="replay_export_channel_desc">显示回放生成进度</string>
     <string name="replay_export_notif_preparing_title">正在生成回放</string>

@@ -6,6 +6,7 @@ import com.fqyw.screen_memo.daily.DailySummaryScheduler
 import com.fqyw.screen_memo.health.AppHealthNativeRecorder
 import com.fqyw.screen_memo.health.AppHealthScheduler
 import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.mcp.McpServerService
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -72,6 +73,13 @@ class BootReceiver : BroadcastReceiver() {
                     FileLogger.d(TAG, "App 运行状态调度已恢复")
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "恢复 App 运行状态调度失败", e)
+                }
+
+                try {
+                    McpServerService.restoreIfEnabled(context)
+                    FileLogger.d(TAG, "MCP 服务启用状态已检查")
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "恢复 MCP 服务失败", e)
                 }
             }
         }

@@ -4,6 +4,7 @@ import com.fqyw.screen_memo.capture.ScreenCaptureAccessibilityService
 import com.fqyw.screen_memo.capture.ScreenCaptureService
 import com.fqyw.screen_memo.logging.FileLogger
 import com.fqyw.screen_memo.MainActivity
+import com.fqyw.screen_memo.mcp.McpServerService
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -101,6 +102,7 @@ class SystemEventReceiver : BroadcastReceiver() {
             }
             
             // 不再单独启动守护服务，仅依赖前台服务
+            McpServerService.restoreIfEnabled(context)
             
         } catch (e: Exception) {
             FileLogger.e(TAG, "检查服务状态失败", e)

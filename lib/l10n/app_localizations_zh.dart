@@ -4040,4 +4040,103 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get composerAnalyzeImageFallbackPrompt => '请分析这张图片。';
+
+  @override
+  String get mcpServiceTitle => 'MCP 服务';
+
+  @override
+  String get mcpLanServerTitle => '局域网 MCP 服务';
+
+  @override
+  String mcpRunningOnPort(Object port) {
+    return '正在端口 $port 运行';
+  }
+
+  @override
+  String get mcpStopped => '已停止';
+
+  @override
+  String get mcpLastErrorTitle => '上次错误';
+
+  @override
+  String get mcpEndpointLabel => '端点地址';
+
+  @override
+  String get mcpNoLanIpDetected => '未检测到局域网 IP';
+
+  @override
+  String get mcpBearerTokenLabel => 'Bearer 令牌';
+
+  @override
+  String get mcpTokenCopyLabel => '令牌';
+
+  @override
+  String get mcpUnavailable => '不可用';
+
+  @override
+  String get mcpResetTokenTitle => '重置令牌';
+
+  @override
+  String get mcpResetTokenSubtitle => '会立即让旧令牌失效。';
+
+  @override
+  String get mcpAiInstallTitle => '交给 AI 安装';
+
+  @override
+  String get mcpAiInstallCopyLabel => '复制接入说明';
+
+  @override
+  String get mcpConnectionUnavailableHint => '启动服务并检测到局域网 IP 后，会在这里显示可复制的接入说明。';
+
+  @override
+  String mcpAiInstallPrompt(Object endpoint, Object token) {
+    return '请帮我把 ScreenMemo 添加为 MCP 服务。\n\n连接信息：\n- 传输协议：Streamable HTTP MCP\n- URL：$endpoint\n- 请求头：Authorization: Bearer $token\n\n如果你的客户端字段名不同，请按同等含义配置 URL 和 Authorization 请求头。';
+  }
+
+  @override
+  String get mcpResetTokenDialogTitle => '重置令牌？';
+
+  @override
+  String get mcpResetTokenDialogMessage => '使用旧令牌的客户端会立即失去访问权限。';
+
+  @override
+  String get mcpResetTokenConfirm => '重置';
+
+  @override
+  String get mcpTokenResetToast => '令牌已重置';
+
+  @override
+  String mcpLoadStatusFailed(Object error) {
+    return '加载 MCP 状态失败：$error';
+  }
+
+  @override
+  String mcpStartFailed(Object error) {
+    return '启动 MCP 服务失败：$error';
+  }
+
+  @override
+  String mcpStopFailed(Object error) {
+    return '停止 MCP 服务失败：$error';
+  }
+
+  @override
+  String mcpResetTokenFailed(Object error) {
+    return '重置令牌失败：$error';
+  }
+
+  @override
+  String mcpCopyValueEmpty(Object label) {
+    return '$label 为空';
+  }
+
+  @override
+  String mcpCopiedToast(Object label) {
+    return '已复制$label';
+  }
+
+  @override
+  String mcpCopyFailed(Object label, Object error) {
+    return '复制$label失败：$error';
+  }
 }

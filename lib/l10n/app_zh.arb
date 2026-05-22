@@ -2189,5 +2189,79 @@
     }
   },
   "composerImagePromptRequired": "请输入用于生成图片的提示词。",
-  "composerAnalyzeImageFallbackPrompt": "请分析这张图片。"
+  "composerAnalyzeImageFallbackPrompt": "请分析这张图片。",
+  "mcpServiceTitle": "MCP 服务",
+  "mcpLanServerTitle": "局域网 MCP 服务",
+  "mcpRunningOnPort": "正在端口 {port} 运行",
+  "@mcpRunningOnPort": {
+    "placeholders": {
+      "port": {}
+    }
+  },
+  "mcpStopped": "已停止",
+  "mcpLastErrorTitle": "上次错误",
+  "mcpEndpointLabel": "端点地址",
+  "mcpNoLanIpDetected": "未检测到局域网 IP",
+  "mcpBearerTokenLabel": "Bearer 令牌",
+  "mcpTokenCopyLabel": "令牌",
+  "mcpUnavailable": "不可用",
+  "mcpResetTokenTitle": "重置令牌",
+  "mcpResetTokenSubtitle": "会立即让旧令牌失效。",
+  "mcpAiInstallTitle": "交给 AI 安装",
+  "mcpAiInstallCopyLabel": "复制接入说明",
+  "mcpConnectionUnavailableHint": "启动服务并检测到局域网 IP 后，会在这里显示可复制的接入说明。",
+  "mcpAiInstallPrompt": "请帮我把 ScreenMemo 添加为 MCP 服务。\n\n连接信息：\n- 传输协议：Streamable HTTP MCP\n- URL：{endpoint}\n- 请求头：Authorization: Bearer {token}\n\n如果你的客户端字段名不同，请按同等含义配置 URL 和 Authorization 请求头。",
+  "@mcpAiInstallPrompt": {
+    "placeholders": {
+      "endpoint": {},
+      "token": {}
+    }
+  },
+  "mcpResetTokenDialogTitle": "重置令牌？",
+  "mcpResetTokenDialogMessage": "使用旧令牌的客户端会立即失去访问权限。",
+  "mcpResetTokenConfirm": "重置",
+  "mcpTokenResetToast": "令牌已重置",
+  "mcpLoadStatusFailed": "加载 MCP 状态失败：{error}",
+  "@mcpLoadStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStartFailed": "启动 MCP 服务失败：{error}",
+  "@mcpStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStopFailed": "停止 MCP 服务失败：{error}",
+  "@mcpStopFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpResetTokenFailed": "重置令牌失败：{error}",
+  "@mcpResetTokenFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpCopyValueEmpty": "{label} 为空",
+  "@mcpCopyValueEmpty": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopiedToast": "已复制{label}",
+  "@mcpCopiedToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopyFailed": "复制{label}失败：{error}",
+  "@mcpCopyFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  }
 }

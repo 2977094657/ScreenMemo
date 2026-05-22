@@ -16,4 +16,9 @@
     <string name="fg_time_minutes_ago">%1$d分前</string>
     <string name="fg_time_hours_ago">%1$d時間前</string>
     <string name="fg_time_days_ago">%1$d日前</string>
+    <string name="mcp_server_channel_name">MCP サービス</string>
+    <string name="mcp_server_channel_desc">LAN MCP サービスの状態を表示します</string>
+    <string name="mcp_server_notification_title">ScreenMemo MCP サービスを実行中</string>
+    <string name="mcp_server_notification_port_text">ポート %1$d で実行中です。この端末の LAN IP で接続してください。</string>
+    <string name="mcp_fgs_special_use_subtype">ユーザーが有効にした後、LAN MCP サービスを常駐させます</string>
 </resources>

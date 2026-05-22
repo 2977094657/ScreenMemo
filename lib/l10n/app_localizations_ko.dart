@@ -4081,4 +4081,104 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get composerAnalyzeImageFallbackPrompt => '이 이미지를 분석해 주세요.';
+
+  @override
+  String get mcpServiceTitle => 'MCP 서비스';
+
+  @override
+  String get mcpLanServerTitle => 'LAN MCP 서비스';
+
+  @override
+  String mcpRunningOnPort(Object port) {
+    return '포트 $port에서 실행 중';
+  }
+
+  @override
+  String get mcpStopped => '중지됨';
+
+  @override
+  String get mcpLastErrorTitle => '마지막 오류';
+
+  @override
+  String get mcpEndpointLabel => '엔드포인트';
+
+  @override
+  String get mcpNoLanIpDetected => 'LAN IP를 감지하지 못했습니다';
+
+  @override
+  String get mcpBearerTokenLabel => 'Bearer 토큰';
+
+  @override
+  String get mcpTokenCopyLabel => '토큰';
+
+  @override
+  String get mcpUnavailable => '사용할 수 없음';
+
+  @override
+  String get mcpResetTokenTitle => '토큰 재설정';
+
+  @override
+  String get mcpResetTokenSubtitle => '이전 토큰이 즉시 무효화됩니다.';
+
+  @override
+  String get mcpAiInstallTitle => 'AI에게 설정 맡기기';
+
+  @override
+  String get mcpAiInstallCopyLabel => '설정 안내 복사';
+
+  @override
+  String get mcpConnectionUnavailableHint =>
+      '서비스를 시작하고 LAN IP가 감지되면 복사 가능한 설정 안내가 여기에 표시됩니다.';
+
+  @override
+  String mcpAiInstallPrompt(Object endpoint, Object token) {
+    return 'ScreenMemo를 MCP 서비스로 추가해 주세요.\n\n연결 정보:\n- 전송 방식: Streamable HTTP MCP\n- URL: $endpoint\n- 헤더: Authorization: Bearer $token\n\n클라이언트의 필드 이름이 다르면 같은 URL과 Authorization 헤더를 수동으로 설정하세요.';
+  }
+
+  @override
+  String get mcpResetTokenDialogTitle => '토큰을 재설정할까요?';
+
+  @override
+  String get mcpResetTokenDialogMessage => '기존 토큰을 사용하는 클라이언트는 즉시 접근 권한을 잃습니다.';
+
+  @override
+  String get mcpResetTokenConfirm => '재설정';
+
+  @override
+  String get mcpTokenResetToast => '토큰을 재설정했습니다';
+
+  @override
+  String mcpLoadStatusFailed(Object error) {
+    return 'MCP 상태를 불러오지 못했습니다: $error';
+  }
+
+  @override
+  String mcpStartFailed(Object error) {
+    return 'MCP 서비스를 시작하지 못했습니다: $error';
+  }
+
+  @override
+  String mcpStopFailed(Object error) {
+    return 'MCP 서비스를 중지하지 못했습니다: $error';
+  }
+
+  @override
+  String mcpResetTokenFailed(Object error) {
+    return '토큰을 재설정하지 못했습니다: $error';
+  }
+
+  @override
+  String mcpCopyValueEmpty(Object label) {
+    return '$label이(가) 비어 있습니다';
+  }
+
+  @override
+  String mcpCopiedToast(Object label) {
+    return '$label 복사됨';
+  }
+
+  @override
+  String mcpCopyFailed(Object label, Object error) {
+    return '$label 복사 실패: $error';
+  }
 }

@@ -5,6 +5,7 @@ import com.fqyw.screen_memo.diagnostics.OEMCompatibilityHelper
 import com.fqyw.screen_memo.diagnostics.RuntimeDiagnostics
 import com.fqyw.screen_memo.logging.FileLogger
 import com.fqyw.screen_memo.MainActivity
+import com.fqyw.screen_memo.mcp.McpServerService
 import com.fqyw.screen_memo.segment.SegmentSummaryManager
 import com.fqyw.screen_memo.service.RestartReceiver
 import com.fqyw.screen_memo.service.ServiceStateManager
@@ -609,6 +610,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 预设instance，以防onServiceConnected没有被调用
         instance = this
         FileLogger.e(TAG, "已在onCreate中设置instance")
+        restoreMcpServerIfEnabled("accessibility_onCreate")
 
         FileLogger.e(TAG, "=== 无障碍服务 onCreate 完成 ===")
     }
@@ -637,6 +639,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             AccessibilityServiceWatchdog.startWatchdog(this)
             AccessibilityServiceWatchdog.updateHeartbeat()
             FileLogger.e(TAG, "看门狗监控已启动")
+            restoreMcpServerIfEnabled("accessibility_onServiceConnected")
             RuntimeDiagnostics.logSnapshot(
                 this,
                 TAG,
@@ -655,6 +658,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     // 启动前台服务
                     startForegroundService()
                     FileLogger.e(TAG, "前台服务已启动")
+                    restoreMcpServerIfEnabled("accessibility_delayed_init")
 
                     // 移除服务级长期持锁：截屏时再短时获取WakeLock
 
@@ -889,6 +893,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 persistTimedScreenshotRunningState()
                 FileLogger.e(TAG, "定时截屏状态已保存")
             }
+
+            restoreMcpServerIfEnabled("accessibility_onTaskRemoved")
 
         } catch (e: Exception) {
             FileLogger.e(TAG, "onTaskRemoved处理失败", e)
@@ -3072,6 +3078,18 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "启动前台服务失败", e)
+        }
+    }
+
+    /**
+     * 无障碍服务作为系统绑定锚点存在时，同步恢复用户已开启的 MCP 前台服务。
+     */
+    private fun restoreMcpServerIfEnabled(reason: String) {
+        try {
+            McpServerService.restoreIfEnabled(this)
+            FileLogger.e(TAG, "MCP 服务恢复检查完成: $reason")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "MCP 服务恢复检查失败: $reason", e)
         }
     }
 

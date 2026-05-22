@@ -2189,5 +2189,79 @@
     }
   },
   "composerImagePromptRequired": "Enter a prompt to generate an image.",
-  "composerAnalyzeImageFallbackPrompt": "Please analyze the image."
+  "composerAnalyzeImageFallbackPrompt": "Please analyze the image.",
+  "mcpServiceTitle": "MCP Service",
+  "mcpLanServerTitle": "LAN MCP Server",
+  "mcpRunningOnPort": "Running on port {port}",
+  "@mcpRunningOnPort": {
+    "placeholders": {
+      "port": {}
+    }
+  },
+  "mcpStopped": "Stopped",
+  "mcpLastErrorTitle": "Last error",
+  "mcpEndpointLabel": "Endpoint",
+  "mcpNoLanIpDetected": "No LAN IP detected",
+  "mcpBearerTokenLabel": "Bearer token",
+  "mcpTokenCopyLabel": "Token",
+  "mcpUnavailable": "Unavailable",
+  "mcpResetTokenTitle": "Reset token",
+  "mcpResetTokenSubtitle": "Immediately invalidates the previous token.",
+  "mcpAiInstallTitle": "Give this to an AI",
+  "mcpAiInstallCopyLabel": "Copy setup instructions",
+  "mcpConnectionUnavailableHint": "Start the service and wait for a LAN IP to show copyable setup instructions here.",
+  "mcpAiInstallPrompt": "Please add ScreenMemo as an MCP service for me.\n\nConnection details:\n- Transport: Streamable HTTP MCP\n- URL: {endpoint}\n- Header: Authorization: Bearer {token}\n\nIf your client uses different field names, configure the same URL and Authorization header manually.",
+  "@mcpAiInstallPrompt": {
+    "placeholders": {
+      "endpoint": {},
+      "token": {}
+    }
+  },
+  "mcpResetTokenDialogTitle": "Reset token?",
+  "mcpResetTokenDialogMessage": "Existing clients using the old token will lose access immediately.",
+  "mcpResetTokenConfirm": "Reset",
+  "mcpTokenResetToast": "Token reset",
+  "mcpLoadStatusFailed": "Failed to load MCP status: {error}",
+  "@mcpLoadStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStartFailed": "Failed to start MCP server: {error}",
+  "@mcpStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStopFailed": "Failed to stop MCP server: {error}",
+  "@mcpStopFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpResetTokenFailed": "Failed to reset token: {error}",
+  "@mcpResetTokenFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpCopyValueEmpty": "{label} is empty",
+  "@mcpCopyValueEmpty": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopiedToast": "{label} copied",
+  "@mcpCopiedToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopyFailed": "Failed to copy {label}: {error}",
+  "@mcpCopyFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  }
 }

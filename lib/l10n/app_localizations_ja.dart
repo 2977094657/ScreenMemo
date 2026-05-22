@@ -4080,4 +4080,105 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get composerAnalyzeImageFallbackPrompt => 'この画像を分析してください。';
+
+  @override
+  String get mcpServiceTitle => 'MCP サービス';
+
+  @override
+  String get mcpLanServerTitle => 'LAN MCP サービス';
+
+  @override
+  String mcpRunningOnPort(Object port) {
+    return 'ポート $port で実行中';
+  }
+
+  @override
+  String get mcpStopped => '停止中';
+
+  @override
+  String get mcpLastErrorTitle => '前回のエラー';
+
+  @override
+  String get mcpEndpointLabel => 'エンドポイント';
+
+  @override
+  String get mcpNoLanIpDetected => 'LAN IP が検出されていません';
+
+  @override
+  String get mcpBearerTokenLabel => 'Bearer トークン';
+
+  @override
+  String get mcpTokenCopyLabel => 'トークン';
+
+  @override
+  String get mcpUnavailable => '利用不可';
+
+  @override
+  String get mcpResetTokenTitle => 'トークンをリセット';
+
+  @override
+  String get mcpResetTokenSubtitle => '以前のトークンは直ちに無効になります。';
+
+  @override
+  String get mcpAiInstallTitle => 'AI に渡して設定';
+
+  @override
+  String get mcpAiInstallCopyLabel => '設定手順をコピー';
+
+  @override
+  String get mcpConnectionUnavailableHint =>
+      'サービスを起動し LAN IP が検出されると、ここにコピー可能な設定手順が表示されます。';
+
+  @override
+  String mcpAiInstallPrompt(Object endpoint, Object token) {
+    return 'ScreenMemo を MCP サービスとして追加してください。\n\n接続情報：\n- トランスポート：Streamable HTTP MCP\n- URL：$endpoint\n- ヘッダー：Authorization: Bearer $token\n\nクライアントのフィールド名が異なる場合は、同じ URL と Authorization ヘッダーを手動で設定してください。';
+  }
+
+  @override
+  String get mcpResetTokenDialogTitle => 'トークンをリセットしますか？';
+
+  @override
+  String get mcpResetTokenDialogMessage =>
+      '古いトークンを使用している既存クライアントは直ちにアクセスできなくなります。';
+
+  @override
+  String get mcpResetTokenConfirm => 'リセット';
+
+  @override
+  String get mcpTokenResetToast => 'トークンをリセットしました';
+
+  @override
+  String mcpLoadStatusFailed(Object error) {
+    return 'MCP 状態の読み込みに失敗しました：$error';
+  }
+
+  @override
+  String mcpStartFailed(Object error) {
+    return 'MCP サービスの起動に失敗しました：$error';
+  }
+
+  @override
+  String mcpStopFailed(Object error) {
+    return 'MCP サービスの停止に失敗しました：$error';
+  }
+
+  @override
+  String mcpResetTokenFailed(Object error) {
+    return 'トークンのリセットに失敗しました：$error';
+  }
+
+  @override
+  String mcpCopyValueEmpty(Object label) {
+    return '$label が空です';
+  }
+
+  @override
+  String mcpCopiedToast(Object label) {
+    return '$label をコピーしました';
+  }
+
+  @override
+  String mcpCopyFailed(Object label, Object error) {
+    return '$label のコピーに失敗しました：$error';
+  }
 }

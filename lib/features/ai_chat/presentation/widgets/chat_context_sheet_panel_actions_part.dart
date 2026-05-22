@@ -15,6 +15,103 @@ extension _ChatContextPanelActionsPart on _ChatContextPanelState {
     } catch (_) {}
   }
 
+  Future<void> _showEditModelContextWindowDialog({
+    required String model,
+    required int currentCapTokens,
+  }) async {
+    final String modelName = model.trim();
+    if (modelName.isEmpty) return;
+
+    final TextEditingController controller = TextEditingController(
+      text: currentCapTokens > 0 ? currentCapTokens.toString() : '',
+    );
+    try {
+      final int? next = await showDialog<int>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(
+              ChatContextSheet._loc(
+                dialogContext,
+                '编辑模型上下文大小',
+                'Edit model context size',
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  modelName,
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: ChatContextSheet._loc(
+                      dialogContext,
+                      '上下文 token 上限',
+                      'Context token limit',
+                    ),
+                    hintText: '128000',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(AppLocalizations.of(dialogContext).dialogCancel),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final int? parsed = int.tryParse(controller.text.trim());
+                  if (parsed == null || parsed < 256) {
+                    UINotifier.error(
+                      dialogContext,
+                      ChatContextSheet._loc(
+                        dialogContext,
+                        '请输入不小于 256 的整数',
+                        'Enter an integer greater than or equal to 256.',
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(parsed);
+                },
+                child: Text(ChatContextSheet._loc(dialogContext, '保存', 'Save')),
+              ),
+            ],
+          );
+        },
+      );
+      if (next == null) return;
+      await AIModelPromptCapsService.instance.setOverride(modelName, next);
+      if (!mounted) return;
+      _panelSetState(() {
+        _activeModelContextTokens = next.clamp(256, 1 << 30).toInt();
+        _lastPromptModelForCapOverride = '';
+      });
+      _reload();
+      AISettingsService.instance.notifyContextChanged('chat:prompt_tokens');
+      UINotifier.success(
+        context,
+        ChatContextSheet._loc(
+          context,
+          '模型上下文大小已更新',
+          'Model context size updated.',
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   String _trimEventTitle(ChatContextEvent event) {
     final NumberFormat nf = NumberFormat.decimalPattern();
     return ChatContextSheet._loc(

@@ -2,6 +2,7 @@ package com.fqyw.screen_memo.capture
 
 import com.fqyw.screen_memo.logging.FileLogger
 import com.fqyw.screen_memo.MainActivity
+import com.fqyw.screen_memo.mcp.McpServerService
 import com.fqyw.screen_memo.service.RestartReceiver
 import com.fqyw.screen_memo.service.ServiceStateManager
 import android.app.ActivityManager
@@ -60,12 +61,14 @@ object AccessibilityServiceWatchdog {
     fun startWatchdog(context: Context) {
         if (isWatchdogRunning) {
             FileLogger.w(TAG, "看门狗已在运行，跳过启动")
+            restoreMcpServerIfEnabled(context, "watchdog_already_running")
             return
         }
         
         try {
             FileLogger.e(TAG, "=== 启动AccessibilityService看门狗 ===")
             isWatchdogRunning = true
+            restoreMcpServerIfEnabled(context, "watchdog_start")
             
             // 启动定时检查
             watchdogTimer = timer(
@@ -352,6 +355,8 @@ object AccessibilityServiceWatchdog {
      */
     private fun triggerServiceRestart(context: Context) {
         try {
+            restoreMcpServerIfEnabled(context, "watchdog_trigger_restart")
+
             // 方法1: 启动ScreenCaptureService前台服务
             val serviceIntent = Intent(context, ScreenCaptureService::class.java)
             try {
@@ -386,6 +391,18 @@ object AccessibilityServiceWatchdog {
             
         } catch (e: Exception) {
             FileLogger.e(TAG, "触发服务重启失败", e)
+        }
+    }
+
+    /**
+     * 看门狗修复截图服务时，同步拉起已启用的 MCP 前台服务。
+     */
+    private fun restoreMcpServerIfEnabled(context: Context, reason: String) {
+        try {
+            McpServerService.restoreIfEnabled(context)
+            FileLogger.i(TAG, "MCP 服务恢复检查完成: $reason")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "MCP 服务恢复检查失败: $reason", e)
         }
     }
     

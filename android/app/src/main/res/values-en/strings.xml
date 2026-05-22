@@ -16,4 +16,9 @@
     <string name="fg_time_minutes_ago">%1$d min ago</string>
     <string name="fg_time_hours_ago">%1$d hr ago</string>
     <string name="fg_time_days_ago">%1$d d ago</string>
+    <string name="mcp_server_channel_name">MCP service</string>
+    <string name="mcp_server_channel_desc">Shows the LAN MCP service status</string>
+    <string name="mcp_server_notification_title">ScreenMemo MCP service is running</string>
+    <string name="mcp_server_notification_port_text">Port %1$d is running. Connect to this device LAN IP.</string>
+    <string name="mcp_fgs_special_use_subtype">Keeps the LAN MCP service running after the user enables it</string>
 </resources>

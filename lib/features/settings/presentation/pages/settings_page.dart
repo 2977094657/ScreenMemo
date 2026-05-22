@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -32,6 +33,7 @@ import 'package:screen_memo/features/diagnostics/application/log_export_service.
 import 'package:screen_memo/features/nsfw/application/nsfw_preference_service.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/app_health/application/app_health_service.dart';
+import 'package:screen_memo/features/mcp/application/mcp_service.dart';
 import 'package:screen_memo/features/updater/presentation/update_prompt_coordinator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -46,6 +48,7 @@ part 'settings_page_nsfw_part.dart';
 part 'settings_page_daily_notify_part.dart';
 part 'settings_page_app_health_part.dart';
 part 'settings_page_logs_part.dart';
+part 'settings_page_mcp_part.dart';
 
 enum _ImportMode { overwrite, merge }
 
@@ -57,6 +60,7 @@ enum _SettingsSubPage {
   segmentSummary,
   dailyReminder,
   appHealth,
+  mcpService,
   dataBackup,
   logManagement,
   advanced,
@@ -180,6 +184,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _logManagementLoading = false;
   bool _logManagementSharing = false;
   bool _logManagementDeleting = false;
+  McpServerStatus? _mcpStatus;
+  bool _mcpLoading = false;
   late final Future<PackageInfo> _packageInfoFuture =
       PackageInfo.fromPlatform();
   int _aboutVersionTapCount = 0;
@@ -286,6 +292,9 @@ class _SettingsPageState extends State<SettingsPage>
         break;
       case _SettingsSubPage.appHealth:
         unawaited(_loadAppHealthStatus(refresh: true));
+        break;
+      case _SettingsSubPage.mcpService:
+        unawaited(_loadMcpStatus());
         break;
       case _SettingsSubPage.dataBackup:
         break;

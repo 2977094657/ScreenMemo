@@ -3,6 +3,7 @@ package com.fqyw.screen_memo.service
 import com.fqyw.screen_memo.capture.ScreenCaptureAccessibilityService
 import com.fqyw.screen_memo.capture.ScreenCaptureService
 import com.fqyw.screen_memo.logging.FileLogger
+import com.fqyw.screen_memo.mcp.McpServerService
 import com.fqyw.screen_memo.segment.SegmentSummaryManager
 import android.app.job.JobParameters
 import android.app.job.JobService
@@ -74,6 +75,12 @@ class KeepAliveJobService : JobService() {
                 SegmentSummaryManager.tick(this)
             } catch (e: Exception) {
                 FileLogger.e(TAG, "tick 调用失败", e)
+            }
+
+            try {
+                McpServerService.restoreIfEnabled(this)
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "恢复 MCP 服务失败", e)
             }
 
             // 任务执行完成

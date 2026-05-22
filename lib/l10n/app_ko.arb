@@ -2189,5 +2189,79 @@
     }
   },
   "composerImagePromptRequired": "이미지를 생성할 프롬프트를 입력하세요.",
-  "composerAnalyzeImageFallbackPrompt": "이 이미지를 분석해 주세요."
+  "composerAnalyzeImageFallbackPrompt": "이 이미지를 분석해 주세요.",
+  "mcpServiceTitle": "MCP 서비스",
+  "mcpLanServerTitle": "LAN MCP 서비스",
+  "mcpRunningOnPort": "포트 {port}에서 실행 중",
+  "@mcpRunningOnPort": {
+    "placeholders": {
+      "port": {}
+    }
+  },
+  "mcpStopped": "중지됨",
+  "mcpLastErrorTitle": "마지막 오류",
+  "mcpEndpointLabel": "엔드포인트",
+  "mcpNoLanIpDetected": "LAN IP를 감지하지 못했습니다",
+  "mcpBearerTokenLabel": "Bearer 토큰",
+  "mcpTokenCopyLabel": "토큰",
+  "mcpUnavailable": "사용할 수 없음",
+  "mcpResetTokenTitle": "토큰 재설정",
+  "mcpResetTokenSubtitle": "이전 토큰이 즉시 무효화됩니다.",
+  "mcpAiInstallTitle": "AI에게 설정 맡기기",
+  "mcpAiInstallCopyLabel": "설정 안내 복사",
+  "mcpConnectionUnavailableHint": "서비스를 시작하고 LAN IP가 감지되면 복사 가능한 설정 안내가 여기에 표시됩니다.",
+  "mcpAiInstallPrompt": "ScreenMemo를 MCP 서비스로 추가해 주세요.\n\n연결 정보:\n- 전송 방식: Streamable HTTP MCP\n- URL: {endpoint}\n- 헤더: Authorization: Bearer {token}\n\n클라이언트의 필드 이름이 다르면 같은 URL과 Authorization 헤더를 수동으로 설정하세요.",
+  "@mcpAiInstallPrompt": {
+    "placeholders": {
+      "endpoint": {},
+      "token": {}
+    }
+  },
+  "mcpResetTokenDialogTitle": "토큰을 재설정할까요?",
+  "mcpResetTokenDialogMessage": "기존 토큰을 사용하는 클라이언트는 즉시 접근 권한을 잃습니다.",
+  "mcpResetTokenConfirm": "재설정",
+  "mcpTokenResetToast": "토큰을 재설정했습니다",
+  "mcpLoadStatusFailed": "MCP 상태를 불러오지 못했습니다: {error}",
+  "@mcpLoadStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStartFailed": "MCP 서비스를 시작하지 못했습니다: {error}",
+  "@mcpStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpStopFailed": "MCP 서비스를 중지하지 못했습니다: {error}",
+  "@mcpStopFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpResetTokenFailed": "토큰을 재설정하지 못했습니다: {error}",
+  "@mcpResetTokenFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "mcpCopyValueEmpty": "{label}이(가) 비어 있습니다",
+  "@mcpCopyValueEmpty": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopiedToast": "{label} 복사됨",
+  "@mcpCopiedToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "mcpCopyFailed": "{label} 복사 실패: {error}",
+  "@mcpCopyFailed": {
+    "placeholders": {
+      "label": {},
+      "error": {}
+    }
+  }
 }

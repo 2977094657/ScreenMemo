@@ -18,6 +18,7 @@ import com.fqyw.screen_memo.settings.LegacySettingKeysNative
 import com.fqyw.screen_memo.MainActivity
 import com.fqyw.screen_memo.diagnostics.OEMCompatibilityHelper
 import com.fqyw.screen_memo.logging.OutputFileLogger
+import com.fqyw.screen_memo.mcp.McpServerService
 import com.fqyw.screen_memo.permissions.PermissionGuideHelper
 import com.fqyw.screen_memo.diagnostics.RuntimeDiagnostics
 import com.fqyw.screen_memo.database.SegmentDatabaseHelper
@@ -88,6 +89,10 @@ class ExtractedMainMethodHandler(
             "ensureDynamicRebuildTaskResumed" -> ensureDynamicRebuildTaskResumed(result)
             "cancelDynamicRebuildTask" -> cancelDynamicRebuildTask(result)
             "clearDynamicRebuildTask" -> clearDynamicRebuildTask(result)
+            "startMcpServer" -> startMcpServer(result)
+            "stopMcpServer" -> stopMcpServer(result)
+            "getMcpServerStatus" -> getMcpServerStatus(result)
+            "resetMcpToken" -> resetMcpToken(result)
             "triggerSegmentTick" -> triggerSegmentTick(result)
             "retrySegments" -> retrySegments(call, result)
             "forceMergeSegment" -> forceMergeSegment(call, result)
@@ -634,6 +639,38 @@ class ExtractedMainMethodHandler(
             result.success(DynamicRebuildService.clearTask(activity.applicationContext))
         } catch (e: Exception) {
             result.error("clear_dynamic_rebuild_task_failed", e.message, null)
+        }
+    }
+
+    private fun startMcpServer(result: MethodChannel.Result) {
+        try {
+            result.success(McpServerService.startServer(activity.applicationContext))
+        } catch (e: Exception) {
+            result.error("start_mcp_server_failed", e.message, null)
+        }
+    }
+
+    private fun stopMcpServer(result: MethodChannel.Result) {
+        try {
+            result.success(McpServerService.stopServer(activity.applicationContext))
+        } catch (e: Exception) {
+            result.error("stop_mcp_server_failed", e.message, null)
+        }
+    }
+
+    private fun getMcpServerStatus(result: MethodChannel.Result) {
+        try {
+            result.success(McpServerService.getStatus(activity.applicationContext))
+        } catch (e: Exception) {
+            result.error("get_mcp_server_status_failed", e.message, null)
+        }
+    }
+
+    private fun resetMcpToken(result: MethodChannel.Result) {
+        try {
+            result.success(McpServerService.resetToken(activity.applicationContext))
+        } catch (e: Exception) {
+            result.error("reset_mcp_token_failed", e.message, null)
         }
     }
 

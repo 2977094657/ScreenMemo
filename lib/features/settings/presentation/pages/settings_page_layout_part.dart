@@ -2,6 +2,8 @@ part of 'settings_page.dart';
 
 // ========== 设置页布局与通用组件 ==========
 extension _SettingsLayoutPart on _SettingsPageState {
+  static const String _mcpIconAsset = 'assets/icons/ai/mcp.svg';
+
   PreferredSizeWidget _buildSettingsAppBar(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     String title = l10n.settingsTitle;
@@ -17,6 +19,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
       title = l10n.dailyReminderSectionTitle;
     } else if (_subPage == _SettingsSubPage.appHealth) {
       title = 'App 运行状态';
+    } else if (_subPage == _SettingsSubPage.mcpService) {
+      title = l10n.mcpServiceTitle;
     } else if (_subPage == _SettingsSubPage.dataBackup) {
       title = l10n.dataBackupSectionTitle;
     } else if (_subPage == _SettingsSubPage.logManagement) {
@@ -76,6 +80,12 @@ extension _SettingsLayoutPart on _SettingsPageState {
             onPressed: () => _loadAppHealthStatus(refresh: true),
             tooltip: '刷新状态',
           ),
+        if (_subPage == _SettingsSubPage.mcpService)
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _mcpLoading ? null : _loadMcpStatus,
+            tooltip: l10n.actionRefresh,
+          ),
         if (_subPage == _SettingsSubPage.logManagement)
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -95,6 +105,7 @@ extension _SettingsLayoutPart on _SettingsPageState {
           ),
         if (_subPage != _SettingsSubPage.permissions &&
             _subPage != _SettingsSubPage.appHealth &&
+            _subPage != _SettingsSubPage.mcpService &&
             _subPage != _SettingsSubPage.logManagement)
           const SizedBox(width: kToolbarHeight),
       ],
@@ -159,6 +170,14 @@ extension _SettingsLayoutPart on _SettingsPageState {
                   showBottomBorder: true,
                   isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.appHealth),
+                ),
+                _buildNavItem(
+                  context: context,
+                  leading: _buildMcpLeadingIcon(context),
+                  title: AppLocalizations.of(context).mcpServiceTitle,
+                  showBottomBorder: true,
+                  isRootPageItem: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.mcpService),
                 ),
                 _buildNavItem(
                   context: context,
@@ -286,6 +305,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
         );
       case _SettingsSubPage.appHealth:
         return _buildAppHealthPage(context);
+      case _SettingsSubPage.mcpService:
+        return _buildMcpServicePage(context);
       case _SettingsSubPage.dataBackup:
         return ListView(
           padding: _settingsListPadding(),
@@ -348,12 +369,14 @@ extension _SettingsLayoutPart on _SettingsPageState {
 
   Widget _buildNavItem({
     required BuildContext context,
-    required IconData icon,
+    IconData? icon,
+    Widget? leading,
     required String title,
     required bool showBottomBorder,
     bool isRootPageItem = false,
     required VoidCallback onTap,
   }) {
+    assert(icon != null || leading != null);
     final theme = Theme.of(context);
     final borderSide = _settingsDividerSide(context);
     final EdgeInsetsGeometry padding = EdgeInsets.symmetric(
@@ -371,7 +394,7 @@ extension _SettingsLayoutPart on _SettingsPageState {
         ),
         child: Row(
           children: [
-            _buildSettingsLeadingIcon(context, icon),
+            leading ?? _buildSettingsLeadingIcon(context, icon!),
             const SizedBox(width: AppTheme.spacing3),
             Expanded(
               child: Text(
@@ -407,6 +430,23 @@ extension _SettingsLayoutPart on _SettingsPageState {
           icon,
           color: color ?? colorScheme.onSurfaceVariant,
           size: 18,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMcpLeadingIcon(BuildContext context, {Color? color}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final iconColor = color ?? colorScheme.onSurfaceVariant;
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(
+        child: SvgPicture.asset(
+          _mcpIconAsset,
+          width: 18,
+          height: 18,
+          colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
         ),
       ),
     );

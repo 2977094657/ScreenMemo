@@ -245,11 +245,33 @@ extension _ChatContextPanelWidgetsPart on _ChatContextPanelState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            ChatContextSheet._loc(context, 'token用量', 'Token usage'),
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(context, 'token用量', 'Token usage'),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: ChatContextSheet._loc(
+                  context,
+                  '编辑模型上下文大小',
+                  'Edit model context size',
+                ),
+                visualDensity: VisualDensity.compact,
+                iconSize: 18,
+                onPressed: model.trim().isEmpty
+                    ? null
+                    : () => _showEditModelContextWindowDialog(
+                        model: model,
+                        currentCapTokens: capTokens,
+                      ),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ],
           ),
           const SizedBox(height: AppTheme.spacing2),
           Text(

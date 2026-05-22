@@ -204,6 +204,15 @@ cd android
 ./gradlew test
 ```
 
+## MCP 服务
+
+ScreenMemo 可以在手机上手动开启只读的局域网 MCP 服务，让同一局域网内的 AI 客户端读取动态摘要、搜索结果、上下文片段和少量显式请求的证据图片。
+
+- 在 Android App 的“设置 → MCP 服务”中手动开启局域网 MCP 服务。
+- Endpoint 固定为 `http://<手机局域网IP>:37621/mcp`，请求必须带 `Authorization: Bearer <token>`。
+- 默认不会返回 OCR 原文或图片 base64。只有工具参数显式开启 `include_ocr`，或调用 `get_evidence_images` 时才会返回敏感内容，并带有数量/长度限制。
+- 若端口 `37621` 被占用，设置页会显示启动错误，不会自动切换随机端口。
+
 ## 社区群聊
 
 <div align="center">
@@ -244,16 +253,6 @@ cd android
 - 当前内置提供商类型包括 `OpenAI`、`Azure OpenAI`、`Claude`、`Gemini` 和 `Custom`
 - `Custom` 适合接入兼容 OpenAI 风格接口的自建或第三方中转服务
 - 不同 AI 上下文可以分别绑定不同的提供商与模型
-</details>
-
-<details>
-<summary>AI 对话里的 token 进度条是怎么计算的？</summary>
-
-- 进度条表示最近一次实际发送给模型的上下文占用，会在请求发起时先按本地估算刷新，模型返回后再用服务端 usage 校准
-- 顶部进度条采用 Codex 风格的上下文窗口口径：以最近一次调用的 `last token usage` 为准，并扣除固定 baseline 后显示有效占用比例
-- 详情面板会拆分最近一次调用和本会话累计，包括非缓存输入、缓存输入、输出、推理输出和用于显示的 total
-- 文本估算采用 UTF-8 字节数约除以 4 的近似值；图片会按多模态内容占位符估算，不会把 base64 原始字符串当作文本 token 计入
-- 详情面板会区分系统提示、工具 schema、对话记忆、历史消息和本次输入等来源，便于定位上下文增长来自哪里
 </details>
 
 <details>
