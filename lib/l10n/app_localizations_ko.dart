@@ -508,13 +508,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get aboutCurrentVersion => '현재 버전';
 
   @override
-  String get aboutPrivacyTitle => '개인정보';
-
-  @override
-  String get aboutPrivacyDesc =>
-      '스크린샷, OCR, 인덱스, 통계 및 대부분의 설정은 기본적으로 로컬에 저장됩니다. AI 기능을 명시적으로 활성화하고 제공자를 설정한 경우에만 요약 또는 채팅 요청이 설정한 모델 서비스로 전송됩니다.';
-
-  @override
   String get aboutFeedbackTitle => '커뮤니티 및 피드백';
 
   @override
@@ -528,6 +521,51 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get aboutIssueFeedback => '문제 피드백';
+
+  @override
+  String get supportSectionTitle => '유지보수 지원';
+
+  @override
+  String get supportEntryTitle => 'ScreenMemo 지원하기';
+
+  @override
+  String get supportEntrySubtitle =>
+      '중요한 단서를 다시 찾는 데 도움이 되었다면, 개발자에게 커피 한 잔을 선물할 수 있습니다.';
+
+  @override
+  String get supportPageTitle => 'ScreenMemo 지원하기';
+
+  @override
+  String get supportIntroTitle => '이 프로젝트를 지원해 주셔서 감사합니다';
+
+  @override
+  String get supportIntroBody =>
+      'ScreenMemo는 로컬 우선 기록, 검색, 회고라는 방향을 계속 지켜 나갑니다. 후원은 장기 유지보수, 호환성 대응, 기능 완성도를 높이는 데 직접적인 힘이 됩니다.';
+
+  @override
+  String get supportWishListTitle => '후원이 돕는 개선';
+
+  @override
+  String get supportWishMorePlatforms =>
+      '완전한 멀티 플랫폼 생태계: PC 등 더 많은 플랫폼 기능을 개발해 개인 디지털 기억이 기기 사이에서 이어지게 합니다.';
+
+  @override
+  String get supportWishReviewViews =>
+      '더 풍부한 표시 형식: 주간, 월간, 연간 요약 등 다양한 요약을 도입해 장기 회고를 더 입체적으로 만듭니다.';
+
+  @override
+  String get supportWishCompatibility =>
+      '안정성 및 호환성: Android 버전, 기기 차이, 백그라운드 제한에 계속 대응합니다.';
+
+  @override
+  String get supportDonationMethodsTitle => '후원 방법';
+
+  @override
+  String get supportVoluntaryNote =>
+      '후원은 완전히 자발적이며 어떤 기능 사용에도 영향을 주지 않습니다. 꾸준한 사용, 문제 보고, 제안도 ScreenMemo를 돕는 방식입니다.';
+
+  @override
+  String get supportQrMissing => '실제 결제 QR 코드로 교체하세요';
 
   @override
   String get aboutOpenSourceTitle => '오픈소스';

@@ -89,18 +89,6 @@ extension _SettingsAboutPart on _SettingsPageState {
               ],
             ),
             const SizedBox(height: AppTheme.spacing3),
-            _buildAboutSectionTitle(context, l10n.aboutPrivacyTitle),
-            _buildCard(
-              context: context,
-              children: [
-                _buildAboutTextBlock(
-                  context: context,
-                  icon: Icons.privacy_tip_outlined,
-                  text: l10n.aboutPrivacyDesc,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacing3),
             _buildAboutSectionTitle(context, l10n.aboutFeedbackTitle),
             _buildCard(
               context: context,
@@ -128,6 +116,20 @@ extension _SettingsAboutPart on _SettingsPageState {
                   subtitle: l10n.aboutFeedbackDesc,
                   url: 'https://github.com/2977094657/ScreenMemo/issues',
                   showBottomBorder: false,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacing3),
+            _buildAboutSectionTitle(context, l10n.supportSectionTitle),
+            _buildCard(
+              context: context,
+              children: [
+                _buildAboutNavItem(
+                  context: context,
+                  icon: Icons.volunteer_activism_outlined,
+                  title: l10n.supportEntryTitle,
+                  subtitle: l10n.supportEntrySubtitle,
+                  onTap: () => _switchSubPage(_SettingsSubPage.support),
                 ),
               ],
             ),
@@ -175,33 +177,6 @@ extension _SettingsAboutPart on _SettingsPageState {
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
         ),
-      ),
-    );
-  }
-
-  Widget _buildAboutTextBlock({
-    required BuildContext context,
-    required IconData icon,
-    required String text,
-  }) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(AppTheme.spacing4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSettingsLeadingIcon(context, icon),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Text(
-              text,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.45,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -308,6 +283,64 @@ extension _SettingsAboutPart on _SettingsPageState {
             Icon(
               Icons.open_in_new,
               size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAboutNavItem({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing3,
+        ),
+        child: Row(
+          children: [
+            _buildSettingsLeadingIcon(
+              context,
+              icon,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],

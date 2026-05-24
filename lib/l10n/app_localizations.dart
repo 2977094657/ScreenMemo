@@ -1038,18 +1038,6 @@ abstract class AppLocalizations {
   /// **'Current version'**
   String get aboutCurrentVersion;
 
-  /// No description provided for @aboutPrivacyTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Privacy'**
-  String get aboutPrivacyTitle;
-
-  /// No description provided for @aboutPrivacyDesc.
-  ///
-  /// In en, this message translates to:
-  /// **'Screenshots, OCR, indexes, statistics, and most settings are stored locally by default. Summary or chat requests are sent only after you explicitly enable AI features and configure a provider.'**
-  String get aboutPrivacyDesc;
-
   /// No description provided for @aboutFeedbackTitle.
   ///
   /// In en, this message translates to:
@@ -1079,6 +1067,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Issue feedback'**
   String get aboutIssueFeedback;
+
+  /// No description provided for @supportSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support maintenance'**
+  String get supportSectionTitle;
+
+  /// No description provided for @supportEntryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support ScreenMemo'**
+  String get supportEntryTitle;
+
+  /// No description provided for @supportEntrySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'If it helped you recover an important clue, you can buy the author a coffee.'**
+  String get supportEntrySubtitle;
+
+  /// No description provided for @supportPageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support ScreenMemo'**
+  String get supportPageTitle;
+
+  /// No description provided for @supportIntroTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you for supporting this project'**
+  String get supportIntroTitle;
+
+  /// No description provided for @supportIntroBody.
+  ///
+  /// In en, this message translates to:
+  /// **'ScreenMemo will keep focusing on local-first capture, retrieval, and review. Your support directly encourages long-term maintenance, compatibility work, and careful feature polish.'**
+  String get supportIntroBody;
+
+  /// No description provided for @supportWishListTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your support helps these improvements'**
+  String get supportWishListTitle;
+
+  /// No description provided for @supportWishMorePlatforms.
+  ///
+  /// In en, this message translates to:
+  /// **'A complete multi-platform ecosystem: develop PC and more platform capabilities so personal digital memory flows across devices.'**
+  String get supportWishMorePlatforms;
+
+  /// No description provided for @supportWishReviewViews.
+  ///
+  /// In en, this message translates to:
+  /// **'Richer presentation formats: add weekly, monthly, yearly, and other summaries for more layered long-term review.'**
+  String get supportWishReviewViews;
+
+  /// No description provided for @supportWishCompatibility.
+  ///
+  /// In en, this message translates to:
+  /// **'Stability and compatibility: keep adapting to Android versions, device differences, and background limits.'**
+  String get supportWishCompatibility;
+
+  /// No description provided for @supportDonationMethodsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support methods'**
+  String get supportDonationMethodsTitle;
+
+  /// No description provided for @supportVoluntaryNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Support is completely voluntary and never affects app features. Careful use, issue reports, and suggestions also help ScreenMemo.'**
+  String get supportVoluntaryNote;
+
+  /// No description provided for @supportQrMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace with your real payment QR code'**
+  String get supportQrMissing;
 
   /// No description provided for @aboutOpenSourceTitle.
   ///

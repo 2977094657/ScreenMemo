@@ -49,6 +49,7 @@ part 'settings_page_daily_notify_part.dart';
 part 'settings_page_app_health_part.dart';
 part 'settings_page_logs_part.dart';
 part 'settings_page_mcp_part.dart';
+part 'settings_page_support_part.dart';
 
 enum _ImportMode { overwrite, merge }
 
@@ -65,6 +66,7 @@ enum _SettingsSubPage {
   logManagement,
   advanced,
   about,
+  support,
 }
 
 class SettingsPageController {
@@ -308,6 +310,8 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadDynamicEntryLogIconEnabled());
         break;
       case _SettingsSubPage.about:
+        break;
+      case _SettingsSubPage.support:
         break;
     }
   }

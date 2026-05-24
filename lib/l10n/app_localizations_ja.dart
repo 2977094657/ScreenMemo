@@ -509,13 +509,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get aboutCurrentVersion => '現在のバージョン';
 
   @override
-  String get aboutPrivacyTitle => 'プライバシー';
-
-  @override
-  String get aboutPrivacyDesc =>
-      'スクリーンショット、OCR、インデックス、統計、多くの設定は既定でローカルに保存されます。AI 機能を明示的に有効にし、プロバイダーを設定した場合のみ、要約やチャットのリクエストが設定先のモデルサービスへ送信されます。';
-
-  @override
   String get aboutFeedbackTitle => 'コミュニティとフィードバック';
 
   @override
@@ -529,6 +522,50 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get aboutIssueFeedback => '問題を報告';
+
+  @override
+  String get supportSectionTitle => 'メンテナンスを支援';
+
+  @override
+  String get supportEntryTitle => 'ScreenMemo を支援';
+
+  @override
+  String get supportEntrySubtitle => '大切な手がかりを見つける助けになったなら、作者にコーヒーをおごることができます。';
+
+  @override
+  String get supportPageTitle => 'ScreenMemo を支援';
+
+  @override
+  String get supportIntroTitle => 'このプロジェクトを支えてくれてありがとうございます';
+
+  @override
+  String get supportIntroBody =>
+      'ScreenMemo は、ローカル優先の記録、検索、振り返りを大切にして開発を続けます。支援は長期メンテナンス、互換性対応、機能の磨き込みを直接後押しします。';
+
+  @override
+  String get supportWishListTitle => '支援が後押しする改善';
+
+  @override
+  String get supportWishMorePlatforms =>
+      '完全なマルチプラットフォームエコシステム：PC などの対応を開発し、個人のデジタル記憶がデバイスをまたいでつながるようにします。';
+
+  @override
+  String get supportWishReviewViews =>
+      'より豊かな表示形式：週次、月次、年次など多様な要約を取り入れ、長期的な振り返りに階層を持たせます。';
+
+  @override
+  String get supportWishCompatibility =>
+      '安定性と互換性：Android バージョン、端末差、バックグラウンド制限への対応を続けます。';
+
+  @override
+  String get supportDonationMethodsTitle => '支援方法';
+
+  @override
+  String get supportVoluntaryNote =>
+      '支援は完全に任意で、どの機能の利用にも影響しません。丁寧に使うこと、不具合報告、提案も ScreenMemo への大切な支援です。';
+
+  @override
+  String get supportQrMissing => '実際の支払い用 QR コードに置き換えてください';
 
   @override
   String get aboutOpenSourceTitle => 'オープンソース';

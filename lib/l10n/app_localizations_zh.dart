@@ -496,13 +496,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutCurrentVersion => '当前版本';
 
   @override
-  String get aboutPrivacyTitle => '隐私说明';
-
-  @override
-  String get aboutPrivacyDesc =>
-      '截图、OCR、索引、统计和大多数配置默认保存在本地。只有在你显式启用 AI 能力并配置提供商后，相关总结或对话请求才会发送到你配置的模型服务。';
-
-  @override
   String get aboutFeedbackTitle => '社区与反馈';
 
   @override
@@ -516,6 +509,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutIssueFeedback => '问题反馈';
+
+  @override
+  String get supportSectionTitle => '支持维护';
+
+  @override
+  String get supportEntryTitle => '支持 ScreenMemo';
+
+  @override
+  String get supportEntrySubtitle => '如果它帮你找回过重要线索，可以请作者喝杯咖啡。';
+
+  @override
+  String get supportPageTitle => '支持 ScreenMemo';
+
+  @override
+  String get supportIntroTitle => '谢谢你愿意支持这个项目';
+
+  @override
+  String get supportIntroBody =>
+      'ScreenMemo 会继续坚持本地优先、可检索、可回顾的方向。你的赞赏会给长期维护、兼容性适配和新功能打磨提供直接鼓励。';
+
+  @override
+  String get supportWishListTitle => '赞赏会推动这些改进';
+
+  @override
+  String get supportWishMorePlatforms =>
+      '多平台完整生态：开发 PC 等更多平台能力，让个人数字记忆在不同设备之间连续流动。';
+
+  @override
+  String get supportWishReviewViews =>
+      '更丰富的展示形式：引入周总结、月总结、年度总结等多样化总结，让长期回顾更有层次。';
+
+  @override
+  String get supportWishCompatibility =>
+      '稳定性与兼容性优化：持续适配 Android 版本、机型差异和后台运行限制。';
+
+  @override
+  String get supportDonationMethodsTitle => '赞赏方式';
+
+  @override
+  String get supportVoluntaryNote =>
+      '赞赏完全自愿，不会影响任何功能使用。能认真使用、反馈问题、提出建议，同样是在支持 ScreenMemo。';
+
+  @override
+  String get supportQrMissing => '请替换为真实收款码';
 
   @override
   String get aboutOpenSourceTitle => '开源许可';

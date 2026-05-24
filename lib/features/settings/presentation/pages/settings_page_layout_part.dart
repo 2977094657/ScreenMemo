@@ -29,6 +29,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
       title = l10n.advancedSectionTitle;
     } else if (_subPage == _SettingsSubPage.about) {
       title = l10n.aboutSectionTitle;
+    } else if (_subPage == _SettingsSubPage.support) {
+      title = l10n.supportPageTitle;
     }
 
     final bool canPop = Navigator.of(context).canPop();
@@ -342,6 +344,8 @@ extension _SettingsLayoutPart on _SettingsPageState {
         );
       case _SettingsSubPage.about:
         return _buildAboutPage(context);
+      case _SettingsSubPage.support:
+        return _buildSupportPage(context);
     }
   }
 

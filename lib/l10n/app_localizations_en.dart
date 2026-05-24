@@ -525,13 +525,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutCurrentVersion => 'Current version';
 
   @override
-  String get aboutPrivacyTitle => 'Privacy';
-
-  @override
-  String get aboutPrivacyDesc =>
-      'Screenshots, OCR, indexes, statistics, and most settings are stored locally by default. Summary or chat requests are sent only after you explicitly enable AI features and configure a provider.';
-
-  @override
   String get aboutFeedbackTitle => 'Community & feedback';
 
   @override
@@ -545,6 +538,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutIssueFeedback => 'Issue feedback';
+
+  @override
+  String get supportSectionTitle => 'Support maintenance';
+
+  @override
+  String get supportEntryTitle => 'Support ScreenMemo';
+
+  @override
+  String get supportEntrySubtitle =>
+      'If it helped you recover an important clue, you can buy the author a coffee.';
+
+  @override
+  String get supportPageTitle => 'Support ScreenMemo';
+
+  @override
+  String get supportIntroTitle => 'Thank you for supporting this project';
+
+  @override
+  String get supportIntroBody =>
+      'ScreenMemo will keep focusing on local-first capture, retrieval, and review. Your support directly encourages long-term maintenance, compatibility work, and careful feature polish.';
+
+  @override
+  String get supportWishListTitle => 'Your support helps these improvements';
+
+  @override
+  String get supportWishMorePlatforms =>
+      'A complete multi-platform ecosystem: develop PC and more platform capabilities so personal digital memory flows across devices.';
+
+  @override
+  String get supportWishReviewViews =>
+      'Richer presentation formats: add weekly, monthly, yearly, and other summaries for more layered long-term review.';
+
+  @override
+  String get supportWishCompatibility =>
+      'Stability and compatibility: keep adapting to Android versions, device differences, and background limits.';
+
+  @override
+  String get supportDonationMethodsTitle => 'Support methods';
+
+  @override
+  String get supportVoluntaryNote =>
+      'Support is completely voluntary and never affects app features. Careful use, issue reports, and suggestions also help ScreenMemo.';
+
+  @override
+  String get supportQrMissing => 'Replace with your real payment QR code';
 
   @override
   String get aboutOpenSourceTitle => 'Open source';

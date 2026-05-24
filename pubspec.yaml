@@ -122,6 +122,7 @@ flutter:
 
   assets:
     - logo.png
+    - assets/donate/
     - assets/icons/
     - assets/icons/ai/
 
