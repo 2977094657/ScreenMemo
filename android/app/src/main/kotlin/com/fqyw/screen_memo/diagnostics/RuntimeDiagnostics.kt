@@ -27,6 +27,7 @@ object RuntimeDiagnostics {
 
     private const val PREFS_NAME = "screen_memo_runtime_diag"
     private const val KEY_LAST_LOGGED_EXIT_TS = "last_logged_exit_ts"
+    private const val KEY_LAST_LOGGED_EXIT_TRACE_TS = "last_logged_exit_trace_ts"
     private const val KEY_LAST_STAGE = "last_stage"
     private const val KEY_LAST_STAGE_AT = "last_stage_at"
     private const val KEY_LAST_CAPTURE_SUCCESS_AT = "last_capture_success_at"
@@ -35,6 +36,10 @@ object RuntimeDiagnostics {
     private const val KEY_LAST_CAPTURE_FAILURE_REASON = "last_capture_failure_reason"
     private const val KEY_LAST_CAPTURE_FAILURE_CODE = "last_capture_failure_code"
     private const val KEY_PENDING_ISSUE_JSON = "pending_issue_json"
+    private const val EXIT_TRACE_MAX_LINES = 80
+    private const val EXIT_TRACE_MAX_LINE_CHARS = 240
+    private const val EXIT_TRACE_MAX_CHARS = 16_000
+    private const val EXIT_TRACE_LOG_CHUNK_CHARS = 1_800
 
     private val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     private val dateDirFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
@@ -207,6 +212,7 @@ object RuntimeDiagnostics {
 
         val prefs = prefs(context)
         val lastLoggedTs = prefs.getLong(KEY_LAST_LOGGED_EXIT_TS, 0L)
+        val lastLoggedTraceTs = prefs.getLong(KEY_LAST_LOGGED_EXIT_TRACE_TS, 0L)
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val exits = try {
             activityManager.getHistoricalProcessExitReasons(null, 0, 8)
@@ -230,32 +236,52 @@ object RuntimeDiagnostics {
         }
 
         var maxLoggedTs = lastLoggedTs
+        var maxLoggedTraceTs = lastLoggedTraceTs
+        val tracePreviews = HashMap<Long, String?>()
         filtered.forEach { info ->
-            if (info.timestamp <= lastLoggedTs) {
-                return@forEach
+            if (info.timestamp > lastLoggedTs) {
+                maxLoggedTs = maxOf(maxLoggedTs, info.timestamp)
+                val message = buildString {
+                    append("recent_exit")
+                    append(" | process=").append(info.processName ?: "-")
+                    append(" | reason=").append(exitReasonName(info.reason))
+                    append(" | status=").append(info.status)
+                    append(" | importance=").append(info.importance)
+                    append(" | timestamp=").append(formatTs(info.timestamp))
+                    append(" | desc=").append(info.description ?: "-")
+                }
+                logLine(context, tag, message, force = force)
             }
-            maxLoggedTs = maxOf(maxLoggedTs, info.timestamp)
-            val message = buildString {
-                append("recent_exit")
-                append(" | process=").append(info.processName ?: "-")
-                append(" | reason=").append(exitReasonName(info.reason))
-                append(" | status=").append(info.status)
-                append(" | importance=").append(info.importance)
-                append(" | timestamp=").append(formatTs(info.timestamp))
-                append(" | desc=").append(info.description ?: "-")
+
+            if (shouldCaptureExitTrace(info.reason) && info.timestamp > lastLoggedTraceTs) {
+                maxLoggedTraceTs = maxOf(maxLoggedTraceTs, info.timestamp)
+                val tracePreview = readExitTracePreview(info)
+                tracePreviews[info.timestamp] = tracePreview
+                logExitTracePreview(context, tag, info, tracePreview, force)
             }
-            logLine(context, tag, message, force = force)
         }
 
         val latestInteresting = filtered.firstOrNull { info ->
-            info.timestamp > lastLoggedTs && shouldSurfaceExitReason(info.reason)
+            shouldSurfaceExitReason(info.reason) &&
+                (info.timestamp > lastLoggedTs ||
+                    (shouldCaptureExitTrace(info.reason) && info.timestamp > lastLoggedTraceTs))
         }
         if (latestInteresting != null) {
-            recordPendingExitIssue(context, latestInteresting)
+            val tracePreview = when {
+                tracePreviews.containsKey(latestInteresting.timestamp) ->
+                    tracePreviews[latestInteresting.timestamp]
+                shouldCaptureExitTrace(latestInteresting.reason) ->
+                    readExitTracePreview(latestInteresting)
+                else -> null
+            }
+            recordPendingExitIssue(context, latestInteresting, tracePreview)
         }
 
-        if (maxLoggedTs > lastLoggedTs) {
-            prefs.edit().putLong(KEY_LAST_LOGGED_EXIT_TS, maxLoggedTs).apply()
+        if (maxLoggedTs > lastLoggedTs || maxLoggedTraceTs > lastLoggedTraceTs) {
+            prefs.edit()
+                .putLong(KEY_LAST_LOGGED_EXIT_TS, maxLoggedTs)
+                .putLong(KEY_LAST_LOGGED_EXIT_TRACE_TS, maxLoggedTraceTs)
+                .apply()
         }
     }
 
@@ -299,6 +325,94 @@ object RuntimeDiagnostics {
             ApplicationExitInfo.REASON_USER_REQUESTED,
             ApplicationExitInfo.REASON_USER_STOPPED -> true
             else -> false
+        }
+    }
+
+    private fun shouldCaptureExitTrace(reason: Int): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return false
+        }
+        return when (reason) {
+            ApplicationExitInfo.REASON_ANR,
+            ApplicationExitInfo.REASON_CRASH,
+            ApplicationExitInfo.REASON_CRASH_NATIVE,
+            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE,
+            ApplicationExitInfo.REASON_SIGNALED -> true
+            else -> false
+        }
+    }
+
+    private fun readExitTracePreview(info: ApplicationExitInfo): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+
+        return try {
+            val input = info.traceInputStream ?: return null
+            val builder = StringBuilder()
+            var lineCount = 0
+            input.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    if (lineCount >= EXIT_TRACE_MAX_LINES || builder.length >= EXIT_TRACE_MAX_CHARS) {
+                        break
+                    }
+
+                    val remainingChars = EXIT_TRACE_MAX_CHARS - builder.length
+                    if (remainingChars <= 0) {
+                        break
+                    }
+
+                    val clippedLine = if (line.length > EXIT_TRACE_MAX_LINE_CHARS) {
+                        line.take(EXIT_TRACE_MAX_LINE_CHARS) + "..."
+                    } else {
+                        line
+                    }
+                    val remainingForLine = remainingChars - 1
+                    if (remainingForLine <= 0) {
+                        break
+                    }
+                    builder.append(clippedLine.take(remainingForLine)).append('\n')
+                    lineCount += 1
+                }
+            }
+            builder.toString().trim().takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            "trace read failed: ${e.javaClass.simpleName}: ${e.message ?: "-"}"
+        }
+    }
+
+    private fun logExitTracePreview(
+        context: Context,
+        tag: String,
+        info: ApplicationExitInfo,
+        tracePreview: String?,
+        force: Boolean,
+    ) {
+        val reasonName = exitReasonName(info.reason)
+        if (tracePreview.isNullOrBlank()) {
+            logLine(
+                context,
+                tag,
+                "recent_exit_trace_unavailable | process=${info.processName ?: "-"} | reason=$reasonName | timestamp=${formatTs(info.timestamp)}",
+                force = force,
+            )
+            return
+        }
+
+        logLine(
+            context,
+            tag,
+            "recent_exit_trace | process=${info.processName ?: "-"} | reason=$reasonName | timestamp=${formatTs(info.timestamp)} | chars=${tracePreview.length}",
+            force = force,
+        )
+        for (start in tracePreview.indices step EXIT_TRACE_LOG_CHUNK_CHARS) {
+            val end = minOf(start + EXIT_TRACE_LOG_CHUNK_CHARS, tracePreview.length)
+            logLine(
+                context,
+                tag,
+                "recent_exit_trace_chunk | process=${info.processName ?: "-"} | reason=$reasonName | timestamp=${formatTs(info.timestamp)} | offset=$start | ${tracePreview.substring(start, end)}",
+                force = force,
+            )
         }
     }
 
@@ -358,7 +472,7 @@ object RuntimeDiagnostics {
         )
     }
 
-    private fun recordPendingExitIssue(context: Context, info: ApplicationExitInfo) {
+    private fun recordPendingExitIssue(context: Context, info: ApplicationExitInfo, tracePreview: String?) {
         val detectedAt = System.currentTimeMillis()
         val reasonName = exitReasonName(info.reason)
         val logFilePath = buildPreferredLogFilePath(context, detectedAt, preferError = false)
@@ -371,6 +485,7 @@ object RuntimeDiagnostics {
             "重要级别" to info.importance,
             "进程名" to (info.processName ?: "-"),
             "描述" to (info.description ?: "-"),
+            "Trace摘要" to (tracePreview?.take(1200) ?: "-"),
             "日志文件" to (logFilePath ?: "-"),
         )
         val summary = exitReasonSummary(reasonName, info.description)
@@ -387,6 +502,7 @@ object RuntimeDiagnostics {
                 "exitStatus" to info.status,
                 "exitImportance" to info.importance,
                 "exitDescription" to (info.description ?: ""),
+                "exitTracePreview" to (tracePreview ?: ""),
                 "logDirPath" to buildLogDirPath(context, detectedAt),
                 "logFilePath" to logFilePath,
                 "searchHint" to "recent_exit",
