@@ -391,6 +391,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
 
   List<String> _generatedImageFilenamesFromVisibleHistory({
     required int limit,
+    List<AIMessage>? messages,
   }) {
     if (limit <= 0) return const <String>[];
     final RegExp markerPattern = RegExp(
@@ -399,7 +400,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
     );
     final List<String> names = <String>[];
     final Set<String> seen = <String>{};
-    for (final AIMessage message in _messages) {
+    for (final AIMessage message in messages ?? _messages) {
       for (final RegExpMatch match in markerPattern.allMatches(
         message.content,
       )) {
@@ -414,9 +415,13 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
   }
 
   Future<List<_ComposerImageAttachment>>
-  _buildGeneratedImageHistoryAttachments({required int limit}) async {
+  _buildGeneratedImageHistoryAttachments({
+    required int limit,
+    List<AIMessage>? messages,
+  }) async {
     final List<String> names = _generatedImageFilenamesFromVisibleHistory(
       limit: limit,
+      messages: messages,
     );
     if (names.isEmpty) return const <_ComposerImageAttachment>[];
     final Map<String, String> paths = await ScreenshotDatabase.instance
@@ -445,12 +450,16 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
   Future<Object?> _buildChatUserApiContent({
     required String text,
     required List<_ComposerImageAttachment> currentImages,
+    List<AIMessage>? historyMessages,
   }) async {
     final int historyLimit = (_maxComposerImages - currentImages.length)
         .clamp(0, _maxComposerImages)
         .toInt();
     final List<_ComposerImageAttachment> generatedHistoryImages =
-        await _buildGeneratedImageHistoryAttachments(limit: historyLimit);
+        await _buildGeneratedImageHistoryAttachments(
+          limit: historyLimit,
+          messages: historyMessages,
+        );
     final List<_ComposerImageAttachment> allImages = <_ComposerImageAttachment>[
       ...generatedHistoryImages,
       ...currentImages,
@@ -602,6 +611,16 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
     }
   }
 
+  void _removeChatUiStateFromIndex(int startIndex) {
+    _thinkingBlocksByIndex.removeWhere((key, _) => key >= startIndex);
+    _contentSegmentsByIndex.removeWhere((key, _) => key >= startIndex);
+    _reasoningByIndex.removeWhere((key, _) => key >= startIndex);
+    _gatewayLogsByIndex.removeWhere((key, _) => key >= startIndex);
+    _gatewayLogFilePathByIndex.removeWhere((key, _) => key >= startIndex);
+    _reasoningDurationByIndex.removeWhere((key, _) => key >= startIndex);
+    _attachmentsByIndex.removeWhere((key, _) => key >= startIndex);
+  }
+
   Future<void> _retryMessageAt(int index) async {
     if (_sending) return;
     if (index < 0 || index >= _messages.length) return;
@@ -630,31 +649,20 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       _messages.take(userIndex),
     );
 
-    _setState(() {
-      _messages = trimmedMessages;
-      _thinkingBlocksByIndex.removeWhere((key, _) => key >= userIndex);
-      _contentSegmentsByIndex.removeWhere((key, _) => key >= userIndex);
-      _reasoningByIndex.removeWhere((key, _) => key >= userIndex);
-      _gatewayLogsByIndex.removeWhere((key, _) => key >= userIndex);
-      _gatewayLogFilePathByIndex.removeWhere((key, _) => key >= userIndex);
-      _reasoningDurationByIndex.removeWhere((key, _) => key >= userIndex);
-    });
-    if (conversationCid.isNotEmpty && cutoffCreatedAt > 0) {
-      _chatHistoryWriteEpoch++;
-      _chat.blockConversationPersistenceBefore(
-        cid: conversationCid,
-        createdAtMs: cutoffCreatedAt,
-      );
-      await _settings.truncateConversationAfterCreatedAt(
-        conversationCid,
-        cutoffCreatedAt,
-      );
-      await _settings.saveChatHistoryByCid(conversationCid, trimmedMessages);
-    }
-    await _sendMessage(overrideText: text);
+    await _sendMessage(
+      overrideText: text,
+      retryBaseMessages: trimmedMessages,
+      retryConversationCid: conversationCid,
+      retryCutoffCreatedAtMs: cutoffCreatedAt,
+    );
   }
 
-  Future<void> _sendMessage({String? overrideText}) async {
+  Future<void> _sendMessage({
+    String? overrideText,
+    List<AIMessage>? retryBaseMessages,
+    String? retryConversationCid,
+    int? retryCutoffCreatedAtMs,
+  }) async {
     if (_sending) return;
     final String? override = overrideText?.trim();
     final rawText = (override != null && override.isNotEmpty)
@@ -687,7 +695,17 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
 
     final int sendEpoch = ++_sendEpoch;
     _activeSendEpoch = sendEpoch;
-    final String initialCid = (_activeConversationCid ?? '').trim();
+    _ctxDebounceTimer?.cancel();
+    _ctxDebounceTimer = null;
+    final String retryCid = (retryConversationCid ?? '').trim();
+    final int retryCutoff = retryCutoffCreatedAtMs ?? 0;
+    final bool isRetry = retryBaseMessages != null && retryCutoff > 0;
+    final List<AIMessage>? retryBase = retryBaseMessages == null
+        ? null
+        : List<AIMessage>.from(retryBaseMessages);
+    final String initialCid = retryCid.isNotEmpty
+        ? retryCid
+        : (_activeConversationCid ?? '').trim();
     String requestCid = initialCid;
     try {
       if (requestCid.isEmpty) {
@@ -695,10 +713,26 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       }
       requestCid = requestCid.trim();
       _inFlightConversationCid = requestCid.isEmpty ? null : requestCid;
+      if (isRetry && requestCid.isNotEmpty) {
+        _chatHistoryWriteEpoch++;
+        _chat.blockConversationPersistenceBefore(
+          cid: requestCid,
+          createdAtMs: retryCutoff,
+        );
+        await _settings.truncateConversationAfterCreatedAt(
+          requestCid,
+          retryCutoff,
+          notify: false,
+        );
+      }
+      final List<AIMessage> baseMessagesForNewTurn =
+          retryBase ?? List<AIMessage>.from(_messages);
       final bool shouldAnalyzeInitialIntent =
           _shouldAnalyzeIntentForConversation(
             requestCid,
-            isFirstUserTurn: !_messages.any((m) => m.role == 'user'),
+            isFirstUserTurn: !baseMessagesForNewTurn.any(
+              (m) => m.role == 'user',
+            ),
           );
       if (_imageDrawMode && override == null) {
         await _sendImageGenerationMessage(
@@ -713,6 +747,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       final Object? userApiContent = await _buildChatUserApiContent(
         text: text,
         currentImages: sendImages,
+        historyMessages: baseMessagesForNewTurn,
       );
       void setStateIfActive(VoidCallback fn) {
         if (!mounted) return;
@@ -722,7 +757,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
 
       // 先本地追加用户消息，提升即时反馈
       final DateTime userCreatedAt = DateTime.now();
-      final int userIdx = _messages.length;
+      final int userIdx = baseMessagesForNewTurn.length;
       final List<EvidenceImageAttachment> userAttachments =
           _composerImagesToMessageAttachments(sendImages);
       final String localUserContent = _withComposerImageMarkers(
@@ -730,7 +765,10 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
         userAttachments,
       );
       setStateIfActive(() {
-        _messages = List<AIMessage>.from(_messages)
+        if (retryBase != null) {
+          _removeChatUiStateFromIndex(userIdx);
+        }
+        _messages = List<AIMessage>.from(baseMessagesForNewTurn)
           ..add(
             AIMessage(
               role: 'user',

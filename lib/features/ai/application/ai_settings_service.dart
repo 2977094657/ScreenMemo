@@ -1183,14 +1183,16 @@ class AISettingsService {
 
   Future<void> truncateConversationAfterCreatedAt(
     String conversationCid,
-    int cutoffCreatedAtMs,
-  ) async {
+    int cutoffCreatedAtMs, {
+    bool notify = true,
+  }) async {
     final String cid = conversationCid.trim();
     if (cid.isEmpty || cutoffCreatedAtMs <= 0) return;
     await ScreenshotDatabase.instance.truncateAiConversationAfterCreatedAt(
       cid,
       cutoffCreatedAtMs,
     );
+    if (!notify) return;
     try {
       _ctxChangedController.add('chat:history');
     } catch (_) {}
