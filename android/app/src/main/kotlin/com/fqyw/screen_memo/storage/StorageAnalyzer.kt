@@ -239,6 +239,12 @@ object StorageAnalyzer {
                     label = "databases",
                     type = "outputDatabases",
                 )
+                child.isDirectory && child.name == "replay" -> analyzeDir(
+                    dir = child,
+                    id = "output::replay",
+                    label = "replay",
+                    type = "replayOutput",
+                )
                 child.isDirectory -> analyzeDir(
                     dir = child,
                     id = "output::${child.name}",

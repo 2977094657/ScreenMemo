@@ -308,6 +308,15 @@
   "storageAnalysisLabelOutput": "output directory",
   "storageAnalysisLabelScreenshots": "Screenshot library",
   "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelReplayOutput": "Replay videos",
+  "storageAnalysisReplayClearConfirmTitle": "Clear replay videos",
+  "storageAnalysisReplayClearConfirmMessage": "This will clear internal replay video copies ({size}, {count} files). Videos already saved to the system gallery and original screenshots will not be deleted. Continue?",
+  "@storageAnalysisReplayClearConfirmMessage": {
+    "placeholders": {
+      "size": {},
+      "count": {}
+    }
+  },
   "storageAnalysisLabelSharedPrefs": "shared_prefs",
   "storageAnalysisLabelNoBackup": "no_backup",
   "storageAnalysisLabelAppFlutter": "app_flutter",

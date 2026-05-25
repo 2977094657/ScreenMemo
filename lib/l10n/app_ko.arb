@@ -306,6 +306,15 @@
   "storageAnalysisLabelOutput": "output 디렉터리",
   "storageAnalysisLabelScreenshots": "스크린샷 라이브러리",
   "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelReplayOutput": "리플레이 동영상",
+  "storageAnalysisReplayClearConfirmTitle": "리플레이 동영상 정리",
+  "storageAnalysisReplayClearConfirmMessage": "앱 내부의 리플레이 동영상 복사본({size}, 파일 {count}개)을 정리합니다. 시스템 갤러리에 저장된 동영상과 원본 스크린샷은 삭제되지 않습니다. 계속할까요?",
+  "@storageAnalysisReplayClearConfirmMessage": {
+    "placeholders": {
+      "size": {},
+      "count": {}
+    }
+  },
   "storageAnalysisLabelSharedPrefs": "shared_prefs",
   "storageAnalysisLabelNoBackup": "no_backup",
   "storageAnalysisLabelAppFlutter": "app_flutter",

@@ -343,8 +343,14 @@ class ReplayExportService {
       } catch (_) {}
 
       if (options.saveToGallery) {
-        await _saveVideoToGallery(outPath, l10n: l10n);
-        if (options.openGalleryAfterSave) {
+        final bool savedToGallery = await _saveVideoToGallery(
+          outPath,
+          l10n: l10n,
+        );
+        if (savedToGallery) {
+          await _deleteReplayOutputCopy(outPath);
+        }
+        if (savedToGallery && options.openGalleryAfterSave) {
           try {
             await Gal.open();
           } catch (_) {}
@@ -371,7 +377,7 @@ class ReplayExportService {
           duration: const Duration(seconds: 6),
           actionLabel: saveLabel,
           onAction: () {
-            unawaited(_saveVideoToGallery(outPath, l10n: l10n));
+            unawaited(_saveVideoToGalleryAndDeleteCopy(outPath, l10n: l10n));
           },
         );
       }
@@ -496,7 +502,7 @@ class ReplayExportService {
     return filePath;
   }
 
-  Future<void> _saveVideoToGallery(
+  Future<bool> _saveVideoToGallery(
     String path, {
     required AppLocalizations? l10n,
   }) async {
@@ -518,7 +524,7 @@ class ReplayExportService {
                   'Request gallery permission failed',
             );
           }
-          return;
+          return false;
         }
       }
       await Gal.putVideo(path);
@@ -528,6 +534,7 @@ class ReplayExportService {
           l10n?.saveImageSuccess ?? 'Saved to gallery',
         );
       }
+      return true;
     } on GalException catch (_) {
       if (overlay != null && overlay.mounted) {
         UINotifier.errorOnOverlay(
@@ -535,6 +542,7 @@ class ReplayExportService {
           l10n?.saveImageFailed ?? 'Save failed',
         );
       }
+      return false;
     } catch (_) {
       if (overlay != null && overlay.mounted) {
         UINotifier.errorOnOverlay(
@@ -542,6 +550,30 @@ class ReplayExportService {
           l10n?.saveImageFailed ?? 'Save failed',
         );
       }
+      return false;
+    }
+  }
+
+  Future<void> _saveVideoToGalleryAndDeleteCopy(
+    String path, {
+    required AppLocalizations? l10n,
+  }) async {
+    final bool savedToGallery = await _saveVideoToGallery(path, l10n: l10n);
+    if (savedToGallery) {
+      await _deleteReplayOutputCopy(path);
+    }
+  }
+
+  Future<void> _deleteReplayOutputCopy(String path) async {
+    try {
+      final File file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeError('Replay', '删除回放内部副本失败: $e');
+      } catch (_) {}
     }
   }
 }

@@ -731,6 +731,17 @@ class AppLocalizationsJa extends AppLocalizations {
   String get storageAnalysisLabelOutputDatabases => 'output/databases';
 
   @override
+  String get storageAnalysisLabelReplayOutput => 'リプレイ動画';
+
+  @override
+  String get storageAnalysisReplayClearConfirmTitle => 'リプレイ動画を削除';
+
+  @override
+  String storageAnalysisReplayClearConfirmMessage(Object size, Object count) {
+    return 'アプリ内部のリプレイ動画コピー（$size、$count 件のファイル）を削除します。システムギャラリーに保存済みの動画と元のスクリーンショットは削除されません。続行しますか？';
+  }
+
+  @override
   String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
 
   @override

@@ -1440,6 +1440,24 @@ abstract class AppLocalizations {
   /// **'output/databases'**
   String get storageAnalysisLabelOutputDatabases;
 
+  /// No description provided for @storageAnalysisLabelReplayOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay videos'**
+  String get storageAnalysisLabelReplayOutput;
+
+  /// No description provided for @storageAnalysisReplayClearConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear replay videos'**
+  String get storageAnalysisReplayClearConfirmTitle;
+
+  /// No description provided for @storageAnalysisReplayClearConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This will clear internal replay video copies ({size}, {count} files). Videos already saved to the system gallery and original screenshots will not be deleted. Continue?'**
+  String storageAnalysisReplayClearConfirmMessage(Object size, Object count);
+
   /// No description provided for @storageAnalysisLabelSharedPrefs.
   ///
   /// In en, this message translates to:

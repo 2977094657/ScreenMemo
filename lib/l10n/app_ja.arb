@@ -306,6 +306,15 @@
   "storageAnalysisLabelOutput": "output ディレクトリ",
   "storageAnalysisLabelScreenshots": "スクリーンショットライブラリ",
   "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelReplayOutput": "リプレイ動画",
+  "storageAnalysisReplayClearConfirmTitle": "リプレイ動画を削除",
+  "storageAnalysisReplayClearConfirmMessage": "アプリ内部のリプレイ動画コピー（{size}、{count} 件のファイル）を削除します。システムギャラリーに保存済みの動画と元のスクリーンショットは削除されません。続行しますか？",
+  "@storageAnalysisReplayClearConfirmMessage": {
+    "placeholders": {
+      "size": {},
+      "count": {}
+    }
+  },
   "storageAnalysisLabelSharedPrefs": "shared_prefs",
   "storageAnalysisLabelNoBackup": "no_backup",
   "storageAnalysisLabelAppFlutter": "app_flutter",

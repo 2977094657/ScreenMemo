@@ -308,6 +308,15 @@
   "storageAnalysisLabelOutput": "output 目录",
   "storageAnalysisLabelScreenshots": "截图库",
   "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelReplayOutput": "回放视频",
+  "storageAnalysisReplayClearConfirmTitle": "清理回放视频",
+  "storageAnalysisReplayClearConfirmMessage": "将清理应用内部的回放视频副本（{size}，{count} 个文件）。系统相册中已保存的视频不会被删除，原始截图也不会受影响。是否继续？",
+  "@storageAnalysisReplayClearConfirmMessage": {
+    "placeholders": {
+      "size": {},
+      "count": {}
+    }
+  },
   "storageAnalysisLabelSharedPrefs": "shared_prefs",
   "storageAnalysisLabelNoBackup": "no_backup",
   "storageAnalysisLabelAppFlutter": "app_flutter",

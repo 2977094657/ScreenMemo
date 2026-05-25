@@ -717,6 +717,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storageAnalysisLabelOutputDatabases => 'output/databases';
 
   @override
+  String get storageAnalysisLabelReplayOutput => '回放视频';
+
+  @override
+  String get storageAnalysisReplayClearConfirmTitle => '清理回放视频';
+
+  @override
+  String storageAnalysisReplayClearConfirmMessage(Object size, Object count) {
+    return '将清理应用内部的回放视频副本（$size，$count 个文件）。系统相册中已保存的视频不会被删除，原始截图也不会受影响。是否继续？';
+  }
+
+  @override
   String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
 
   @override

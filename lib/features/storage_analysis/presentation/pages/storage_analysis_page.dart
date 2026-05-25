@@ -14,6 +14,7 @@ import 'package:screen_memo/features/storage_analysis/data/storage_analysis_serv
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/utils/byte_formatter.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
+import 'package:screen_memo/core/widgets/ui_dialog.dart';
 
 class StorageAnalysisPage extends StatefulWidget {
   const StorageAnalysisPage({super.key});
@@ -29,6 +30,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
   bool _detailsExpanded = false;
   bool _clearingCache = false;
   bool _clearingExternalLogs = false;
+  bool _clearingReplayOutput = false;
 
   @override
   void initState() {
@@ -463,6 +465,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
     final cacheNode = findNode((n) => n.id == 'cache');
     final screenshotsNode = findNode((n) => n.id == 'screenshots');
     final outputDatabasesNode = findNode((n) => n.type == 'outputDatabases');
+    final replayOutputNode = findNode((n) => n.type == 'replayOutput');
     final databasesNode = findNode((n) => n.type == 'databases');
     final externalLogsNode = findNode((n) => n.type == 'externalLogs');
 
@@ -506,6 +509,21 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
           onAction: outputDatabasesNode.path == null
               ? null
               : () => _copyPath(context, l10n, outputDatabasesNode.path!),
+        ),
+      if (replayOutputNode != null || _clearingReplayOutput)
+        _StorageCategoryCard(
+          title: l10n.storageAnalysisLabelReplayOutput,
+          bytes: replayOutputNode?.bytes ?? 0,
+          detailText: _buildNodeDetailText(l10n, replayOutputNode),
+          descriptionText: desc(
+            zh: '清理已生成的回放视频内部副本，不会删除系统相册中的视频，也不会影响原始截图。',
+            en: 'Clear internal replay video copies. Gallery videos and original screenshots are not deleted.',
+          ),
+          actionLabel: l10n.actionClear,
+          actionLoading: _clearingReplayOutput,
+          onAction: _clearingReplayOutput
+              ? null
+              : () => _confirmClearReplayOutput(l10n, replayOutputNode),
         ),
       if (databasesNode != null)
         _StorageCategoryCard(
@@ -603,6 +621,8 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
                     node: node,
                     totalBytes: totalBytes,
                     depth: 0,
+                    onClearReplayOutput: _confirmClearReplayOutput,
+                    replayOutputClearing: _clearingReplayOutput,
                   ),
                 ),
               ],
@@ -684,6 +704,61 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
       if (mounted) {
         setState(() {
           _clearingExternalLogs = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmClearReplayOutput(
+    AppLocalizations l10n,
+    StorageAnalysisNode? node,
+  ) async {
+    if (_clearingReplayOutput) return;
+    final String message = l10n.storageAnalysisReplayClearConfirmMessage(
+      formatBytes(node?.bytes ?? 0),
+      NumberFormat.decimalPattern().format(node?.fileCount ?? 0),
+    );
+    final bool? confirmed = await showUIDialog<bool>(
+      context: context,
+      title: l10n.storageAnalysisReplayClearConfirmTitle,
+      message: message,
+      actions: [
+        UIDialogAction<bool>(text: l10n.dialogCancel, result: false),
+        UIDialogAction<bool>(
+          text: l10n.actionClear,
+          result: true,
+          style: UIDialogActionStyle.destructive,
+        ),
+      ],
+    );
+    if (confirmed != true || !mounted) return;
+    await _clearReplayOutput(l10n);
+  }
+
+  Future<void> _clearReplayOutput(AppLocalizations l10n) async {
+    if (_clearingReplayOutput) return;
+    setState(() {
+      _clearingReplayOutput = true;
+    });
+
+    try {
+      final Directory? replayDir = await PathService.getInternalAppDir(
+        'output/replay',
+      );
+      if (replayDir != null) {
+        await _deleteDirContents(replayDir);
+      }
+
+      if (!mounted) return;
+      UINotifier.success(context, l10n.clearSuccess);
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, l10n.clearFailedWithError(e.toString()));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _clearingReplayOutput = false;
         });
       }
     }
@@ -792,6 +867,8 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
                             node: child,
                             totalBytes: max(node.bytes, 1),
                             depth: 0,
+                            onClearReplayOutput: _confirmClearReplayOutput,
+                            replayOutputClearing: _clearingReplayOutput,
                           ),
                         ),
                     ],
@@ -812,11 +889,16 @@ class StorageNodeTile extends StatefulWidget {
     required this.node,
     required this.totalBytes,
     required this.depth,
+    this.onClearReplayOutput,
+    this.replayOutputClearing = false,
   });
 
   final StorageAnalysisNode node;
   final int totalBytes;
   final int depth;
+  final void Function(AppLocalizations l10n, StorageAnalysisNode node)?
+  onClearReplayOutput;
+  final bool replayOutputClearing;
 
   @override
   State<StorageNodeTile> createState() => _StorageNodeTileState();
@@ -846,6 +928,10 @@ class _StorageNodeTileState extends State<StorageNodeTile> {
     final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
     final hasChildren = widget.node.hasChildren;
+    final canClearReplayOutput =
+        widget.node.type == 'replayOutput' &&
+        widget.node.bytes > 0 &&
+        widget.onClearReplayOutput != null;
     final indent = 16.0 * widget.depth;
 
     final ratio = widget.totalBytes > 0
@@ -946,7 +1032,24 @@ class _StorageNodeTileState extends State<StorageNodeTile> {
                     ),
                   ],
                 ),
-                if (!hasChildren && widget.node.path != null)
+                if (canClearReplayOutput)
+                  IconButton(
+                    icon: widget.replayOutputClearing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.cleaning_services_outlined,
+                            size: 18,
+                          ),
+                    tooltip: l10n.actionClear,
+                    onPressed: widget.replayOutputClearing
+                        ? null
+                        : () => widget.onClearReplayOutput!(l10n, widget.node),
+                  )
+                else if (!hasChildren && widget.node.path != null)
                   IconButton(
                     icon: const Icon(Icons.copy_rounded, size: 18),
                     tooltip: l10n.actionCopyPath,
@@ -966,6 +1069,8 @@ class _StorageNodeTileState extends State<StorageNodeTile> {
                       node: child,
                       totalBytes: widget.totalBytes,
                       depth: widget.depth + 1,
+                      onClearReplayOutput: widget.onClearReplayOutput,
+                      replayOutputClearing: widget.replayOutputClearing,
                     ),
                   )
                   .toList(),
@@ -1172,6 +1277,8 @@ String _resolveStorageNodeLabel(
       return appName ?? packageName ?? node.label;
     case 'outputDatabases':
       return l10n.storageAnalysisLabelOutputDatabases;
+    case 'replayOutput':
+      return l10n.storageAnalysisLabelReplayOutput;
     case 'filesChild':
       return node.label;
     case 'sharedPrefs':

@@ -731,6 +731,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get storageAnalysisLabelOutputDatabases => 'output/databases';
 
   @override
+  String get storageAnalysisLabelReplayOutput => '리플레이 동영상';
+
+  @override
+  String get storageAnalysisReplayClearConfirmTitle => '리플레이 동영상 정리';
+
+  @override
+  String storageAnalysisReplayClearConfirmMessage(Object size, Object count) {
+    return '앱 내부의 리플레이 동영상 복사본($size, 파일 $count개)을 정리합니다. 시스템 갤러리에 저장된 동영상과 원본 스크린샷은 삭제되지 않습니다. 계속할까요?';
+  }
+
+  @override
   String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
 
   @override

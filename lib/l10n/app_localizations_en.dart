@@ -750,6 +750,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storageAnalysisLabelOutputDatabases => 'output/databases';
 
   @override
+  String get storageAnalysisLabelReplayOutput => 'Replay videos';
+
+  @override
+  String get storageAnalysisReplayClearConfirmTitle => 'Clear replay videos';
+
+  @override
+  String storageAnalysisReplayClearConfirmMessage(Object size, Object count) {
+    return 'This will clear internal replay video copies ($size, $count files). Videos already saved to the system gallery and original screenshots will not be deleted. Continue?';
+  }
+
+  @override
   String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
 
   @override
