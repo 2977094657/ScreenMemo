@@ -1,5 +1,8 @@
 String normalizeCodeWrappedAppRefs(String input) {
-  if (input.isEmpty || !input.contains('[app:')) return input;
+  if (input.isEmpty ||
+      !RegExp(r'\[\s*app\s*[:：]', caseSensitive: false).hasMatch(input)) {
+    return input;
+  }
   return input.replaceAllMapped(
     RegExp(
       r'`+\s*(\[\s*app\s*[:：]\s*[^\]\n]+?\s*\])\s*`+',

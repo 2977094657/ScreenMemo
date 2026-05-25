@@ -51,7 +51,7 @@ String buildAppMarkerSystemMessage(Locale locale) {
   final bool zh = locale.languageCode.toLowerCase().startsWith('zh');
   if (zh) {
     return [
-      '若需要在正文里提及应用名称，请使用特殊标记，便于前端渲染应用图标。',
+      '只要在正文里提及应用名称，必须使用特殊标记，便于前端渲染应用图标。',
       '格式1：[app: 应用名]',
       '格式2：[app: 应用名|应用包名]',
       '若已知包名，优先使用格式2，例如：[app: 微信|com.tencent.mm]、[app: QQ|com.tencent.mobileqq]。',
@@ -61,7 +61,7 @@ String buildAppMarkerSystemMessage(Locale locale) {
   }
 
   return [
-    'When you mention an app name in the visible answer, use the special marker so the frontend can render the app icon.',
+    'Whenever you mention an app name in the visible answer, you must use the special marker so the frontend can render the app icon.',
     'Format 1: [app: App Name]',
     'Format 2: [app: App Name|app.package.name]',
     'If the package name is known, prefer format 2, for example [app: WeChat|com.tencent.mm] or [app: QQ|com.tencent.mobileqq].',

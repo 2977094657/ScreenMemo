@@ -361,6 +361,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 val addon = sequenceOf(extra, legacyLang, legacy)
                     .firstOrNull { it != null && it.trim().isNotEmpty() }
                     ?.trim()
+                val appMarkerRules = appMarkerSystemMessage(effectiveLang)
                 val headerBuilder = StringBuilder()
                 headerBuilder.append(languagePolicy).append("\n\n")
                 val defaultTemplate = when (effectiveLang) {
@@ -388,6 +389,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 } else {
                     headerBuilder.append(defaultTemplate)
                 }
+                headerBuilder.append("\n\n").append(appMarkerRules)
                 val header = headerBuilder.toString()
                 sb.append(header).append('\n').append('\n')
                 sb.append("日期: ").append(dateKey).append('\n')
@@ -778,6 +780,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
        "## 主要活动"
        "## 重点内容"
        每个小节至少 3 条要点（使用 “- ” 无序列表）。如信息不足，也必须保留小节，并给出不低于 1 条的“占位但有意义”的要点（如“无明显关键操作”），禁止删除小节。
+  - 只要 overall_summary、timeline.summary 或 notification_brief 中出现应用名称，必须直接使用 [app: 应用名] 或 [app: 应用名|应用包名]；不要给该标记再套反引号、代码样式、链接、加粗或其他 Markdown 包裹。
   - timeline 为数组，按时间升序列出 5–12 条关键片段；每条结构：
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "一句话行为（可用简短 Markdown 强调）" }
     如果上下文极少，最少也要 1 条，禁止为空。
@@ -809,6 +812,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
        "## Main Activities"
        "## Key Content"
        Each section must contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet (e.g., "No notable key actions"), never delete sections.
+  - Whenever overall_summary, timeline.summary, or notification_brief mentions an app name, you must use [app: App Name] or [app: App Name|app.package.name] directly; do not wrap the marker in backticks, code style, links, bold text, or any other Markdown wrapper.
   - timeline must be an array in ascending time order with 5–12 key entries. Each item:
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "One-sentence action (may use brief Markdown emphasis)" }
     If context is minimal, at least 1 item is required; it MUST NOT be empty.
@@ -840,6 +844,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
        "## 主な活動"
        "## 重要コンテンツ"
        各セクションには少なくとも3つの箇条書き（"- "）を含めること。情報が不十分でもセクションを削除せず、意味のあるプレースホルダー（例: 「特筆すべき主要アクションなし」）を最低1つ含める。
+  - overall_summary、timeline.summary、notification_brief でアプリ名に言及する場合は、必ず [app: アプリ名] または [app: アプリ名|アプリのパッケージ名] を直接使用してください。バッククォート、コードスタイル、リンク、太字、その他の Markdown で包まないでください。
   - timeline は時間昇順で 5～12 件の主要イベントを列挙する配列。各要素:
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "1文の行動（Markdown で軽い強調可）" }
     コンテキストが少ない場合でも最低1件は必要。空配列は禁止。
@@ -871,6 +876,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
        "## 주요 활동"
        "## 핵심 콘텐츠"
        각 섹션은 최소 3개의 "- " 불릿을 포함해야 합니다. 정보가 부족하더라도 섹션을 삭제하지 말고, 의미 있는 플레이스홀더(예: "눈에 띄는 주요 행동 없음")를 최소 1개 포함하세요.
+  - overall_summary, timeline.summary, notification_brief 에서 앱 이름을 언급할 때는 반드시 [app: 앱 이름] 또는 [app: 앱 이름|앱 패키지명] 을 직접 사용하세요. 백틱, 코드 스타일, 링크, 굵게, 기타 Markdown으로 감싸지 마세요.
   - timeline 은 시간 오름차순의 배열로 5~12개의 핵심 항목을 포함합니다. 각 항목 형식:
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "한 문장 행동(간단한 Markdown 강조 가능)" }
     컨텍스트가 적더라도 최소 1개 항목을 포함해야 하며, 비워둘 수 없습니다.
@@ -1139,6 +1145,43 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 "ko" -> ctx.getString(R.string.ai_language_policy_ko)
                 "en" -> ctx.getString(R.string.ai_language_policy_en)
                 else -> ctx.getString(R.string.ai_language_policy_zh)
+            }
+        }
+
+        private fun appMarkerSystemMessage(lang: String): String {
+            return when (lang) {
+                "zh" -> """
+                    只要在正文里提及应用名称，必须使用特殊标记，便于前端渲染应用图标。
+                    格式1：[app: 应用名]
+                    格式2：[app: 应用名|应用包名]
+                    若已知包名，优先使用格式2，例如：[app: 微信|com.tencent.mm]、[app: QQ|com.tencent.mobileqq]。
+                    请直接输出裸标记，不要再包裹反引号、代码块、链接、加粗或其他 Markdown 语法。
+                    仅在真正表示应用名称时使用该标记，不要给普通名词或网站名添加此标记。
+                """.trimIndent()
+                "ja" -> """
+                    本文でアプリ名に言及する場合は必ず特殊マーカーを使用し、フロントエンドでアプリアイコンを表示できるようにしてください。
+                    形式1: [app: アプリ名]
+                    形式2: [app: アプリ名|アプリのパッケージ名]
+                    パッケージ名が分かる場合は形式2を優先してください。例: [app: WeChat|com.tencent.mm]、[app: QQ|com.tencent.mobileqq]。
+                    マーカーはそのまま出力し、バッククォート、コードブロック、リンク、太字、その他の Markdown 構文で包まないでください。
+                    実際のアプリ名にのみ使用し、一般名詞やWebサイト名には使用しないでください。
+                """.trimIndent()
+                "ko" -> """
+                    본문에서 앱 이름을 언급할 때는 반드시 특수 마커를 사용해 프런트엔드가 앱 아이콘을 렌더링할 수 있게 하세요.
+                    형식1: [app: 앱 이름]
+                    형식2: [app: 앱 이름|앱 패키지명]
+                    패키지명을 알고 있다면 형식2를 우선 사용하세요. 예: [app: WeChat|com.tencent.mm], [app: QQ|com.tencent.mobileqq].
+                    마커는 그대로 출력하고 백틱, 코드 블록, 링크, 굵게, 기타 Markdown 문법으로 감싸지 마세요.
+                    실제 앱 이름에만 이 마커를 사용하고 일반 명사나 웹사이트 이름에는 사용하지 마세요.
+                """.trimIndent()
+                else -> """
+                    Whenever you mention an app name in the visible answer, you must use the special marker so the frontend can render the app icon.
+                    Format 1: [app: App Name]
+                    Format 2: [app: App Name|app.package.name]
+                    If the package name is known, prefer format 2, for example [app: WeChat|com.tencent.mm] or [app: QQ|com.tencent.mobileqq].
+                    Output the marker directly without wrapping it in backticks, code blocks, links, bold text, or other Markdown syntax.
+                    Use this marker only for actual app names, not for generic nouns or website names.
+                """.trimIndent()
             }
         }
 

@@ -8,6 +8,7 @@ import 'package:screen_memo/core/constants/user_settings_keys.dart';
 import 'package:screen_memo/features/ai/application/ai_chat_service.dart';
 import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
+import 'package:screen_memo/features/ai/application/ai_prompt_time_context.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/features/timeline/application/dynamic_entry_perf_service.dart';
@@ -599,6 +600,15 @@ class DailySummaryService {
         } catch (_) {}
       }
     }
+    if (sj != null) {
+      sj = _normalizeAppRefsInJsonMap(sj);
+      final dynamic normalizedOverall = sj['overall_summary'];
+      if (normalizedOverall is String && normalizedOverall.trim().isNotEmpty) {
+        outputText = normalizedOverall.trim();
+      }
+    } else {
+      outputText = normalizeCodeWrappedAppRefs(outputText);
+    }
     DynamicEntryPerfService.instance.mark(
       'daily.persist.parse.done',
       detail:
@@ -624,7 +634,7 @@ class DailySummaryService {
       String briefText = '';
       final dynamic nb = sj?['notification_brief'];
       if (nb is String && nb.trim().isNotEmpty) {
-        briefText = nb.trim();
+        briefText = normalizeCodeWrappedAppRefs(nb.trim());
       } else {
         String sum = '';
         final dynamic ov = sj?['overall_summary'];
@@ -912,6 +922,11 @@ class DailySummaryService {
     final String languagePolicy = lookupAppLocalizations(
       locale,
     ).aiSystemPromptLanguagePolicy;
+    final String appMarkerContext = buildAppMarkerSystemMessage(locale).trim();
+    final String policyHeader = <String>[
+      languagePolicy.trim(),
+      if (appMarkerContext.isNotEmpty) appMarkerContext,
+    ].where((String e) => e.isNotEmpty).join('\n\n');
 
     final String defaultTemplate = isZh
         ? _defaultDailyPromptZh
@@ -928,9 +943,9 @@ class DailySummaryService {
       final String upperBlock = '$beginMarker\n$trimmedAddon';
       final String lowerBlock = '$endMarker\n$trimmedAddon';
       header =
-          '$languagePolicy\n\n$upperBlock\n\n$defaultTemplate\n\n$lowerBlock';
+          '$policyHeader\n\n$upperBlock\n\n$defaultTemplate\n\n$lowerBlock\n\n$appMarkerContext';
     } else {
-      header = '$languagePolicy\n\n$defaultTemplate';
+      header = '$policyHeader\n\n$defaultTemplate';
     }
 
     final sb = StringBuffer();
@@ -967,6 +982,34 @@ class DailySummaryService {
       }
     } catch (_) {}
     return '';
+  }
+
+  Map<String, dynamic> _normalizeAppRefsInJsonMap(Map<String, dynamic> input) {
+    return input.map<String, dynamic>(
+      (String key, dynamic value) =>
+          MapEntry<String, dynamic>(key, _normalizeAppRefsInJsonValue(value)),
+    );
+  }
+
+  dynamic _normalizeAppRefsInJsonValue(dynamic value) {
+    if (value is String) {
+      return normalizeCodeWrappedAppRefs(value);
+    }
+    if (value is List) {
+      return value.map<dynamic>(_normalizeAppRefsInJsonValue).toList();
+    }
+    if (value is Map<String, dynamic>) {
+      return _normalizeAppRefsInJsonMap(value);
+    }
+    if (value is Map) {
+      return value.map<String, dynamic>(
+        (dynamic key, dynamic item) => MapEntry<String, dynamic>(
+          key.toString(),
+          _normalizeAppRefsInJsonValue(item),
+        ),
+      );
+    }
+    return value;
   }
 
   String _notificationTitleForSlot(
@@ -1554,7 +1597,7 @@ class DailySummaryService {
        "## 主要活动"
        "## 重点内容"
        每个小节至少 3 条要点（使用 “- ” 无序列表）。如信息不足，也必须保留小节，并给出不低于 1 条的“占位但有意义”的要点（如“无明显关键操作”），禁止删除小节。
-  - 若正文中提及应用名称，请直接使用 [app: 应用名] 或 [app: 应用名|应用包名]；不要给该标记再套反引号、代码样式、链接、加粗或其他 Markdown 包裹。
+  - 只要 overall_summary、timeline.summary 或 notification_brief 中出现应用名称，必须直接使用 [app: 应用名] 或 [app: 应用名|应用包名]；不要给该标记再套反引号、代码样式、链接、加粗或其他 Markdown 包裹。
   - timeline 为数组，按时间升序列出 5–12 条关键片段；每条结构：
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "一句话行为（可用简短 Markdown 强调）" }
     如果上下文极少，最少也要 1 条，禁止为空。
@@ -1585,7 +1628,7 @@ class DailySummaryService {
        "## Main Activities"
        "## Key Content"
        Each section must contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet (e.g., "No notable key actions"), never delete sections.
-  - If you mention an app name, use [app: App Name] or [app: App Name|app.package.name] directly; do not wrap the marker in backticks, code style, links, bold text, or any other Markdown wrapper.
+  - Whenever overall_summary, timeline.summary, or notification_brief mentions an app name, you must use [app: App Name] or [app: App Name|app.package.name] directly; do not wrap the marker in backticks, code style, links, bold text, or any other Markdown wrapper.
   - timeline must be an array in ascending time order with 5–12 key entries. Each item:
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "One-sentence action (may use brief Markdown emphasis)" }
     If context is minimal, at least 1 item is required; it MUST NOT be empty.

@@ -13,6 +13,15 @@ void main() {
     expect(normalizeCodeWrappedAppRefs(input), expected);
   });
 
+  test('normalizeCodeWrappedAppRefs unwraps case-insensitive app markers', () {
+    const String input =
+        'Open `[App: WeChat|com.tencent.mm]` then `[APP：QQ|com.tencent.mobileqq]`';
+    const String expected =
+        'Open [App: WeChat|com.tencent.mm] then [APP：QQ|com.tencent.mobileqq]';
+
+    expect(normalizeCodeWrappedAppRefs(input), expected);
+  });
+
   test('normalizeCodeWrappedAppRefs keeps normal inline code unchanged', () {
     const String input = '请保留 `final answer = 42;` 这样的代码';
 
@@ -25,10 +34,14 @@ void main() {
 
     expect(zh, contains('[app: 应用名]'));
     expect(zh, isNot(contains('`[app: 应用名]`')));
+    expect(zh, contains('只要'));
+    expect(zh, contains('必须'));
     expect(zh, contains('不要再包裹反引号'));
 
     expect(en, contains('[app: App Name]'));
     expect(en, isNot(contains('`[app: App Name]`')));
+    expect(en, contains('must'));
+    expect(en.toLowerCase(), contains('whenever'));
     expect(en, contains('without wrapping it in backticks'));
   });
 }
