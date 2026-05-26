@@ -748,6 +748,7 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
   }
 
   Widget _buildMessageNerdLine(AIMessage message) {
+    final Stopwatch sw = Stopwatch()..start();
     final int? prompt = message.usagePromptTokens;
     final int? completion = message.usageCompletionTokens;
     final int? cacheHit = message.usageCacheHitTokens;
@@ -761,7 +762,8 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
       message.usageTotalTokens ?? '-',
       duration?.inMilliseconds ?? '-',
     ].join(':');
-    if (_usageStatsUiLoggedKeys.add(logKey)) {
+    final bool shouldLogStatsBuild = _usageStatsUiLoggedKeys.add(logKey);
+    if (shouldLogStatsBuild) {
       unawaited(
         FlutterLogger.nativeDebug(
           'AIUsageTrace',
@@ -811,6 +813,14 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
       if (text.isNotEmpty) {
         items.add(_buildStatsItem(Icons.schedule_rounded, text));
       }
+    }
+    if (shouldLogStatsBuild) {
+      _logChatPerf(
+        'messageNerdLine.build.done',
+        stopwatch: sw,
+        detail:
+            'role=${message.role} createdAt=${message.createdAt.millisecondsSinceEpoch} items=${items.length} contentLen=${message.content.length}',
+      );
     }
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(

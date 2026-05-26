@@ -60,6 +60,20 @@ final RegExp _generatedImageMarkerPattern = RegExp(
   caseSensitive: false,
 );
 
+void _logMarkdownPerf(String name, {String? detail, Stopwatch? stopwatch}) {
+  final String d0 = (detail ?? '').trim();
+  final String d = [
+    if (stopwatch != null) 'ms=${stopwatch.elapsedMilliseconds}',
+    if (d0.isNotEmpty) d0,
+  ].join(' ');
+  unawaited(
+    FlutterLogger.nativeInfo(
+      'AI_CHAT_PERF',
+      d.isEmpty ? name : '$name $d',
+    ).catchError((_) {}),
+  );
+}
+
 bool containsGeneratedImageMarker(String content) {
   return _generatedImageMarkerPattern.hasMatch(content);
 }
@@ -76,6 +90,14 @@ String _shortenDebugText(String s, {int max = 72}) {
   final String t = s.trim();
   if (t.length <= max) return t;
   return '…' + t.substring(t.length - max);
+}
+
+bool _looksLikeAbsoluteEvidencePath(String value) {
+  final String v = value.trim();
+  if (v.isEmpty) return false;
+  return v.startsWith('/') ||
+      v.startsWith('\\\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(v);
 }
 
 /// 将原文预处理为带 <math-inline>/<math-block> 与思考引用块的 Markdown 文本。
@@ -154,6 +176,9 @@ String _normalizeEvidenceTags(String input) {
   return input.replaceAllMapped(evAny, (m) {
     final String rawInside = (m.group(1) ?? '').trim();
     if (rawInside.isEmpty) return m.group(0) ?? '';
+    if (_looksLikeAbsoluteEvidencePath(rawInside)) {
+      return '[evidence: $rawInside]';
+    }
 
     // 统一分隔符为逗号，便于拆分
     String normalized = rawInside.replaceAll(RegExp(r'[，、;；]+'), ',');
@@ -178,12 +203,12 @@ String _removeTrailingPunctuationAfterEvidence(String input) {
   // 仅处理非代码段文本，这里输入已是单段的普通文本
   // 情况1：无空格直接跟句号，例如: [evidence: a.png]. 或 。
   input = input.replaceAllMapped(
-    RegExp(r'(\[evidence:\s*[^\]\s]+\s*\])[。\.](?!\S)'),
+    RegExp(r'(\[evidence:\s*[^\]]+?\s*\])[。\.](?!\S)'),
     (m) => m.group(1) ?? '',
   );
   // 情况2：后面有若干空格再句号，例如: [evidence: a.png]   .
   input = input.replaceAllMapped(
-    RegExp(r'(\[evidence:\s*[^\]\s]+\s*\])\s*[。\.]'),
+    RegExp(r'(\[evidence:\s*[^\]]+?\s*\])\s*[。\.]'),
     (m) => m.group(1) ?? '',
   );
   return input;
@@ -195,7 +220,7 @@ String _removeTrailingPunctuationAfterEvidence(String input) {
 /// - 仅处理普通文本行；代码块在上层已被剥离，不在此函数内处理。
 String _ensureEvidenceBlocksOnOwnLine(String input) {
   final lines = input.replaceAll('\r\n', '\n').split('\n');
-  final ev = RegExp(r'\[evidence:\s*[^\]\s]+\s*\]');
+  final ev = RegExp(r'\[evidence:\s*[^\]]+?\s*\]');
   final out = StringBuffer();
   for (final line in lines) {
     if (!ev.hasMatch(line)) {
@@ -419,7 +444,7 @@ String _replaceLatexToTags(String text) {
 
 /// 自定义 Inline 语法：将 [evidence: FILENAME.EXT] 解析为 evidence 元素
 class EvidenceInlineSyntax extends md.InlineSyntax {
-  EvidenceInlineSyntax() : super(r'\[evidence:\s*([^\]\s]+)\s*\]');
+  EvidenceInlineSyntax() : super(r'\[evidence:\s*([^\]]+?)\s*\]');
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -754,9 +779,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
     String? resolvedPath = evidenceNameToPath[name];
     // 兜底：若解析表未命中，但 name 本身看起来就是绝对路径，则直接使用
     if (resolvedPath == null || resolvedPath.isEmpty) {
-      final bool looksAbsolute =
-          name.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(name);
-      if (looksAbsolute) {
+      if (_looksLikeAbsoluteEvidencePath(name)) {
         resolvedPath = name;
       }
     }
@@ -1046,6 +1069,9 @@ class _GeneratedImagePreview extends StatefulWidget {
 }
 
 class _GeneratedImagePreviewState extends State<_GeneratedImagePreview> {
+  static final Map<String, _GeneratedImageLookup> _lookupCache =
+      <String, _GeneratedImageLookup>{};
+
   late Future<_GeneratedImageLookup> _future;
 
   @override
@@ -1085,8 +1111,27 @@ class _GeneratedImagePreviewState extends State<_GeneratedImagePreview> {
       );
       return _GeneratedImageLookup(filename: name);
     }
+    final _GeneratedImageLookup? cached = _lookupCache[name];
+    if (cached != null && cached.available) {
+      widget.perfLogger?.log('generatedImage.cacheHit', detail: name);
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.cacheHit',
+        detail: 'filename=$name path=${cached.path}',
+      );
+      unawaited(
+        FlutterLogger.nativeInfo(
+          'AI_IMAGE',
+          'preview.resolve.cache_hit filename=$name path=${cached.path}',
+        ),
+      );
+      return cached;
+    }
     final Stopwatch sw = Stopwatch()..start();
     try {
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.start',
+        detail: 'filename=$name',
+      );
       unawaited(
         FlutterLogger.nativeInfo(
           'AI_IMAGE',
@@ -1096,6 +1141,11 @@ class _GeneratedImagePreviewState extends State<_GeneratedImagePreview> {
       final Map<String, String> map = await ScreenshotDatabase.instance
           .findAiGeneratedImagePathsByFilenames(<String>{name})
           .timeout(const Duration(seconds: 4));
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.db.done',
+        stopwatch: sw,
+        detail: 'filename=$name found=${map.containsKey(name)}',
+      );
       final String path = (map[name] ?? '').trim();
       if (path.isEmpty) {
         widget.perfLogger?.log('generatedImage.unavailable', detail: name);
@@ -1108,6 +1158,11 @@ class _GeneratedImagePreviewState extends State<_GeneratedImagePreview> {
         return _GeneratedImageLookup(filename: name);
       }
       final bool exists = await File(path).exists();
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.exists.done',
+        stopwatch: sw,
+        detail: 'filename=$name exists=$exists',
+      );
       if (!exists) {
         widget.perfLogger?.log('generatedImage.missingFile', detail: name);
         unawaited(
@@ -1120,14 +1175,29 @@ class _GeneratedImagePreviewState extends State<_GeneratedImagePreview> {
       }
       final int bytes = await File(path).length();
       widget.perfLogger?.log('generatedImage.resolved', detail: name);
+      final _GeneratedImageLookup lookup = _GeneratedImageLookup(
+        filename: name,
+        path: path,
+      );
+      _lookupCache[name] = lookup;
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.success',
+        stopwatch: sw,
+        detail: 'filename=$name bytes=$bytes',
+      );
       unawaited(
         FlutterLogger.nativeInfo(
           'AI_IMAGE',
           'preview.resolve.success filename=$name path=$path bytes=$bytes ms=${sw.elapsedMilliseconds}',
         ),
       );
-      return _GeneratedImageLookup(filename: name, path: path);
+      return lookup;
     } catch (e) {
+      _logMarkdownPerf(
+        'GeneratedImage.resolve.error',
+        stopwatch: sw,
+        detail: 'filename=$name err=$e',
+      );
       unawaited(
         FlutterLogger.nativeError(
           'AI_IMAGE',

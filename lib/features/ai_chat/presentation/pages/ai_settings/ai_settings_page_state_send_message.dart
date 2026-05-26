@@ -107,9 +107,20 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       final AIMessage target = _messages[targetIdx];
       if (target.role != 'assistant') return;
 
+      final Map<String, String> localMap =
+          _evidenceResolvedByAssistantIndex[targetIdx] ??
+          const <String, String>{};
+      final AIMessage completedResolved = localMap.isEmpty
+          ? completed
+          : completed.copyWith(
+              content: AIMessage.resolveEvidenceRefsToLocalPaths(
+                completed.content,
+                localMap,
+              ),
+            );
       final AIMessage updated = _mergeCompletedAssistantForDisplay(
         target,
-        completed,
+        completedResolved,
       );
       if (_sameAssistantDisplayMetadata(target, updated)) return;
 
@@ -118,10 +129,21 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       _messages = newList;
       changed = true;
 
-      if (currentIdx != null && completed.content.trim().isNotEmpty) {
+      if (localMap.isNotEmpty) {
+        final String msgKey = _evidenceMsgKey(updated);
+        final Map<String, String> cached =
+            _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
+        _evidenceResolvedByMsgKey[msgKey] = <String, String>{
+          ...cached,
+          ...localMap,
+        };
+        _scheduleEvidenceNsfwPreload(localMap.values);
+      }
+
+      if (currentIdx != null && completedResolved.content.trim().isNotEmpty) {
         if (_replaceAssistantContentOnNextToken) {
           _finishActiveThinkingBlock(currentIdx);
-          _appendContentChunk(currentIdx, completed.content);
+          _appendContentChunk(currentIdx, completedResolved.content);
         } else {
           _syncContentSegmentsForFullContent(currentIdx, updated.content);
         }
@@ -619,6 +641,9 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
     _gatewayLogFilePathByIndex.removeWhere((key, _) => key >= startIndex);
     _reasoningDurationByIndex.removeWhere((key, _) => key >= startIndex);
     _attachmentsByIndex.removeWhere((key, _) => key >= startIndex);
+    _evidenceResolvedByAssistantIndex.removeWhere(
+      (key, _) => key >= startIndex,
+    );
   }
 
   Future<void> _retryMessageAt(int index) async {
@@ -1239,9 +1264,15 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                         ? ''
                         : target.content;
                     final String incoming = evt.data;
+                    final String combined = base + incoming;
+                    final String resolvedContent =
+                        _resolveLocalEvidenceRefsForAssistantIndex(
+                          targetIdx,
+                          combined,
+                        );
                     final updated = AIMessage(
                       role: 'assistant',
-                      content: base + incoming,
+                      content: resolvedContent,
                       createdAt: target.createdAt, // 保留初始创建时间以准确计算思考耗时
                       reasoningContent: target.reasoningContent,
                       reasoningDuration: target.reasoningDuration,
@@ -1259,7 +1290,14 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                     _replaceAssistantContentOnNextToken = false;
 
                     if (currentIdx != null && incoming.isNotEmpty) {
-                      _appendContentChunk(currentIdx, incoming);
+                      if (resolvedContent == combined) {
+                        _appendContentChunk(currentIdx, incoming);
+                      } else {
+                        _syncContentSegmentsForFullContent(
+                          currentIdx,
+                          resolvedContent,
+                        );
+                      }
                     }
                   }
                 });

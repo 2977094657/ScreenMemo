@@ -265,6 +265,9 @@ class _AISettingsPageState extends State<AISettingsPage>
 
   Timer? _inFlightSaveTimer;
   bool _inFlightHistoryDirty = false;
+  // 从首页重新进入 AI 页时，正在后台完成的请求没有前台 stream 订阅。
+  // 用这个标记区分“真实前台发送中”和“从持久化占位恢复的后台进行中”。
+  bool _restoredBackgroundInFlight = false;
   // Serialize history persistence so a slow in-flight save can't overwrite the
   // final post-processed content after streaming finishes.
   Future<void> _chatHistorySaveChain = Future<void>.value();
@@ -346,8 +349,13 @@ class _AISettingsPageState extends State<AISettingsPage>
   // 证据图片解析缓存：避免退出/重进或页面重建时重复扫库/扫盘导致“解析中一直不出图”
   final Map<String, Map<String, String>> _evidenceResolvedByMsgKey =
       <String, Map<String, String>>{};
+  // 工具执行阶段直接拿到的本地路径映射（助手消息索引 -> filename/path）。
+  // 只在本地 UI 中使用，不进入 provider payload 或 ui_thinking_json。
+  final Map<int, Map<String, String>> _evidenceResolvedByAssistantIndex =
+      <int, Map<String, String>>{};
   final Map<String, Future<Map<String, String>>> _evidenceResolveFutures =
       <String, Future<Map<String, String>>>{};
+  final Set<String> _evidenceAbsolutePersistScheduledKeys = <String>{};
   bool _evidenceRebuildScheduled = false;
   // 上一轮意图结果（用于为下一轮提供 prev hint）
   IntentResult? _lastIntent;
@@ -407,6 +415,21 @@ class _AISettingsPageState extends State<AISettingsPage>
   bool _trackDynamicEntryPerf = false;
 
   void _setState(VoidCallback fn) => setState(fn);
+
+  void _logChatPerf(String name, {String? detail, Stopwatch? stopwatch}) {
+    final String d0 = (detail ?? '').trim();
+    final String d = [
+      if (stopwatch != null) 'ms=${stopwatch.elapsedMilliseconds}',
+      if (d0.isNotEmpty) d0,
+    ].join(' ');
+    _uiPerf.log(name, detail: d.isEmpty ? null : d);
+    unawaited(
+      FlutterLogger.nativeInfo(
+        'AI_CHAT_PERF',
+        d.isEmpty ? 'AIChat.$name' : 'AIChat.$name $d',
+      ).catchError((_) {}),
+    );
+  }
 
   Future<void> _loadPerfOverlayEnabled() async {
     try {
@@ -468,7 +491,7 @@ class _AISettingsPageState extends State<AISettingsPage>
         // Background completion may persist into DB after the chat UI was
         // detached (conversation/page switch). Reload the active conversation so
         // the final answer + thinking timeline shows up without a manual refresh.
-        if (_sending || _inStreaming) return;
+        if ((_sending || _inStreaming) && !_restoredBackgroundInFlight) return;
         _ctxDebounceTimer?.cancel();
         _ctxDebounceTimer = Timer(const Duration(milliseconds: 250), () {
           if (!mounted) return;
@@ -476,130 +499,235 @@ class _AISettingsPageState extends State<AISettingsPage>
         });
         return;
       }
-      if (ctx == 'chat' || ctx == 'chat:deleted' || ctx == 'chat:cleared') {
-        final bool isDeletedOrCleared =
-            (ctx == 'chat:deleted' || ctx == 'chat:cleared');
-        // When the active conversation changes mid-stream, detach the UI from the
-        // in-flight request and immediately reload the new conversation.
-        if (_sending || _inStreaming) {
-          _detachStreamingUiForBackground(
-            persistUiState: !isDeletedOrCleared,
-            // Keep the persisted thinking block "loading" so returning to the
-            // conversation can still show it as in-progress while the request
-            // completes in background.
-            finishThinkingBlock: false,
-          );
-        }
-        // When switching conversations (normal 'chat' event), clear the chat UI
-        // immediately so we don't keep showing the old conversation while the
-        // async reload is still in flight. (`chat` is also emitted for model
-        // changes, so we only clear if the active CID actually changed.)
-        if (ctx == 'chat') {
-          unawaited(() async {
-            String newCid = '';
-            try {
-              newCid = (await _settings.getActiveConversationCid()).trim();
-            } catch (_) {
-              newCid = '';
-            }
-            if (!mounted) return;
-            final String oldCid = (_activeConversationCid ?? '').trim();
-            if (newCid.isNotEmpty && newCid != oldCid) {
-              // Best-effort: close any in-flight gateway log writers before
-              // wiping UI state so file descriptors are not leaked.
-              try {
-                final writers = List<_GatewayLogFileWriter>.from(
-                  _gatewayLogWritersByIndex.values,
-                );
-                _gatewayLogWritersByIndex.clear();
-                _gatewayLogFilePathByIndex.clear();
-                for (final w in writers) {
-                  unawaited(w.close());
-                }
-              } catch (_) {}
-              _setState(() {
-                _activeConversationCid = newCid;
-                _loading = true;
-                _messages = <AIMessage>[];
-                _olderBeforeId = null;
-                _olderHasMore = false;
-                _olderLoading = false;
-                _attachmentsByIndex.clear();
-                _evidenceResolvedByMsgKey.clear();
-                _evidenceResolveFutures.clear();
-                _evidenceScreenshotByPath.clear();
-                _evidenceNsfwRequestedPaths.clear();
-                _evidenceNsfwPreloadFuture = null;
-                _reasoningByIndex.clear();
-                _gatewayLogsByIndex.clear();
-                _reasoningDurationByIndex.clear();
-                _thinkingBlocksByIndex.clear();
-                _contentSegmentsByIndex.clear();
-                _currentAssistantIndex = null;
-                _inStreaming = false;
-                _sending = false;
-                _lastIntent = null;
-                _clarifyState = null;
-              });
-              _stopInFlightHistoryPersistence();
-              _stopDots();
-            } else if (oldCid.isEmpty && newCid.isNotEmpty) {
-              // Keep the cached CID in sync for stable "send" semantics.
-              _activeConversationCid = newCid;
-            }
-          }());
-        }
-        // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的"空白延迟"
-        if (ctx == 'chat:deleted' || ctx == 'chat:cleared') {
-          final String clearedCid = (_activeConversationCid ?? '').trim();
-          if (clearedCid.isNotEmpty) {
-            _intentAnalyzedConversationCids.remove(clearedCid);
-          }
-          // Close any open log writers tied to the previous conversation.
-          try {
-            final writers = List<_GatewayLogFileWriter>.from(
-              _gatewayLogWritersByIndex.values,
-            );
-            _gatewayLogWritersByIndex.clear();
-            _gatewayLogFilePathByIndex.clear();
-            for (final w in writers) {
-              unawaited(w.close());
-            }
-          } catch (_) {}
-          setState(() {
-            _messages = <AIMessage>[];
-            _olderBeforeId = null;
-            _olderHasMore = false;
-            _olderLoading = false;
-            _attachmentsByIndex.clear();
-            _evidenceResolvedByMsgKey.clear();
-            _evidenceResolveFutures.clear();
-            _evidenceScreenshotByPath.clear();
-            _evidenceNsfwRequestedPaths.clear();
-            _evidenceNsfwPreloadFuture = null;
-            _reasoningByIndex.clear();
-            _gatewayLogsByIndex.clear();
-            _reasoningDurationByIndex.clear();
-            _thinkingBlocksByIndex.clear();
-            _contentSegmentsByIndex.clear();
-            _currentAssistantIndex = null;
-            _inStreaming = false;
-            _sending = false;
-            _lastIntent = null;
-            _clarifyState = null;
-          });
-          _stopInFlightHistoryPersistence();
-          _stopDots();
-        }
+      if (ctx == 'chat') {
+        // 模型/提供商切换也会广播 chat；只有会话 CID 变化时才重载消息。
+        _ctxDebounceTimer?.cancel();
+        _ctxDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+          if (!mounted) return;
+          unawaited(_handleChatContextChanged());
+        });
+        return;
+      }
+      if (ctx == 'chat:deleted' || ctx == 'chat:cleared') {
         // 去抖 250ms 合并多次事件，避免重复重载
         _ctxDebounceTimer?.cancel();
         _ctxDebounceTimer = Timer(const Duration(milliseconds: 250), () {
           if (!mounted) return;
-          _loadChatContextSelection();
-          _loadAll();
+          unawaited(_handleChatDeletedOrCleared());
         });
       }
     });
+  }
+
+  Future<void> _handleChatDeletedOrCleared() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _logChatPerf('deletedOrCleared.start');
+
+    String nextCid = '';
+    try {
+      nextCid = (await _settings.getActiveConversationCid()).trim();
+    } catch (e) {
+      _logChatPerf(
+        'deletedOrCleared.cid.error',
+        stopwatch: sw,
+        detail: 'err=$e',
+      );
+    }
+    if (!mounted) return;
+
+    // 删除/清空当前会话时，先让进行中的请求转入后台，避免后续增量继续写入已清空 UI。
+    if (_sending || _inStreaming) {
+      _detachStreamingUiForBackground(
+        persistUiState: false,
+        // 保留持久化里的思考块为 loading，方便回到会话时仍能看到后台请求状态。
+        finishThinkingBlock: false,
+      );
+    }
+
+    // 若是删除事件，先立即清空当前对话 UI，避免等待重载造成的"空白延迟"。
+    // 同步写入新的 active cid，避免 _loadAll() 的防串台检查把新会话加载结果丢弃。
+    final String clearedCid = (_activeConversationCid ?? '').trim();
+    if (clearedCid.isNotEmpty) {
+      _intentAnalyzedConversationCids.remove(clearedCid);
+    }
+    _clearChatUiForConversationReload(
+      activeConversationCid: nextCid,
+      clearImageCaches: true,
+    );
+    await _loadChatContextSelection();
+    await _loadAll();
+    _logChatPerf('deletedOrCleared.done', stopwatch: sw);
+  }
+
+  Future<void> _handleChatContextChanged() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _logChatPerf('contextChanged.start');
+    String newCid = '';
+    try {
+      newCid = (await _settings.getActiveConversationCid()).trim();
+    } catch (_) {
+      newCid = '';
+    }
+    if (!mounted) return;
+
+    final String oldCid = (_activeConversationCid ?? '').trim();
+    final bool hasLoadedConversation = oldCid.isNotEmpty;
+    final bool conversationChanged =
+        hasLoadedConversation && newCid.isNotEmpty && newCid != oldCid;
+    _logChatPerf(
+      'contextChanged.cid.done',
+      stopwatch: sw,
+      detail:
+          'oldHash=${oldCid.hashCode} newHash=${newCid.hashCode} hasLoaded=$hasLoadedConversation changed=$conversationChanged',
+    );
+
+    if (!conversationChanged && hasLoadedConversation) {
+      _logChatPerf('contextChanged.sameConversation.start', stopwatch: sw);
+      await _loadChatContextSelection();
+      await _loadChatConfigOnly();
+      _logChatPerf('contextChanged.sameConversation.done', stopwatch: sw);
+      return;
+    }
+
+    if (conversationChanged) {
+      _logChatPerf(
+        'contextChanged.conversationChanged.start',
+        stopwatch: sw,
+        detail: 'streaming=$_inStreaming sending=$_sending',
+      );
+      if (_sending || _inStreaming) {
+        _detachStreamingUiForBackground(
+          persistUiState: true,
+          finishThinkingBlock: false,
+        );
+      }
+      _clearChatUiForConversationReload(activeConversationCid: newCid);
+      _logChatPerf('contextChanged.uiCleared.done', stopwatch: sw);
+    }
+
+    await _loadChatContextSelection();
+    _logChatPerf('contextChanged.selection.done', stopwatch: sw);
+    await _loadAll();
+    _logChatPerf('contextChanged.loadAll.done', stopwatch: sw);
+  }
+
+  Future<void> _loadChatConfigOnly() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _logChatPerf('configOnly.start');
+    try {
+      final Future<int?> fActiveId = _settings.getActiveGroupId();
+      final Future<String> fBaseUrl = _settings.getBaseUrl();
+      final Future<String?> fApiKey = _settings.getApiKey().timeout(
+        const Duration(milliseconds: 600),
+        onTimeout: () => null,
+      );
+      final Future<String> fModel = _settings.getModel();
+
+      final int? activeId = await fActiveId;
+      final String baseUrl = await fBaseUrl;
+      final String? apiKey = await fApiKey;
+      final String model = await fModel;
+      if (!mounted) return;
+      _logChatPerf(
+        'configOnly.futures.done',
+        stopwatch: sw,
+        detail:
+            'activeId=${activeId ?? -1} hasKey=${apiKey != null} model=$model',
+      );
+
+      final String nextBaseUrl =
+          activeId == null && baseUrl == 'https://api.openai.com'
+          ? ''
+          : baseUrl;
+      final String nextApiKey = apiKey ?? '';
+      final String nextModel = activeId == null && model == 'gpt-4o-mini'
+          ? ''
+          : model;
+      final bool stateChanged = _activeGroupId != activeId;
+      final bool textChanged =
+          _baseUrlController.text != nextBaseUrl ||
+          _apiKeyController.text != nextApiKey ||
+          _modelController.text != nextModel;
+      if (!stateChanged && !textChanged) {
+        _logChatPerf('configOnly.noChange', stopwatch: sw);
+        return;
+      }
+
+      void updateText(TextEditingController controller, String value) {
+        if (controller.text == value) return;
+        controller.text = value;
+      }
+
+      _setState(() {
+        _activeGroupId = activeId;
+        updateText(_baseUrlController, nextBaseUrl);
+        updateText(_apiKeyController, nextApiKey);
+        updateText(_modelController, nextModel);
+      });
+      _logChatPerf(
+        'configOnly.setState.done',
+        stopwatch: sw,
+        detail: 'stateChanged=$stateChanged textChanged=$textChanged',
+      );
+    } catch (e) {
+      _logChatPerf('configOnly.error', stopwatch: sw, detail: 'err=$e');
+    }
+  }
+
+  void _clearChatUiForConversationReload({
+    String? activeConversationCid,
+    bool clearImageCaches = false,
+  }) {
+    final Stopwatch sw = Stopwatch()..start();
+    // 清空 UI 前先尽力关闭日志写入器，避免文件句柄泄漏。
+    try {
+      final writers = List<_GatewayLogFileWriter>.from(
+        _gatewayLogWritersByIndex.values,
+      );
+      _gatewayLogWritersByIndex.clear();
+      _gatewayLogFilePathByIndex.clear();
+      for (final w in writers) {
+        unawaited(w.close());
+      }
+    } catch (_) {}
+    _setState(() {
+      final String cid = (activeConversationCid ?? '').trim();
+      if (cid.isNotEmpty) {
+        _activeConversationCid = cid;
+      }
+      _loading = true;
+      _messages = <AIMessage>[];
+      _olderBeforeId = null;
+      _olderHasMore = false;
+      _olderLoading = false;
+      _attachmentsByIndex.clear();
+      _evidenceResolvedByAssistantIndex.clear();
+      if (clearImageCaches) {
+        _evidenceResolvedByMsgKey.clear();
+        _evidenceResolveFutures.clear();
+        _evidenceScreenshotByPath.clear();
+        _evidenceNsfwRequestedPaths.clear();
+        _evidenceNsfwPreloadFuture = null;
+      }
+      _reasoningByIndex.clear();
+      _gatewayLogsByIndex.clear();
+      _reasoningDurationByIndex.clear();
+      _thinkingBlocksByIndex.clear();
+      _contentSegmentsByIndex.clear();
+      _currentAssistantIndex = null;
+      _inStreaming = false;
+      _sending = false;
+      _restoredBackgroundInFlight = false;
+      _lastIntent = null;
+      _clarifyState = null;
+    });
+    _stopInFlightHistoryPersistence();
+    _stopDots();
+    _logChatPerf(
+      'clearChatUi.done',
+      stopwatch: sw,
+      detail: 'clearImageCaches=$clearImageCaches',
+    );
   }
 
   @override
@@ -724,11 +852,13 @@ class _AISettingsPageState extends State<AISettingsPage>
         _sending = false;
         _inStreaming = false;
         _currentAssistantIndex = null;
+        _restoredBackgroundInFlight = false;
       });
     } else {
       _sending = false;
       _inStreaming = false;
       _currentAssistantIndex = null;
+      _restoredBackgroundInFlight = false;
     }
     _inFlightConversationCid = null;
   }

@@ -12,6 +12,7 @@ import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/ai/application/chat_context_service.dart';
 import 'package:screen_memo/features/ai/application/codex_style_token_usage.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
+import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/widgets/segmented_token_bar.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
@@ -19,6 +20,20 @@ import 'package:screen_memo/core/widgets/ui_components.dart';
 part 'chat_context_sheet_panel_state_part.dart';
 part 'chat_context_sheet_panel_actions_part.dart';
 part 'chat_context_sheet_panel_widgets_part.dart';
+
+void _logAiChatPerf(String name, {String? detail, Stopwatch? stopwatch}) {
+  final String d0 = (detail ?? '').trim();
+  final String d = [
+    if (stopwatch != null) 'ms=${stopwatch.elapsedMilliseconds}',
+    if (d0.isNotEmpty) d0,
+  ].join(' ');
+  unawaited(
+    FlutterLogger.nativeInfo(
+      'AI_CHAT_PERF',
+      d.isEmpty ? name : '$name $d',
+    ).catchError((_) {}),
+  );
+}
 
 class ChatContextSheet {
   static bool _isZh(BuildContext context) => Localizations.localeOf(
@@ -167,13 +182,28 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
   }
 
   Future<void> _refresh() async {
-    if (_refreshInFlight) return;
+    if (_refreshInFlight) {
+      _logAiChatPerf('AppBarUsage.refresh.skip', detail: 'inFlight');
+      return;
+    }
+    final Stopwatch sw = Stopwatch()..start();
+    _logAiChatPerf('AppBarUsage.refresh.start');
     _refreshInFlight = true;
     try {
       final String cid = await AISettingsService.instance
           .getActiveConversationCid();
+      _logAiChatPerf(
+        'AppBarUsage.refresh.cid.done',
+        stopwatch: sw,
+        detail: 'cidHash=${cid.hashCode}',
+      );
       final Map<String, dynamic>? row = await ScreenshotDatabase.instance
           .getAiConversationByCid(cid);
+      _logAiChatPerf(
+        'AppBarUsage.refresh.row.done',
+        stopwatch: sw,
+        detail: 'hasRow=${row != null}',
+      );
 
       int tokens = _toInt(row?['last_prompt_tokens']);
       String model = (row?['model'] as String?)?.trim() ?? '';
@@ -184,13 +214,24 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
       try {
         final List<PromptUsageEvent> events = await ChatContextService.instance
             .listPromptUsageEvents(cid: cid, limit: 1);
+        _logAiChatPerf(
+          'AppBarUsage.refresh.usageEvents.done',
+          stopwatch: sw,
+          detail: 'events=${events.length}',
+        );
         if (events.isNotEmpty) {
           final PromptUsageEvent event = events.first;
           tokens = event.codexStyleUsage.tokensInContextWindow;
           model = event.model.trim().isNotEmpty ? event.model.trim() : model;
           parts = _partsFromBreakdown(event.breakdown['parts']);
         }
-      } catch (_) {}
+      } catch (e) {
+        _logAiChatPerf(
+          'AppBarUsage.refresh.usageEvents.error',
+          stopwatch: sw,
+          detail: 'err=$e',
+        );
+      }
 
       if (raw.isNotEmpty) {
         try {
@@ -204,7 +245,18 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
               parts = _partsFromBreakdown(decoded['parts']);
             }
           }
-        } catch (_) {}
+          _logAiChatPerf(
+            'AppBarUsage.refresh.breakdown.done',
+            stopwatch: sw,
+            detail: 'rawLen=${raw.length} parts=${parts.length}',
+          );
+        } catch (e) {
+          _logAiChatPerf(
+            'AppBarUsage.refresh.breakdown.error',
+            stopwatch: sw,
+            detail: 'rawLen=${raw.length} err=$e',
+          );
+        }
       }
 
       if (model.trim().isEmpty) {
@@ -221,6 +273,11 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
       } catch (_) {
         activeModel = '';
       }
+      _logAiChatPerf(
+        'AppBarUsage.refresh.models.done',
+        stopwatch: sw,
+        detail: 'model=$model activeModel=$activeModel',
+      );
 
       final int fallbackCapTokens = AIContextBudgets.forModel(
         '__unknown__',
@@ -238,6 +295,12 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
       final int? promptModelOverride = model.trim().isEmpty
           ? null
           : await AIModelPromptCapsService.instance.getOverride(model);
+      _logAiChatPerf(
+        'AppBarUsage.refresh.caps.done',
+        stopwatch: sw,
+        detail:
+            'activeCap=$activeCapTokens promptCap=$promptModelCapTokens override=${promptModelOverride ?? -1}',
+      );
       final bool sameModel =
           model.trim().toLowerCase() == activeModel.trim().toLowerCase();
       final bool promptLooksFallback =
@@ -257,6 +320,11 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
             cid: cid,
             modelContextWindow: capTokens > 0 ? capTokens : null,
           );
+      _logAiChatPerf(
+        'AppBarUsage.refresh.codexUsage.done',
+        stopwatch: sw,
+        detail: 'cap=$capTokens',
+      );
       final CodexStyleTokenUsage lastUsage = usageInfo.lastTokenUsage;
       tokens = lastUsage.tokensInContextWindow;
       int effectiveUsed = tokens.clamp(0, 1 << 62).toInt();
@@ -276,11 +344,23 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
         _effectiveTotalTokens = effectiveTotal;
         _parts = parts;
       });
-    } catch (_) {
+      _logAiChatPerf(
+        'AppBarUsage.refresh.setState.done',
+        stopwatch: sw,
+        detail:
+            'tokens=$_tokens cap=$_capTokens effective=$_effectiveUsedTokens/$_effectiveTotalTokens parts=${_parts.length}',
+      );
+    } catch (e) {
+      _logAiChatPerf(
+        'AppBarUsage.refresh.error',
+        stopwatch: sw,
+        detail: 'err=$e',
+      );
       // Keep the last known values; the app bar should never crash due to a
       // transient DB/model lookup failure.
     } finally {
       _refreshInFlight = false;
+      _logAiChatPerf('AppBarUsage.refresh.done', stopwatch: sw);
     }
   }
 

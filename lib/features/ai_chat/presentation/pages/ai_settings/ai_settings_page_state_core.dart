@@ -157,10 +157,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
   Future<void> _loadAll() async {
     final sw = Stopwatch()..start();
     _uiPerf.log('loadAll.start');
+    _logChatPerf('loadAll.start');
     _markDynamicEntryPerf('chat.loadAll.start');
     try {
       if (_loadingAllInFlight) {
         _uiPerf.log('loadAll.skip', detail: 'reentry');
+        _logChatPerf('loadAll.skip', stopwatch: sw, detail: 'reentry');
         _loadAllQueued = true;
         _markDynamicEntryPerf('chat.loadAll.skip', detail: 'reentry');
         return; // 防止重入触发的重复加载
@@ -200,8 +202,24 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
 
       // 收集其余预取结果
       final String chatCid = (await fChatCid).trim();
+      _logChatPerf(
+        'loadAll.cid.done',
+        stopwatch: sw,
+        detail: 'cidHash=${chatCid.hashCode}',
+      );
       final List<AIMessage> tailHistory = await fTailHistory;
+      _logChatPerf(
+        'loadAll.tailHistory.done',
+        stopwatch: sw,
+        detail: 'tail=${tailHistory.length}',
+      );
       final FullMessagesPage firstPage = await fFullPage;
+      _logChatPerf(
+        'loadAll.fullPage.done',
+        stopwatch: sw,
+        detail:
+            'fullPage=${firstPage.messages.length} hasMore=${firstPage.hasMore} nextBefore=${firstPage.nextBeforeId ?? -1}',
+      );
 
       bool uiThinkingHasUnfinishedBlocks(String raw) {
         final String t = raw.trim();
@@ -393,6 +411,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         detail:
             'ms=${sw.elapsedMilliseconds} tail=${tailHistory.length} fullPage=${firstPage.messages.length} merged=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
       );
+      _logChatPerf(
+        'loadAll.history.done',
+        stopwatch: sw,
+        detail:
+            'tail=${tailHistory.length} fullPage=${firstPage.messages.length} merged=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
+      );
       _markDynamicEntryPerf(
         'chat.loadAll.history.done',
         detail:
@@ -403,6 +427,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       final Map<int, String> rb = <int, String>{};
       final Map<int, Duration> rd = <int, Duration>{};
       final Map<int, List<_ThinkingBlock>> tb = <int, List<_ThinkingBlock>>{};
+      int? restoredInFlightAssistantIndex;
       for (int i = 0; i < history.length; i++) {
         final m = history[i];
         if (m.role != 'user') {
@@ -418,6 +443,14 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           final List<_ThinkingBlock> blocks = _decodeThinkingBlocks(uiJson);
           if (blocks.isNotEmpty) tb[i] = blocks;
         }
+        if (m.role == 'assistant' &&
+            _isRestorableBackgroundAssistantTurn(
+              history,
+              index: i,
+              blocks: tb[i] ?? const <_ThinkingBlock>[],
+            )) {
+          restoredInFlightAssistantIndex = i;
+        }
       }
 
       // If the active conversation has changed while we were loading, skip
@@ -431,6 +464,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           'loadAll.skip',
           detail:
               'staleConversation capturedCid=$chatCid currentCid=$currentCid ms=${sw.elapsedMilliseconds}',
+        );
+        _logChatPerf(
+          'loadAll.skip',
+          stopwatch: sw,
+          detail:
+              'staleConversation capturedHash=${chatCid.hashCode} currentHash=${currentCid.hashCode}',
         );
         return;
       }
@@ -448,8 +487,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         _olderLoading = false;
         _clarifyState = null;
         _attachmentsByIndex.clear();
-        _evidenceResolvedByMsgKey.clear();
-        _evidenceResolveFutures.clear();
+        _evidenceResolvedByAssistantIndex.clear();
         _thinkingBlocksByIndex
           ..clear()
           ..addAll(tb);
@@ -460,6 +498,13 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         _reasoningDurationByIndex
           ..clear()
           ..addAll(rd);
+        _currentAssistantIndex = restoredInFlightAssistantIndex;
+        _restoredBackgroundInFlight = restoredInFlightAssistantIndex != null;
+        _inStreaming = restoredInFlightAssistantIndex != null;
+        _sending = restoredInFlightAssistantIndex != null;
+        _inFlightConversationCid = restoredInFlightAssistantIndex != null
+            ? (chatCid.isEmpty ? null : chatCid)
+            : null;
         _streamEnabled = streamEnabled;
         _renderImagesDuringStreaming = renderImgs;
         _reasoningLevel = reasoningLevel;
@@ -468,6 +513,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       _uiPerf.log(
         'loadAll.history.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+      _logChatPerf(
+        'loadAll.history.setState.done',
+        stopwatch: sw,
+        detail:
+            'messages=${_messages.length} evidenceCacheMsgs=${_evidenceResolvedByMsgKey.length} evidenceFutures=${_evidenceResolveFutures.length}',
       );
       _markDynamicEntryPerf(
         'chat.loadAll.history.setState.done',
@@ -488,6 +539,11 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         'loadAll.groups.done',
         detail:
             'ms=${sw.elapsedMilliseconds} groups=${groups.length} activeId=${activeId ?? -1}',
+      );
+      _logChatPerf(
+        'loadAll.groups.done',
+        stopwatch: sw,
+        detail: 'groups=${groups.length} activeId=${activeId ?? -1}',
       );
       _markDynamicEntryPerf(
         'chat.loadAll.groups.done',
@@ -516,6 +572,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         'loadAll.config.done',
         detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
       );
+      _logChatPerf(
+        'loadAll.config.done',
+        stopwatch: sw,
+        detail:
+            'activeId=${activeId ?? -1} hasKey=${apiKey != null} model=$model',
+      );
       _markDynamicEntryPerf(
         'chat.loadAll.config.done',
         detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
@@ -527,6 +589,12 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           'loadAll.skip',
           detail:
               'staleConfig capturedCid=$chatCid currentCid=$latestCid ms=${sw.elapsedMilliseconds}',
+        );
+        _logChatPerf(
+          'loadAll.skip',
+          stopwatch: sw,
+          detail:
+              'staleConfig capturedHash=${chatCid.hashCode} currentHash=${latestCid.hashCode}',
         );
         return;
       }
@@ -560,11 +628,17 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         'loadAll.config.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
       );
+      _logChatPerf(
+        'loadAll.config.setState.done',
+        stopwatch: sw,
+        detail: 'groups=${_groups.length} activeId=${_activeGroupId ?? -1}',
+      );
       _markDynamicEntryPerf(
         'chat.loadAll.config.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
       );
     } catch (e) {
+      _logChatPerf('loadAll.error', stopwatch: sw, detail: 'err=$e');
       _markDynamicEntryPerf(
         'chat.loadAll.error',
         detail: 'ms=${sw.elapsedMilliseconds} error=$e',
@@ -587,6 +661,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     // 首帧绘制完成耗时（状态更新到绘制）
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _uiPerf.log('loadAll.firstFrame', detail: 'ms=${sw.elapsedMilliseconds}');
+      _logChatPerf('loadAll.firstFrame', stopwatch: sw);
       _markDynamicEntryPerf(
         'chat.loadAll.firstFrame',
         detail: 'ms=${sw.elapsedMilliseconds}',
@@ -622,6 +697,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     shiftMap<List<_ThinkingBlock>>(_thinkingBlocksByIndex);
     shiftMap<List<String>>(_contentSegmentsByIndex);
     shiftMap<List<EvidenceImageAttachment>>(_attachmentsByIndex);
+    shiftMap<Map<String, String>>(_evidenceResolvedByAssistantIndex);
 
     if (_currentAssistantIndex != null) {
       _currentAssistantIndex = _currentAssistantIndex! + delta;
@@ -1139,6 +1215,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         _olderHasMore = false;
         _olderLoading = false;
         _attachmentsByIndex.clear();
+        _evidenceResolvedByAssistantIndex.clear();
         _evidenceResolvedByMsgKey.clear();
         _evidenceResolveFutures.clear();
         _reasoningByIndex.clear();
@@ -1252,6 +1329,43 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     _inFlightSaveTimer?.cancel();
     _inFlightSaveTimer = null;
     _inFlightHistoryDirty = false;
+  }
+
+  bool _isRestorableBackgroundAssistantTurn(
+    List<AIMessage> history, {
+    required int index,
+    required List<_ThinkingBlock> blocks,
+  }) {
+    if (index < 0 || index >= history.length) return false;
+    if (index != history.length - 1) return false;
+
+    final AIMessage message = history[index];
+    if (message.role != 'assistant') return false;
+    if (message.content.trim().isNotEmpty) return false;
+    if (message.usagePromptTokens != null ||
+        message.usageCompletionTokens != null ||
+        message.usageTotalTokens != null ||
+        message.responseDuration != null) {
+      return false;
+    }
+
+    bool hasPreviousUser = false;
+    for (int i = index - 1; i >= 0; i--) {
+      final String role = history[i].role.trim();
+      if (role == 'user') {
+        hasPreviousUser = true;
+        break;
+      }
+      if (role == 'assistant') break;
+    }
+    if (!hasPreviousUser) return false;
+
+    if (blocks.any((block) => block.isLoading)) return true;
+
+    // 离开页面很早时可能还没持久化到非 transient thinking event。
+    // 只对近期的最后一个空助手占位恢复后台进行中，避免旧空消息长期误判。
+    final Duration age = DateTime.now().difference(message.createdAt);
+    return age >= Duration.zero && age <= const Duration(minutes: 30);
   }
 
   bool _isZhLocale() {
@@ -1642,6 +1756,13 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
   void _handleAiUiEvent(int assistantIdx, Map<String, dynamic> payload) {
     final String type = (payload['type'] as String?)?.trim() ?? '';
     if (type.isEmpty) return;
+    if (type == 'evidence_path_map') {
+      _mergeLocalEvidencePathsForAssistant(
+        assistantIdx,
+        _parseEvidencePathMap(payload['paths']),
+      );
+      return;
+    }
     if (type == 'tool_batch_begin' || type == 'tool_call_end') {
       unawaited(
         FlutterLogger.nativeInfo(

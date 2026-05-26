@@ -290,6 +290,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     final String segmentId = sid != null && sid > 0 ? sid.toString() : '';
     final String context = (tr.logContext ?? '').trim();
     final String model = (tr.model ?? '').trim();
+    final String phase = (tr.callPhase ?? '').trim();
+    final String promptCacheKey = (tr.promptCacheKey ?? '').trim();
     final String uri = (tr.request?.uri?.toString() ?? '').trim();
     final String error = (tr.error ?? '').trim();
     final int rawHash = Object.hashAll(tr.rawBlocks);
@@ -298,6 +300,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       segmentId,
       context,
       model,
+      phase,
+      promptCacheKey,
       uri,
       error,
       startedAt.toString(),
@@ -448,6 +452,14 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     return isNeg ? '-$grouped' : grouped;
   }
 
+  String _fmtPercent(double value) {
+    if (!value.isFinite) return '';
+    final String fixed = value >= 10
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+    return '${fixed.replaceFirst(RegExp(r'\.0$'), '')}%';
+  }
+
   String _fmtTime(DateTime? dt, {required bool zh}) {
     if (dt == null) return '';
     final DateTime local = dt.toLocal();
@@ -549,6 +561,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
   String _buildTraceTitle(AIRequestTrace tr) {
     final String ctx = (tr.logContext ?? '').trim();
     if (tr.source == AIRequestLogSource.aiTrace) {
+      final String phase = (tr.callPhase ?? '').trim();
+      if (phase.isNotEmpty) return phase;
       if (ctx.isNotEmpty) return 'ctx=$ctx';
       final String api = (tr.apiType ?? '').trim();
       if (api.isNotEmpty) return api;
@@ -927,6 +941,16 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     final dynamic usageRaw = obj['usage'] ?? obj['token_usage'];
     if (usageRaw is! Map) return;
 
+    int? fromNested(String parentKey, List<String> keys) {
+      final dynamic parent = usageRaw[parentKey];
+      if (parent is! Map) return null;
+      for (final String key in keys) {
+        final int? value = _toInt(parent[key]);
+        if (value != null) return value;
+      }
+      return null;
+    }
+
     final int? prompt = _toInt(
       usageRaw['prompt_tokens'] ??
           usageRaw['promptTokens'] ??
@@ -942,10 +966,42 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     final int? total = _toInt(
       usageRaw['total_tokens'] ?? usageRaw['totalTokens'],
     );
+    final int? cacheHit =
+        _toInt(
+          usageRaw['prompt_cache_hit_tokens'] ??
+              usageRaw['promptCacheHitTokens'] ??
+              usageRaw['cache_hit_tokens'] ??
+              usageRaw['cacheHitTokens'] ??
+              usageRaw['cached_tokens'] ??
+              usageRaw['cachedTokens'] ??
+              usageRaw['cache_read_input_tokens'] ??
+              usageRaw['cacheReadInputTokens'] ??
+              usageRaw['cachedContentTokenCount'],
+        ) ??
+        fromNested('prompt_tokens_details', <String>[
+          'cached_tokens',
+          'cache_hit_tokens',
+        ]) ??
+        fromNested('input_tokens_details', <String>[
+          'cached_tokens',
+          'cache_hit_tokens',
+        ]);
+    final int? cacheMiss = _toInt(
+      usageRaw['prompt_cache_miss_tokens'] ??
+          usageRaw['promptCacheMissTokens'] ??
+          usageRaw['cache_miss_tokens'] ??
+          usageRaw['cacheMissTokens'] ??
+          usageRaw['cache_write_input_tokens'] ??
+          usageRaw['cacheWriteInputTokens'] ??
+          usageRaw['cache_creation_input_tokens'] ??
+          usageRaw['cacheCreationInputTokens'],
+    );
 
     usage.promptTokens ??= prompt;
     usage.completionTokens ??= completion;
     usage.totalTokens ??= total;
+    usage.cacheHitTokens ??= cacheHit;
+    usage.cacheMissTokens ??= cacheMiss;
     usage.totalTokens ??=
         (usage.promptTokens != null && usage.completionTokens != null)
         ? usage.promptTokens! + usage.completionTokens!
@@ -1062,6 +1118,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       promptTokens: tr.usagePromptTokens,
       completionTokens: tr.usageCompletionTokens,
       totalTokens: tr.usageTotalTokens,
+      cacheHitTokens: tr.usageCacheHitTokens,
+      cacheMissTokens: tr.usageCacheMissTokens,
     );
     final String merged = _mergeResponseText(raw, usage);
 
@@ -1082,6 +1140,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
+      cacheHitTokens: usage.cacheHitTokens,
+      cacheMissTokens: usage.cacheMissTokens,
     );
   }
 
@@ -1688,10 +1748,12 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
   Widget _buildUsageBadge(
     BuildContext context, {
     required String label,
-    required int value,
+    int? value,
+    String? valueText,
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
+    final String text = valueText ?? _fmtNum(value);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -1700,7 +1762,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         border: Border.all(color: cs.outline.withValues(alpha: 0.24)),
       ),
       child: Text(
-        '${_fmtNum(value)} $label',
+        '$text $label',
         style: theme.textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: cs.onSurfaceVariant,
@@ -1758,6 +1820,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     final String createdAtText = createdAtDt != null
         ? _fmtTime(createdAtDt, zh: zh)
         : createdAtRaw;
+    final String callPhase = (tr.callPhase ?? '').trim();
+    final String promptCacheKey = (tr.promptCacheKey ?? '').trim();
 
     final int? promptTokens = tr.usagePromptTokens ?? rsp?.promptTokens;
     final int? completionTokens =
@@ -1765,6 +1829,17 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     int? totalTokens = tr.usageTotalTokens ?? rsp?.totalTokens;
     totalTokens ??= (promptTokens != null && completionTokens != null)
         ? promptTokens + completionTokens
+        : null;
+    final int? cacheHitTokens = tr.usageCacheHitTokens ?? rsp?.cacheHitTokens;
+    final int? cacheMissTokens =
+        tr.usageCacheMissTokens ?? rsp?.cacheMissTokens;
+    final int? cacheKnownTokens =
+        (cacheHitTokens != null || cacheMissTokens != null)
+        ? (cacheHitTokens ?? 0) + (cacheMissTokens ?? 0)
+        : null;
+    final double? cacheHitRate =
+        cacheKnownTokens != null && cacheKnownTokens > 0
+        ? ((cacheHitTokens ?? 0) / cacheKnownTokens * 100)
         : null;
 
     final List<Widget> tokenBadges = <Widget>[
@@ -1781,6 +1856,24 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
           context,
           label: zh ? '总' : 'total',
           value: totalTokens,
+        ),
+      if (cacheHitTokens != null)
+        _buildUsageBadge(
+          context,
+          label: zh ? '缓存命中' : 'cache hit',
+          value: cacheHitTokens,
+        ),
+      if (cacheMissTokens != null)
+        _buildUsageBadge(
+          context,
+          label: zh ? '缓存未命中' : 'cache miss',
+          value: cacheMissTokens,
+        ),
+      if (cacheHitRate != null)
+        _buildUsageBadge(
+          context,
+          label: zh ? '命中率' : 'hit rate',
+          valueText: _fmtPercent(cacheHitRate),
         ),
     ];
 
@@ -1818,6 +1911,16 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       addStat(
         zh ? '缺失图片' : 'Missing images',
         zh ? '${_fmtNum(missingImages)} 张' : '${_fmtNum(missingImages)} images',
+      );
+    }
+    if (callPhase.isNotEmpty) {
+      addStat(zh ? '调用阶段' : 'Call phase', callPhase, monospace: true);
+    }
+    if (promptCacheKey.isNotEmpty) {
+      addStat(
+        zh ? '缓存分桶' : 'Prompt cache key',
+        promptCacheKey,
+        monospace: true,
       );
     }
 
@@ -2405,6 +2508,8 @@ class _ResponseViewData {
     this.promptTokens,
     this.completionTokens,
     this.totalTokens,
+    this.cacheHitTokens,
+    this.cacheMissTokens,
   });
 
   final String mergedText;
@@ -2413,6 +2518,8 @@ class _ResponseViewData {
   final int? promptTokens;
   final int? completionTokens;
   final int? totalTokens;
+  final int? cacheHitTokens;
+  final int? cacheMissTokens;
 }
 
 class _SegmentImageItem {
@@ -2462,9 +2569,17 @@ class _OverviewStatItem {
 }
 
 class _UsageBox {
-  _UsageBox({this.promptTokens, this.completionTokens, this.totalTokens});
+  _UsageBox({
+    this.promptTokens,
+    this.completionTokens,
+    this.totalTokens,
+    this.cacheHitTokens,
+    this.cacheMissTokens,
+  });
 
   int? promptTokens;
   int? completionTokens;
   int? totalTokens;
+  int? cacheHitTokens;
+  int? cacheMissTokens;
 }

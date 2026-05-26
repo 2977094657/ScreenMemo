@@ -310,6 +310,212 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
     return '${m.createdAt.millisecondsSinceEpoch}|${m.role}|${m.content.hashCode}';
   }
 
+  Map<String, String> _parseEvidencePathMap(Object? raw) {
+    final Map<String, String> out = <String, String>{};
+
+    void addPair(String key, String value) {
+      final String name = key.trim();
+      final String path = value.trim();
+      if (name.isEmpty || path.isEmpty) return;
+      out[name] = path;
+      final String nameBase = _basenameFromPath(name).trim();
+      if (nameBase.isNotEmpty) out[nameBase] = path;
+      final String pathBase = _basenameFromPath(path).trim();
+      if (pathBase.isNotEmpty) out[pathBase] = path;
+    }
+
+    if (raw is Map) {
+      raw.forEach((Object? key, Object? value) {
+        addPair(key?.toString() ?? '', value?.toString() ?? '');
+      });
+    } else if (raw is Iterable) {
+      for (final Object? item in raw) {
+        if (item is! Map) continue;
+        final String name =
+            (item['filename'] ?? item['name'] ?? item['basename'] ?? '')
+                .toString();
+        final String path = (item['file_path'] ?? item['path'] ?? '')
+            .toString();
+        addPair(name, path);
+      }
+    }
+
+    return out;
+  }
+
+  String _resolveLocalEvidenceRefsForAssistantIndex(
+    int assistantIdx,
+    String content,
+  ) {
+    final Map<String, String> localMap =
+        _evidenceResolvedByAssistantIndex[assistantIdx] ??
+        const <String, String>{};
+    if (localMap.isEmpty) return content;
+    return AIMessage.resolveEvidenceRefsToLocalPaths(content, localMap);
+  }
+
+  void _mergeLocalEvidencePathsForAssistant(
+    int assistantIdx,
+    Map<String, String> paths,
+  ) {
+    if (assistantIdx < 0 || paths.isEmpty) return;
+    final Stopwatch sw = Stopwatch()..start();
+
+    final Map<String, String> existingByIndex =
+        _evidenceResolvedByAssistantIndex[assistantIdx] ??
+        const <String, String>{};
+    bool changed = false;
+    for (final MapEntry<String, String> entry in paths.entries) {
+      if (existingByIndex[entry.key] != entry.value) {
+        changed = true;
+        break;
+      }
+    }
+    final Map<String, String> mergedByIndex = <String, String>{
+      ...existingByIndex,
+      ...paths,
+    };
+    if (changed || existingByIndex.length != mergedByIndex.length) {
+      _evidenceResolvedByAssistantIndex[assistantIdx] = mergedByIndex;
+    }
+
+    if (assistantIdx >= _messages.length ||
+        _messages[assistantIdx].role != 'assistant') {
+      _logChatPerf(
+        'evidence.localMap.merge',
+        stopwatch: sw,
+        detail:
+            'idx=$assistantIdx paths=${paths.length} total=${mergedByIndex.length} activeMessage=0',
+      );
+      return;
+    }
+
+    final AIMessage current = _messages[assistantIdx];
+    final String oldMsgKey = _evidenceMsgKey(current);
+    final String resolvedContent = AIMessage.resolveEvidenceRefsToLocalPaths(
+      current.content,
+      mergedByIndex,
+    );
+    final AIMessage effectiveMessage = resolvedContent == current.content
+        ? current
+        : current.copyWith(content: resolvedContent);
+
+    if (!identical(effectiveMessage, current)) {
+      final List<AIMessage> next = List<AIMessage>.from(_messages);
+      next[assistantIdx] = effectiveMessage;
+      _messages = next;
+      _syncContentSegmentsForFullContent(assistantIdx, resolvedContent);
+    }
+
+    final String newMsgKey = _evidenceMsgKey(effectiveMessage);
+    final Map<String, String> oldCached =
+        _evidenceResolvedByMsgKey[oldMsgKey] ?? const <String, String>{};
+    _evidenceResolvedByMsgKey[oldMsgKey] = <String, String>{
+      ...oldCached,
+      ...mergedByIndex,
+    };
+    if (newMsgKey != oldMsgKey) {
+      final Map<String, String> newCached =
+          _evidenceResolvedByMsgKey[newMsgKey] ?? const <String, String>{};
+      _evidenceResolvedByMsgKey[newMsgKey] = <String, String>{
+        ...newCached,
+        ...mergedByIndex,
+      };
+    }
+
+    _scheduleEvidenceNsfwPreload(mergedByIndex.values);
+    _scheduleEvidenceRebuild();
+    _logChatPerf(
+      'evidence.localMap.merge',
+      stopwatch: sw,
+      detail:
+          'idx=$assistantIdx paths=${paths.length} total=${mergedByIndex.length} resolvedContent=${resolvedContent == current.content ? 0 : 1}',
+    );
+  }
+
+  void _persistResolvedEvidencePathsForMessage({
+    required int? messageIndex,
+    required String msgKey,
+    required Map<String, String> resolvedPaths,
+  }) {
+    if (messageIndex == null ||
+        messageIndex < 0 ||
+        messageIndex >= _messages.length ||
+        resolvedPaths.isEmpty) {
+      return;
+    }
+    final AIMessage current = _messages[messageIndex];
+    if (_evidenceMsgKey(current) != msgKey) return;
+
+    final String updatedContent = AIMessage.resolveEvidenceRefsToLocalPaths(
+      current.content,
+      resolvedPaths,
+    );
+    if (updatedContent == current.content) return;
+
+    final Stopwatch sw = Stopwatch()..start();
+    final AIMessage updated = current.copyWith(content: updatedContent);
+    final String newMsgKey = _evidenceMsgKey(updated);
+    final Map<String, String> existing =
+        _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
+    _evidenceResolvedByMsgKey[newMsgKey] = <String, String>{
+      ...existing,
+      ...resolvedPaths,
+    };
+
+    if (mounted) {
+      _setState(() {
+        if (messageIndex >= 0 && messageIndex < _messages.length) {
+          final AIMessage latest = _messages[messageIndex];
+          if (_evidenceMsgKey(latest) == msgKey) {
+            _messages[messageIndex] = updated;
+          }
+        }
+      });
+    }
+
+    final String cid =
+        (_activeConversationCid ?? _inFlightConversationCid ?? '').trim();
+    final List<AIMessage> toPersist = _mergeReasoningForPersistence(
+      List<AIMessage>.from(_messages),
+    );
+    if (cid.isNotEmpty) {
+      unawaited(_enqueueChatHistorySaveByCid(cid, toPersist));
+    } else {
+      unawaited(_enqueueChatHistorySave(toPersist));
+    }
+    _logChatPerf(
+      'evidence.persistAbsolute.done',
+      stopwatch: sw,
+      detail:
+          'idx=$messageIndex msg=${msgKey.hashCode} newMsg=${newMsgKey.hashCode} paths=${resolvedPaths.length}',
+    );
+  }
+
+  void _schedulePersistResolvedEvidencePathsForMessage({
+    required int? messageIndex,
+    required String msgKey,
+    required Map<String, String> resolvedPaths,
+  }) {
+    if (messageIndex == null ||
+        messageIndex < 0 ||
+        resolvedPaths.isEmpty ||
+        !mounted) {
+      return;
+    }
+    final String scheduleKey = '$msgKey|$messageIndex';
+    if (!_evidenceAbsolutePersistScheduledKeys.add(scheduleKey)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _evidenceAbsolutePersistScheduledKeys.remove(scheduleKey);
+      if (!mounted) return;
+      _persistResolvedEvidencePathsForMessage(
+        messageIndex: messageIndex,
+        msgKey: msgKey,
+        resolvedPaths: resolvedPaths,
+      );
+    });
+  }
+
   void _scheduleEvidenceRebuild() {
     if (_evidenceRebuildScheduled) return;
     _evidenceRebuildScheduled = true;
@@ -321,6 +527,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
   }
 
   void _scheduleEvidenceNsfwPreload(Iterable<String> filePaths) {
+    final Stopwatch sw = Stopwatch()..start();
     final List<String> paths = filePaths
         .map((e) => e.toString().trim())
         .where((e) => e.isNotEmpty)
@@ -334,7 +541,19 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         toLoad.add(p);
       }
     }
-    if (toLoad.isEmpty) return;
+    if (toLoad.isEmpty) {
+      _logChatPerf(
+        'evidence.nsfwPreload.skip',
+        stopwatch: sw,
+        detail: 'paths=${paths.length} alreadyRequested=1',
+      );
+      return;
+    }
+    _logChatPerf(
+      'evidence.nsfwPreload.schedule',
+      stopwatch: sw,
+      detail: 'paths=${paths.length} toLoad=${toLoad.length}',
+    );
 
     // Serialize to avoid DB storms while scrolling/rebuilding.
     final Future<void>? prev = _evidenceNsfwPreloadFuture;
@@ -354,6 +573,11 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
 
   Future<void> _preloadEvidenceNsfwNow(List<String> filePaths) async {
     if (filePaths.isEmpty) return;
+    final Stopwatch sw = Stopwatch()..start();
+    _logChatPerf(
+      'evidence.nsfwPreload.start',
+      detail: 'paths=${filePaths.length}',
+    );
 
     final List<ScreenshotRecord> found = <ScreenshotRecord>[];
     for (final p in filePaths) {
@@ -399,12 +623,19 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
     }
 
     if (!mounted) return;
+    _logChatPerf(
+      'evidence.nsfwPreload.done',
+      stopwatch: sw,
+      detail:
+          'paths=${filePaths.length} found=${found.length} appBuckets=${idsByApp.length}',
+    );
     _scheduleEvidenceRebuild();
   }
 
   Future<Map<String, String>> _resolveEvidencePathsCached({
     required String msgKey,
     required Set<String> missingNames,
+    int? messageIndex,
   }) {
     if (missingNames.isEmpty) return Future.value(const <String, String>{});
     final List<String> sorted = missingNames.toList()..sort();
@@ -416,18 +647,33 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         detail:
             'lookup=${lookupKey.hashCode} missing=${missingNames.length} names=${sorted.take(3).join(",")}',
       );
+      _logChatPerf(
+        'evidence.resolve.start',
+        detail:
+            'lookup=${lookupKey.hashCode} missing=${missingNames.length} names=${sorted.take(3).join(",")}',
+      );
       Map<String, String> map = const <String, String>{};
       try {
         map = await ScreenshotDatabase.instance.findPathsByBasenames(
           missingNames,
         );
-      } catch (_) {
+      } catch (e) {
+        _logChatPerf(
+          'evidence.resolve.db.error',
+          stopwatch: sw,
+          detail: 'lookup=${lookupKey.hashCode} err=$e',
+        );
         map = const <String, String>{};
       }
       _uiPerf.log(
         'evidence.resolve.db.done',
         detail:
             'lookup=${lookupKey.hashCode} ms=${sw.elapsedMilliseconds} found=${map.length}',
+      );
+      _logChatPerf(
+        'evidence.resolve.db.done',
+        stopwatch: sw,
+        detail: 'lookup=${lookupKey.hashCode} found=${map.length}',
       );
       if (!mounted) return map;
       if (map.isNotEmpty) {
@@ -451,8 +697,19 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
             detail:
                 'lookup=${lookupKey.hashCode} msg=${msgKey.hashCode} merged=${existing.length + map.length}',
           );
+          _logChatPerf(
+            'evidence.cache.update',
+            stopwatch: sw,
+            detail:
+                'lookup=${lookupKey.hashCode} msg=${msgKey.hashCode} merged=${existing.length + map.length}',
+          );
           // 关键：证据路径缓存更新后，主动触发一次页面重建；
           // 否则在“退出→进入”场景里可能要等到 Drawer/键盘等外部 UI 事件触发 rebuild 才会显示图片。
+          _persistResolvedEvidencePathsForMessage(
+            messageIndex: messageIndex,
+            msgKey: msgKey,
+            resolvedPaths: map,
+          );
           _scheduleEvidenceRebuild();
         }
       }
@@ -460,6 +717,11 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         'evidence.resolve.done',
         detail:
             'lookup=${lookupKey.hashCode} ms=${sw.elapsedMilliseconds} found=${map.length}',
+      );
+      _logChatPerf(
+        'evidence.resolve.done',
+        stopwatch: sw,
+        detail: 'lookup=${lookupKey.hashCode} found=${map.length}',
       );
       return map;
     });
@@ -514,6 +776,10 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       }
 
       if (mounted) {
+        final bool sameProvider =
+            (_ctxChatProvider?.id ?? -1) == (sel.id ?? -2);
+        final bool sameModel = (_ctxChatModel ?? '').trim() == model;
+        if (sameProvider && sameModel && !_ctxLoading) return;
         _setState(() {
           _ctxChatProvider = sel;
           _ctxChatModel = model;
@@ -1368,6 +1634,12 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         detail:
             'msg=${perfMsgKey.hashCode} ms=${mdSw.elapsedMilliseconds} len=${content.length}',
       );
+      _logChatPerf(
+        'md.preprocess',
+        stopwatch: mdSw,
+        detail:
+            'idx=$messageIndex msg=${perfMsgKey.hashCode} len=${content.length} preLen=${preprocessedMd.length}',
+      );
     }
     final Map<String, String> evidenceNameToPath = <String, String>{};
     final List<EvidenceImageAttachment> atts =
@@ -1406,10 +1678,13 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
     final List<String> evidenceNamesInOrder = <String>[];
     final Set<String> evidenceNames = <String>{};
     for (final mm in RegExp(
-      r'\[evidence:\s*([^\]\s]+)\s*\]',
+      r'\[evidence:\s*([^\]]+?)\s*\]',
     ).allMatches(preprocessedMd)) {
       final String name = (mm.group(1) ?? '').trim();
       if (name.isEmpty) continue;
+      if (AIMessage.isAbsoluteEvidencePath(name)) {
+        evidenceNameToPath[name] = name;
+      }
       if (evidenceNames.add(name)) evidenceNamesInOrder.add(name);
     }
     if (logOnce) {
@@ -1418,15 +1693,70 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         detail:
             'msg=${perfMsgKey.hashCode} evidence=${evidenceNames.length} atts=${atts.length}',
       );
+      _logChatPerf(
+        'md.evidence.scan',
+        stopwatch: mdSw,
+        detail:
+            'idx=$messageIndex msg=${perfMsgKey.hashCode} evidence=${evidenceNames.length} atts=${atts.length}',
+      );
+    }
+
+    final String msgKey = perfMsgKey;
+    final Map<String, String> byIndex =
+        _evidenceResolvedByAssistantIndex[messageIndex] ??
+        const <String, String>{};
+    final Map<String, String> cached =
+        _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
+    final Map<String, String> baseMap = <String, String>{
+      ...evidenceNameToPath,
+      ...byIndex,
+      ...cached,
+    };
+
+    List<String> orderedEvidencePathsFromMap(Map<String, String> map) {
+      if (orderedEvidencePathsFromAtts.isNotEmpty) {
+        return orderedEvidencePathsFromAtts;
+      }
+      final List<String> out = <String>[];
+      final Set<String> seen = <String>{};
+      for (final n in evidenceNamesInOrder) {
+        final String? p = map[n];
+        if (p == null || p.trim().isEmpty) continue;
+        if (seen.add(p)) out.add(p);
+      }
+      return out;
     }
 
     // 流式期间（且允许渲染图片）尽量只用预加载附件映射，避免高频重建触发扫库
     if (isCurrentStreaming) {
+      if (logOnce) {
+        _logChatPerf(
+          'md.render.streaming',
+          stopwatch: mdSw,
+          detail:
+              'idx=$messageIndex msg=${perfMsgKey.hashCode} evidence=${evidenceNames.length} local=${byIndex.length} cached=${cached.length}',
+        );
+      }
+      final streamingConfig = MarkdownMathConfig(
+        inlineTextStyle: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: fg),
+        blockTextStyle: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: fg),
+        appIconByPackage: _chatAppIconByPackage,
+        appIconByNameLower: _chatAppIconByNameLower,
+        appNameByPackage: _chatAppNameByPackage,
+        evidenceNameToPath: baseMap,
+        orderedEvidencePaths: orderedEvidencePathsFromMap(baseMap),
+        screenshotByPath: _evidenceScreenshotByPath,
+        perfLogger: _uiPerf,
+      );
       return MarkdownBody(
         data: preprocessedMd,
-        builders: mathConfig.builders,
-        blockSyntaxes: mathConfig.blockSyntaxes,
-        inlineSyntaxes: mathConfig.inlineSyntaxes,
+        builders: streamingConfig.builders,
+        blockSyntaxes: streamingConfig.blockSyntaxes,
+        inlineSyntaxes: streamingConfig.inlineSyntaxes,
         styleSheet: _mdStyle(context).copyWith(
           p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
         ),
@@ -1443,6 +1773,13 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
     }
 
     if (evidenceNames.isEmpty) {
+      if (logOnce) {
+        _logChatPerf(
+          'md.render.noEvidence',
+          stopwatch: mdSw,
+          detail: 'idx=$messageIndex msg=${perfMsgKey.hashCode}',
+        );
+      }
       return MarkdownBody(
         data: preprocessedMd,
         builders: mathConfig.builders,
@@ -1463,13 +1800,11 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       );
     }
 
-    final String msgKey = perfMsgKey;
-    final Map<String, String> cached =
-        _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
-    final Map<String, String> baseMap = <String, String>{
-      ...evidenceNameToPath,
-      ...cached,
-    };
+    _schedulePersistResolvedEvidencePathsForMessage(
+      messageIndex: messageIndex,
+      msgKey: msgKey,
+      resolvedPaths: baseMap,
+    );
     _scheduleEvidenceNsfwPreload(baseMap.values);
     final Set<String> missing = evidenceNames
         .where((n) => !baseMap.containsKey(n))
@@ -1478,25 +1813,25 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       _uiPerf.log(
         'md.evidence.missing',
         detail:
-            'msg=${perfMsgKey.hashCode} missing=${missing.length} cached=${cached.length}',
+            'msg=${perfMsgKey.hashCode} missing=${missing.length} local=${byIndex.length} cached=${cached.length}',
+      );
+      _logChatPerf(
+        'md.evidence.missing',
+        stopwatch: mdSw,
+        detail:
+            'idx=$messageIndex msg=${perfMsgKey.hashCode} missing=${missing.length} local=${byIndex.length} cached=${cached.length} base=${baseMap.length}',
       );
     }
 
-    List<String> orderedEvidencePathsFromMap(Map<String, String> map) {
-      if (orderedEvidencePathsFromAtts.isNotEmpty) {
-        return orderedEvidencePathsFromAtts;
-      }
-      final List<String> out = <String>[];
-      final Set<String> seen = <String>{};
-      for (final n in evidenceNamesInOrder) {
-        final String? p = map[n];
-        if (p == null || p.trim().isEmpty) continue;
-        if (seen.add(p)) out.add(p);
-      }
-      return out;
-    }
-
     if (missing.isEmpty) {
+      if (logOnce) {
+        _logChatPerf(
+          'md.render.evidenceCacheHit',
+          stopwatch: mdSw,
+          detail:
+              'idx=$messageIndex msg=${perfMsgKey.hashCode} resolved=${baseMap.length}',
+        );
+      }
       final resolved = MarkdownMathConfig(
         inlineTextStyle: Theme.of(
           context,
@@ -1538,11 +1873,18 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         detail:
             'msg=${perfMsgKey.hashCode} missing=${missing.length} willQueryDb=1',
       );
+      _logChatPerf(
+        'md.evidence.resolve.future',
+        stopwatch: mdSw,
+        detail:
+            'idx=$messageIndex msg=${perfMsgKey.hashCode} missing=${missing.length}',
+      );
     }
     return FutureBuilder<Map<String, String>>(
       future: _resolveEvidencePathsCached(
         msgKey: msgKey,
         missingNames: missing,
+        messageIndex: messageIndex,
       ),
       builder: (context, snap) {
         final Map<String, String> map = snap.data ?? const <String, String>{};
