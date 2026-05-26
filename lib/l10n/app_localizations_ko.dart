@@ -2434,6 +2434,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get useResponseApiLabel => 'Response API 사용(공식 OpenAI만 지원, 서드파티 권장 X)';
 
   @override
+  String get providerApiModeChatTitle => 'Chat';
+
+  @override
+  String get providerApiModeResponsesTitle => 'Responses';
+
+  @override
   String get modelsPathOptionalLabel => '모델 경로(선택 사항)';
 
   @override

@@ -18,44 +18,10 @@ extension _ProviderEditFormPart on _ProviderEditPageState {
           controller: _baseUrlCtrl,
           hint: _baseUrlHint(),
         ),
-        if (_supportsModelsPath) ...[
-          const SizedBox(height: AppTheme.spacing4),
-          _buildTextInput(
-            label: AppLocalizations.of(context).modelsPathOptionalLabel,
-            controller: _modelsPathCtrl,
-            hint: _modelsPathHint(),
-          ),
-        ],
         if (_type == AIProviderTypes.openai ||
             _type == AIProviderTypes.custom) ...[
           const SizedBox(height: AppTheme.spacing4),
-          _buildTextInput(
-            label: AppLocalizations.of(context).chatPathOptionalLabel,
-            controller: _chatPathCtrl,
-            hint: '/v1/chat/completions',
-          ),
-          const SizedBox(height: AppTheme.spacing5),
-          _buildSwitchRow(
-            label: (() {
-              final s = AppLocalizations.of(context).useResponseApiLabel;
-              return s
-                  .replaceAll(
-                    RegExp('[\uFF08][^\uFF09]*[\uFF09]|\\([^)]*\\)'),
-                    '',
-                  )
-                  .trim();
-            })(),
-            value: _useResponseApi,
-            onChanged: (v) => _providerEditSetState(() => _useResponseApi = v),
-          ),
-        ],
-        if (_type == AIProviderTypes.azureOpenAI) ...[
-          const SizedBox(height: AppTheme.spacing4),
-          _buildTextInput(
-            label: AppLocalizations.of(context).azureApiVersionLabel,
-            controller: _azureApiVerCtrl,
-            hint: AppLocalizations.of(context).azureApiVersionHint,
-          ),
+          _buildApiModeCards(),
         ],
       ],
     );
@@ -550,10 +516,6 @@ extension _ProviderEditFormPart on _ProviderEditPageState {
         label: l10n.providerTypeOpenAI,
       ),
       UISelectItem<String>(
-        value: AIProviderTypes.azureOpenAI,
-        label: l10n.providerTypeAzureOpenAI,
-      ),
-      UISelectItem<String>(
         value: AIProviderTypes.claude,
         label: l10n.providerTypeClaude,
       ),
@@ -610,54 +572,113 @@ extension _ProviderEditFormPart on _ProviderEditPageState {
     );
   }
 
-  Widget _buildSwitchRow({
-    required String label,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    String? description,
+  Widget _buildApiModeCards() {
+    final l10n = AppLocalizations.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 420;
+        final chatCard = _buildApiModeCard(
+          selected: !_useResponseApi,
+          title: l10n.providerApiModeChatTitle,
+          icon: Icons.chat_bubble_outline_rounded,
+          compact: compact,
+          onTap: () => _providerEditSetState(() => _useResponseApi = false),
+        );
+        final responsesCard = _buildApiModeCard(
+          selected: _useResponseApi,
+          title: l10n.providerApiModeResponsesTitle,
+          icon: Icons.auto_awesome_outlined,
+          compact: compact,
+          onTap: () => _providerEditSetState(() => _useResponseApi = true),
+        );
+
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: chatCard),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(child: responsesCard),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildApiModeCard({
+    required bool selected,
+    required String title,
+    required IconData icon,
+    required bool compact,
+    required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    final desc = description ?? '启用 OpenAI Responses 接口（实验性）';
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing4,
-        vertical: AppTheme.spacing3,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+    final colorScheme = theme.colorScheme;
+    final bgColor = selected
+        ? colorScheme.primaryContainer.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.22 : 0.42,
+          )
+        : colorScheme.surface;
+    final borderColor = selected
+        ? colorScheme.primary
+        : colorScheme.outline.withValues(alpha: 0.55);
+    final titleColor = selected ? colorScheme.primary : colorScheme.onSurface;
+    final contentColor = selected
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.55),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.all(
+              compact ? AppTheme.spacing2 : AppTheme.spacing3,
+            ),
+            constraints: BoxConstraints(minHeight: compact ? 48 : 52),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: borderColor, width: selected ? 1.4 : 1),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Icon(icon, size: compact ? 18 : 20, color: titleColor),
+                SizedBox(
+                  width: compact ? AppTheme.spacing2 : AppTheme.spacing3,
+                ),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: contentColor,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  desc,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                const SizedBox(width: AppTheme.spacing2),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: compact ? 18 : 20,
+                  color: titleColor,
                 ),
               ],
             ),
           ),
-          Transform.scale(
-            scale: 0.88,
-            child: Switch.adaptive(value: value, onChanged: onChanged),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -4440,6 +4440,18 @@ abstract class AppLocalizations {
   /// **'Use Response API (only official OpenAI supports; third-party services are not recommended)'**
   String get useResponseApiLabel;
 
+  /// No description provided for @providerApiModeChatTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get providerApiModeChatTitle;
+
+  /// No description provided for @providerApiModeResponsesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Responses'**
+  String get providerApiModeResponsesTitle;
+
   /// No description provided for @modelsPathOptionalLabel.
   ///
   /// In en, this message translates to:

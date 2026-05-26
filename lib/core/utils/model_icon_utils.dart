@@ -19,8 +19,7 @@ class ModelIconUtils {
           json.decode(manifestJson) as Map<String, dynamic>;
       final set = <String>{};
       for (final entry in map.keys) {
-        if (entry is String &&
-            entry.startsWith('assets/icons/ai/') &&
+        if (entry.startsWith('assets/icons/ai/') &&
             entry.toLowerCase().endsWith('.svg')) {
           set.add(entry.toLowerCase());
         }
@@ -170,14 +169,6 @@ class ModelIconUtils {
       return 'assets/icons/ai/hunyuan-color.svg';
     }
 
-    // iFlytek / Spark / Xinghuo
-    if (m.contains('spark') ||
-        m.contains('iflytek') ||
-        m.contains('讯飞') ||
-        m.contains('xinghuo')) {
-      return 'assets/icons/ai/spark-color.svg';
-    }
-
     // InternLM / 书生
     if (m.contains('internlm') || m.contains('书生')) {
       return 'assets/icons/ai/internlm-color.svg';
@@ -245,6 +236,15 @@ class ModelIconUtils {
         m.contains('o3') ||
         m.contains('o1')) {
       return 'assets/icons/ai/openai.svg';
+    }
+
+    // iFlytek / Spark / Xinghuo.
+    // 放在 GPT/OpenAI 之后，避免 gpt-*-spark 这类上游别名被误判成讯飞星火。
+    if (m.contains('spark') ||
+        m.contains('iflytek') ||
+        m.contains('讯飞') ||
+        m.contains('xinghuo')) {
+      return 'assets/icons/ai/spark-color.svg';
     }
 
     // 动态兜底：根据清单匹配 {token}-color.svg / {token}.svg

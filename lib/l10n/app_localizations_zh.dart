@@ -2410,6 +2410,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get useResponseApiLabel => '使用 Response API（仅OpenAI官方支持，第三方服务建议关闭）';
 
   @override
+  String get providerApiModeChatTitle => 'Chat';
+
+  @override
+  String get providerApiModeResponsesTitle => 'Responses';
+
+  @override
   String get modelsPathOptionalLabel => 'Models Path（可选）';
 
   @override

@@ -2435,6 +2435,12 @@ class AppLocalizationsJa extends AppLocalizations {
       'Response API を使用（公式 OpenAI のみ対応。サードパーティは推奨されません）';
 
   @override
+  String get providerApiModeChatTitle => 'Chat';
+
+  @override
+  String get providerApiModeResponsesTitle => 'Responses';
+
+  @override
   String get modelsPathOptionalLabel => 'モデルパス（任意）';
 
   @override
