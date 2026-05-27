@@ -673,12 +673,16 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
                   rebuildCutoffDayKey == null || rebuildCutoffDayKey.isEmpty
                   ? null
                   : _endMillisForDateKey(rebuildCutoffDayKey),
+              truncateResultColumns: true,
             );
       if (!mounted) return;
       final List<String> loadedDayKeys = _orderedDayKeysFromSegments(segments);
       _segmentStatusSetState(() {
         _segments = segments;
+        _segmentsByDay = _groupSegmentsByDay(segments);
         _loadedDayKeys = loadedDayKeys;
+        _dayCountsByKey = _countSegmentsByDay(segments);
+        _loadingDayKeys = const <String>{};
         _maxVisibleDayTabs = loadedDayKeys.isEmpty
             ? _SegmentStatusPageState._initialDayTabs
             : loadedDayKeys.length;

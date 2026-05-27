@@ -340,6 +340,31 @@ class SegmentTimelineBatch {
   });
 }
 
+class SegmentTimelineDayInfo {
+  final String dayKey;
+  final int count;
+
+  const SegmentTimelineDayInfo({required this.dayKey, required this.count});
+}
+
+class SegmentTimelineDayBatch {
+  final List<SegmentTimelineDayInfo> days;
+  final bool hasMoreOlder;
+
+  const SegmentTimelineDayBatch({
+    required this.days,
+    required this.hasMoreOlder,
+  });
+
+  List<String> get dayKeys => days
+      .map((SegmentTimelineDayInfo info) => info.dayKey)
+      .toList(growable: false);
+
+  Map<String, int> get dayCountsByKey => <String, int>{
+    for (final SegmentTimelineDayInfo info in days) info.dayKey: info.count,
+  };
+}
+
 // 将 AI 配置、消息、会话、提供商与上下文相关方法拆分为扩展
 extension ScreenshotDatabaseAI on ScreenshotDatabase {
   String _debugProviderApiKeyFingerprint(String? value) {
@@ -3123,6 +3148,7 @@ ORDER BY day ASC
     String? pinnedDateKey,
     String? maxDateKeyInclusive,
     bool requireSamples = true,
+    bool truncateResultColumns = false,
   }) async {
     final db = await database;
     final int safeDayCount = math.max(1, distinctDayCount);
@@ -3342,12 +3368,258 @@ ORDER BY day ASC
       requireSamples: requireSamples,
       startMillis: oldestStartMillis,
       endMillis: newestEndMillis,
+      truncateResultColumns: truncateResultColumns,
     );
     final bool hasMoreOlder = await hasOlderThan(oldestDayKey);
     return SegmentTimelineBatch(
       segments: segments,
       dayKeys: dayKeys,
       hasMoreOlder: hasMoreOlder,
+    );
+  }
+
+  Future<SegmentTimelineDayBatch> listSegmentTimelineDayBatch({
+    required int distinctDayCount,
+    String? beforeDateKey,
+    String? pinnedDateKey,
+    String? maxDateKeyInclusive,
+    bool requireSamples = true,
+  }) async {
+    final db = await database;
+    final int safeDayCount = math.max(1, distinctDayCount);
+    final String beforeKey = (beforeDateKey ?? '').trim();
+    final String pinnedKey = (pinnedDateKey ?? '').trim();
+    final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+    const String dayExpr =
+        "date(s.start_time / 1000, 'unixepoch', 'localtime')";
+
+    List<String> buildWhereClauses({
+      String? beforeKey,
+      String? exactKey,
+      String? minKeyInclusive,
+      String? maxKeyInclusive,
+      String? olderThanKey,
+    }) {
+      final List<String> whereClauses = <String>[
+        _segmentsRootWhere('s'),
+        "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+      ];
+      if (requireSamples) {
+        whereClauses.add(hasSamplesCond);
+      }
+      final String before = (beforeKey ?? '').trim();
+      if (before.isNotEmpty) {
+        whereClauses.add("$dayExpr < ?");
+      }
+      final String exact = (exactKey ?? '').trim();
+      if (exact.isNotEmpty) {
+        whereClauses.add("$dayExpr = ?");
+      }
+      final String minKey = (minKeyInclusive ?? '').trim();
+      if (minKey.isNotEmpty) {
+        whereClauses.add("$dayExpr >= ?");
+      }
+      final String maxKey = (maxKeyInclusive ?? '').trim();
+      if (maxKey.isNotEmpty) {
+        whereClauses.add("$dayExpr <= ?");
+      }
+      final String olderThan = (olderThanKey ?? '').trim();
+      if (olderThan.isNotEmpty) {
+        whereClauses.add("$dayExpr < ?");
+      }
+      return whereClauses;
+    }
+
+    List<Object?> buildWhereParams({
+      String? beforeKey,
+      String? exactKey,
+      String? minKeyInclusive,
+      String? maxKeyInclusive,
+      String? olderThanKey,
+    }) {
+      final List<Object?> whereParams = <Object?>[];
+      final String before = (beforeKey ?? '').trim();
+      if (before.isNotEmpty) {
+        whereParams.add(before);
+      }
+      final String exact = (exactKey ?? '').trim();
+      if (exact.isNotEmpty) {
+        whereParams.add(exact);
+      }
+      final String minKey = (minKeyInclusive ?? '').trim();
+      if (minKey.isNotEmpty) {
+        whereParams.add(minKey);
+      }
+      final String maxKey = (maxKeyInclusive ?? '').trim();
+      if (maxKey.isNotEmpty) {
+        whereParams.add(maxKey);
+      }
+      final String olderThan = (olderThanKey ?? '').trim();
+      if (olderThan.isNotEmpty) {
+        whereParams.add(olderThan);
+      }
+      return whereParams;
+    }
+
+    Future<List<SegmentTimelineDayInfo>> queryDayInfos({
+      String? beforeKey,
+      String? minKeyInclusive,
+      String? maxKeyInclusive,
+      required int limit,
+    }) async {
+      final List<String> whereClauses = buildWhereClauses(
+        beforeKey: beforeKey,
+        minKeyInclusive: minKeyInclusive,
+        maxKeyInclusive: maxKeyInclusive,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        beforeKey: beforeKey,
+        minKeyInclusive: minKeyInclusive,
+        maxKeyInclusive: maxKeyInclusive,
+      );
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        '''
+        SELECT $dayExpr AS day_key, COUNT(*) AS segment_count
+        FROM segments s
+        $whereSql
+        GROUP BY day_key
+        ORDER BY day_key DESC
+        LIMIT ?
+        ''',
+        <Object?>[...whereParams, limit],
+      );
+      return rows
+          .map((Map<String, Object?> row) {
+            final String dayKey = (row['day_key'] as String?) ?? '';
+            final int count = (row['segment_count'] as int?) ?? 0;
+            return SegmentTimelineDayInfo(dayKey: dayKey, count: count);
+          })
+          .where(
+            (SegmentTimelineDayInfo info) =>
+                info.dayKey.isNotEmpty && info.count > 0,
+          )
+          .toList(growable: false);
+    }
+
+    Future<bool> dayKeyExists(String dateKey) async {
+      final String normalized = dateKey.trim();
+      if (normalized.isEmpty) return false;
+      final List<String> whereClauses = buildWhereClauses(
+        exactKey: normalized,
+        maxKeyInclusive: maxKeyInclusive,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        exactKey: normalized,
+        maxKeyInclusive: maxKeyInclusive,
+      );
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery('''
+        SELECT 1
+        FROM segments s
+        $whereSql
+        LIMIT 1
+        ''', whereParams);
+      return rows.isNotEmpty;
+    }
+
+    Future<bool> hasOlderThan(String dateKey) async {
+      final String normalized = dateKey.trim();
+      if (normalized.isEmpty) return false;
+      final List<String> whereClauses = buildWhereClauses(
+        maxKeyInclusive: maxKeyInclusive,
+        olderThanKey: normalized,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        maxKeyInclusive: maxKeyInclusive,
+        olderThanKey: normalized,
+      );
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery('''
+        SELECT 1
+        FROM (
+          SELECT $dayExpr AS day_key
+          FROM segments s
+          $whereSql
+          GROUP BY day_key
+        )
+        LIMIT 1
+        ''', whereParams);
+      return rows.isNotEmpty;
+    }
+
+    if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      return const SegmentTimelineDayBatch(
+        days: <SegmentTimelineDayInfo>[],
+        hasMoreOlder: false,
+      );
+    }
+
+    List<SegmentTimelineDayInfo> days = await queryDayInfos(
+      beforeKey: beforeKey,
+      maxKeyInclusive: maxKeyInclusive,
+      limit: safeDayCount,
+    );
+    if (days.isEmpty) {
+      return const SegmentTimelineDayBatch(
+        days: <SegmentTimelineDayInfo>[],
+        hasMoreOlder: false,
+      );
+    }
+
+    if (beforeKey.isEmpty &&
+        pinnedKey.isNotEmpty &&
+        !days.any((SegmentTimelineDayInfo info) => info.dayKey == pinnedKey)) {
+      final bool pinnedExists = await dayKeyExists(pinnedKey);
+      if (pinnedExists) {
+        final List<SegmentTimelineDayInfo> expanded = await queryDayInfos(
+          minKeyInclusive: pinnedKey,
+          maxKeyInclusive: maxKeyInclusive,
+          limit: 1 << 20,
+        );
+        if (expanded.isNotEmpty) {
+          days = expanded;
+        }
+      }
+    }
+
+    final bool hasMoreOlder = await hasOlderThan(days.last.dayKey);
+    return SegmentTimelineDayBatch(days: days, hasMoreOlder: hasMoreOlder);
+  }
+
+  Future<List<Map<String, dynamic>>> listSegmentTimelineDaySegments({
+    required String dateKey,
+    bool onlyNoSummary = false,
+    bool requireSamples = true,
+    String? maxDateKeyInclusive,
+    bool truncateResultColumns = false,
+  }) async {
+    final String normalized = dateKey.trim();
+    if (normalized.isEmpty) return <Map<String, dynamic>>[];
+    final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
+    if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      return <Map<String, dynamic>>[];
+    }
+    if (maxKeyInclusive.isNotEmpty &&
+        normalized.compareTo(maxKeyInclusive) > 0) {
+      return <Map<String, dynamic>>[];
+    }
+    final int? startMillis = _parseYmdToStartMillis(normalized);
+    if (startMillis == null) return <Map<String, dynamic>>[];
+    final int endMillis =
+        DateTime.fromMillisecondsSinceEpoch(
+          startMillis,
+        ).add(const Duration(days: 1)).millisecondsSinceEpoch -
+        1;
+    return listSegmentsEx(
+      limit: 1 << 30,
+      onlyNoSummary: onlyNoSummary,
+      requireSamples: requireSamples,
+      startMillis: startMillis,
+      endMillis: endMillis,
+      truncateResultColumns: truncateResultColumns,
     );
   }
 
@@ -3440,6 +3712,7 @@ ORDER BY day ASC
     int? endMillis,
     List<String>? appPackageNames,
     String? appPackageName,
+    bool truncateResultColumns = false,
   }) async {
     final db = await database;
     int safeOffset = offset;
@@ -3498,14 +3771,49 @@ ORDER BY day ASC
         ? ''
         : ('WHERE ' + whereClauses.join(' AND '));
 
+    const int previewOutputTextChars = 2048;
+    const int previewStructuredJsonChars = 32768;
+    const int previewCategoriesChars = 2048;
+    final String resultColumnsSql = truncateResultColumns
+        ? '''
+          SUBSTR(r.output_text, 1, ?) AS output_text,
+          CASE
+            WHEN r.structured_json IS NULL THEN NULL
+            WHEN LENGTH(r.structured_json) <= ? THEN r.structured_json
+            ELSE SUBSTR(
+              r.structured_json,
+              MAX(1, INSTR(r.structured_json, '"overall_summary"')),
+              ?
+            )
+          END AS structured_json,
+          SUBSTR(r.categories, 1, ?) AS categories,
+          CASE WHEN r.output_text IS NOT NULL AND LENGTH(r.output_text) > ? THEN 1 ELSE 0 END AS output_text_truncated,
+          CASE WHEN r.structured_json IS NOT NULL AND LENGTH(r.structured_json) > ? THEN 1 ELSE 0 END AS structured_json_truncated,
+          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated
+        '''
+        : '''
+          r.output_text,
+          r.structured_json,
+          r.categories
+        ''';
+    final List<Object?> resultColumnParams = truncateResultColumns
+        ? <Object?>[
+            previewOutputTextChars,
+            previewStructuredJsonChars,
+            previewStructuredJsonChars,
+            previewCategoriesChars,
+            previewOutputTextChars,
+            previewStructuredJsonChars,
+            previewCategoriesChars,
+          ]
+        : const <Object?>[];
+
     final String sql =
         '''
         SELECT
           s.*,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
-          r.output_text,
-          r.structured_json,
-          r.categories
+          $resultColumnsSql
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
         $whereSql
@@ -3514,7 +3822,12 @@ ORDER BY day ASC
       ''';
 
     try {
-      final List<Object?> params = <Object?>[...whereParams, limit, safeOffset];
+      final List<Object?> params = <Object?>[
+        ...resultColumnParams,
+        ...whereParams,
+        limit,
+        safeOffset,
+      ];
       final rows = await db.rawQuery(sql, params);
       return _attachSegmentSampleStats(
         db,

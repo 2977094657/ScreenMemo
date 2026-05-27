@@ -215,6 +215,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   static const int _dynamicRebuildRequestLogsDisplayLimit = 10;
   Map<String, dynamic>? _active;
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
+  Map<String, List<Map<String, dynamic>>> _segmentsByDay =
+      <String, List<Map<String, dynamic>>>{};
   bool _loading = false;
   bool _startingDynamicRebuild = false;
   bool _stoppingDynamicRebuild = false;
@@ -290,13 +292,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   Timer? _autoTimer;
   bool _autoWatching = false;
 
-  // 日期 Tab 批次控制：默认加载最近 30 个“有数据的日期”，向前按批次追加。
+  // 日期 Tab 批次控制：首屏显示最近 30 个有数据日期，明细按日期懒加载。
   static const int _initialDayTabs = 30;
   static const int _appendDayTabs = 30;
   int _maxVisibleDayTabs = _initialDayTabs;
   bool _isLoadingMoreDays = false;
   bool _noMoreOlderSegments = false;
   List<String> _loadedDayKeys = const <String>[];
+  Map<String, int> _dayCountsByKey = const <String, int>{};
+  Set<String> _loadingDayKeys = const <String>{};
+  int _timelineLoadGeneration = 0;
 
   // part 文件需要触发 UI 刷新时统一通过该方法，避免直接访问 State.setState。
   void _segmentStatusSetState(VoidCallback fn) => setState(fn);
@@ -390,6 +395,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         onRefresh: _refresh,
         child: _SegmentTimelineTabView(
           segments: _segments,
+          dayKeys: _loadedDayKeys,
+          dayCountsByKey: _dayCountsByKey,
+          segmentsByDay: _segmentsByDay,
+          loadingDayKeys: _loadingDayKeys,
           onlyNoSummary: _onlyNoSummary,
           autoWatching: _autoWatching,
           appInfoByPackage: _appInfoByPackage,
@@ -405,15 +414,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           dynamicRebuildActive: _dynamicRebuildTaskStatus.isActive,
           maxVisibleDayTabs: _maxVisibleDayTabs,
           selectedDateKey: _selectedDateKey,
+          isTimelineLoading: _loading,
           isLoadingMoreDays: _isLoadingMoreDays,
           noMoreOlderSegments: _noMoreOlderSegments,
           onLastDayTabReached: _handleLastDayTabReached,
-          onActiveDateChanged: (dateKey) {
-            if (!mounted || _selectedDateKey == dateKey) return;
-            setState(() {
-              _selectedDateKey = dateKey;
-            });
-          },
+          onActiveDateChanged: _handleActiveDateChanged,
         ),
       ),
     );

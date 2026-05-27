@@ -13,6 +13,10 @@ String _dateKeyFromMillis(int ms) {
 // ============= 按日期 Tab 的段落时间轴视图（含分割线/关键动作/Logo/标签/摘要/可展开图片） =============
 class _SegmentTimelineTabView extends StatefulWidget {
   final List<Map<String, dynamic>> segments;
+  final List<String> dayKeys;
+  final Map<String, int> dayCountsByKey;
+  final Map<String, List<Map<String, dynamic>>> segmentsByDay;
+  final Set<String> loadingDayKeys;
   final bool onlyNoSummary;
   final bool autoWatching;
   final Map<String, AppInfo> appInfoByPackage;
@@ -28,6 +32,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
   final bool dynamicRebuildActive;
   final int maxVisibleDayTabs;
   final String? selectedDateKey;
+  final bool isTimelineLoading;
   final bool isLoadingMoreDays;
   final bool noMoreOlderSegments;
   final Future<void> Function()? onLastDayTabReached;
@@ -35,6 +40,10 @@ class _SegmentTimelineTabView extends StatefulWidget {
 
   const _SegmentTimelineTabView({
     required this.segments,
+    required this.dayKeys,
+    required this.dayCountsByKey,
+    required this.segmentsByDay,
+    required this.loadingDayKeys,
     required this.onlyNoSummary,
     required this.autoWatching,
     required this.appInfoByPackage,
@@ -50,6 +59,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
     required this.dynamicRebuildActive,
     required this.maxVisibleDayTabs,
     this.selectedDateKey,
+    required this.isTimelineLoading,
     required this.isLoadingMoreDays,
     required this.noMoreOlderSegments,
     this.onLastDayTabReached,
@@ -132,6 +142,63 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     });
   }
 
+  Widget _buildDaySegmentList(
+    String dateKey,
+    List<Map<String, dynamic>> daySegments,
+    bool isLoaded,
+    bool isLoading,
+  ) {
+    if (daySegments.isEmpty && (!isLoaded || isLoading)) {
+      return ListView(
+        key: PageStorageKey<String>('segment-day-loading-$dateKey'),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing1,
+        ),
+        children: const [
+          SizedBox(height: 180),
+          Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          SizedBox(height: 12),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      key: PageStorageKey<String>('segment-day-$dateKey'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing1,
+      ),
+      itemCount: daySegments.length + 1,
+      itemBuilder: (context, index) {
+        if (index >= daySegments.length) {
+          return const SizedBox(height: 12);
+        }
+        final Map<String, dynamic> segment = daySegments[index];
+        return _SegmentEntryCard(
+          key: ValueKey<int>((segment['id'] as int?) ?? index),
+          segment: segment,
+          isLast: index == daySegments.length - 1,
+          fmtTime: widget.fmtTime,
+          loadSamples: widget.loadSamples,
+          loadResult: widget.loadResult,
+          appInfoByPackage: widget.appInfoByPackage,
+          onOpenDetail: () => widget.onOpenDetail(segment),
+          openGallery: widget.openGallery,
+          onRefreshRequested: widget.onRefreshRequested,
+          privacyMode: widget.privacyMode,
+          dynamicRebuildActive: widget.dynamicRebuildActive,
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _tabController?.removeListener(_handleTabSelectionChanged);
@@ -142,8 +209,10 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
   @override
   Widget build(BuildContext context) {
     final List<Map<String, dynamic>> segments = widget.segments;
+    final bool useLazyDayTabs =
+        !widget.onlyNoSummary && widget.dayKeys.isNotEmpty;
 
-    if (segments.isEmpty) {
+    if (segments.isEmpty && !useLazyDayTabs) {
       _orderedKeys = const <String>[];
       _reportActiveDateKey();
       return CustomScrollView(
@@ -178,55 +247,69 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
           ),
           SliverFillRemaining(
             hasScrollBody: false,
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacing6,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.event_note_outlined,
-                      size: 64,
-                      color: AppTheme.mutedForeground.withOpacity(0.5),
+            child: widget.isTimelineLoading
+                ? const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    const SizedBox(height: AppTheme.spacing4),
-                    Text(
-                      AppLocalizations.of(context).noEvents,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.mutedForeground,
+                  )
+                : Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing6,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 300),
-                      child: Text(
-                        AppLocalizations.of(context).noEventsSubtitle,
-                        style: const TextStyle(color: AppTheme.mutedForeground),
-                        textAlign: TextAlign.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.event_note_outlined,
+                            size: 64,
+                            color: AppTheme.mutedForeground.withOpacity(0.5),
+                          ),
+                          const SizedBox(height: AppTheme.spacing4),
+                          Text(
+                            AppLocalizations.of(context).noEvents,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.mutedForeground,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppTheme.spacing2),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 300),
+                            child: Text(
+                              AppLocalizations.of(context).noEventsSubtitle,
+                              style: const TextStyle(
+                                color: AppTheme.mutedForeground,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
           ),
         ],
       );
     }
 
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
-    for (final seg in segments) {
-      final k = _dateKeyFromMillis((seg['start_time'] as int?) ?? 0);
-      grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
+    final Map<String, List<Map<String, dynamic>>> grouped = useLazyDayTabs
+        ? widget.segmentsByDay
+        : <String, List<Map<String, dynamic>>>{};
+    if (!useLazyDayTabs) {
+      for (final seg in segments) {
+        final k = _dateKeyFromMillis((seg['start_time'] as int?) ?? 0);
+        grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
+      }
     }
-    final List<String> keys = grouped.keys.toList()
-      ..sort((a, b) => a.compareTo(b));
-    final List<String> orderedAll = keys.reversed.toList();
+    final List<String> orderedAll = useLazyDayTabs
+        ? widget.dayKeys
+        : (grouped.keys.toList()..sort((a, b) => b.compareTo(a)));
 
     // 仅展示当前已加载批次中的日期；默认模式下 maxVisibleDayTabs 会与已加载日期数保持一致。
     final int desiredTabs = widget.maxVisibleDayTabs <= 0
@@ -330,6 +413,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                                       a.month == b.month &&
                                       a.day == b.day;
                                   final int c =
+                                      widget.dayCountsByKey[k] ??
                                       (grouped[k] ??
                                               const <Map<String, dynamic>>[])
                                           .length;
@@ -348,7 +432,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                                     c,
                                   );
                                 }
-                                return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
+                                return '$k ${widget.dayCountsByKey[k] ?? (grouped[k] ?? const <Map<String, dynamic>>[]).length}';
                               })(),
                             ),
                         ],
@@ -384,30 +468,11 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
             controller: _tabController,
             children: [
               for (final k in ordered)
-                ListView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacing4,
-                    vertical: AppTheme.spacing1,
-                  ),
-                  children: [
-                    ...List.generate(
-                      (grouped[k] ?? const <Map<String, dynamic>>[]).length,
-                      (i) => _SegmentEntryCard(
-                        segment: grouped[k]![i],
-                        isLast: i == grouped[k]!.length - 1,
-                        fmtTime: widget.fmtTime,
-                        loadSamples: widget.loadSamples,
-                        loadResult: widget.loadResult,
-                        appInfoByPackage: widget.appInfoByPackage,
-                        onOpenDetail: () => widget.onOpenDetail(grouped[k]![i]),
-                        openGallery: widget.openGallery,
-                        onRefreshRequested: widget.onRefreshRequested,
-                        privacyMode: widget.privacyMode,
-                        dynamicRebuildActive: widget.dynamicRebuildActive,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                _buildDaySegmentList(
+                  k,
+                  grouped[k] ?? const <Map<String, dynamic>>[],
+                  !useLazyDayTabs || widget.segmentsByDay.containsKey(k),
+                  widget.loadingDayKeys.contains(k),
                 ),
             ],
           ),

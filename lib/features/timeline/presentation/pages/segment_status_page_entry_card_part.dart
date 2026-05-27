@@ -15,6 +15,7 @@ class _SegmentEntryCard extends StatefulWidget {
   final bool dynamicRebuildActive;
 
   const _SegmentEntryCard({
+    super.key,
     required this.segment,
     required this.isLast,
     required this.fmtTime,

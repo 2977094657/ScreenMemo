@@ -15,6 +15,42 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
     return ordered;
   }
 
+  Map<String, List<Map<String, dynamic>>> _groupSegmentsByDay(
+    List<Map<String, dynamic>> segments,
+  ) {
+    final Map<String, List<Map<String, dynamic>>> grouped =
+        <String, List<Map<String, dynamic>>>{};
+    for (final Map<String, dynamic> seg in segments) {
+      final int ms = (seg['start_time'] as int?) ?? 0;
+      if (ms <= 0) continue;
+      final String key = _dateKeyFromMillis(ms);
+      grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(seg);
+    }
+    return grouped;
+  }
+
+  Map<String, int> _countSegmentsByDay(List<Map<String, dynamic>> segments) {
+    final Map<String, int> counts = <String, int>{};
+    for (final Map<String, dynamic> seg in segments) {
+      final int ms = (seg['start_time'] as int?) ?? 0;
+      if (ms <= 0) continue;
+      final String key = _dateKeyFromMillis(ms);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  List<Map<String, dynamic>> _flattenSegmentsByDay(
+    Map<String, List<Map<String, dynamic>>> segmentsByDay,
+    List<String> orderedDayKeys,
+  ) {
+    final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
+    for (final String key in orderedDayKeys) {
+      out.addAll(segmentsByDay[key] ?? const <Map<String, dynamic>>[]);
+    }
+    return out;
+  }
+
   bool _shouldGateTimelineToCurrentRebuild([DynamicRebuildTaskStatus? status]) {
     final DynamicRebuildTaskStatus effective =
         status ?? _dynamicRebuildTaskStatus;
@@ -160,6 +196,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
 
   Future<void> _refresh({bool triggerSegmentTick = true}) async {
     final Stopwatch sw = Stopwatch()..start();
+    final int generation = ++_timelineLoadGeneration;
     _beginEntryPerfLoad(
       'segment.refresh',
       detail:
@@ -169,6 +206,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       if (mounted) {
         _segmentStatusSetState(() {
           _loading = true;
+          _loadingDayKeys = const <String>{};
         });
       }
 
@@ -191,46 +229,85 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
           rebuildCutoffDayKey == null || rebuildCutoffDayKey.isEmpty
           ? null
           : _endMillisForDateKey(rebuildCutoffDayKey);
-      List<Map<String, dynamic>> segments;
-      List<String> loadedDayKeys;
+      List<Map<String, dynamic>> segments = const <Map<String, dynamic>>[];
+      Map<String, List<Map<String, dynamic>>> segmentsByDay =
+          const <String, List<Map<String, dynamic>>>{};
+      List<String> loadedDayKeys = const <String>[];
+      Map<String, int> dayCountsByKey = const <String, int>{};
+      String? selectedDateKey;
       bool hasMoreOlder = false;
       final Stopwatch timelineSw = Stopwatch()..start();
 
       if (hideAllUntilCurrentDay) {
-        segments = const <Map<String, dynamic>>[];
-        loadedDayKeys = const <String>[];
+        selectedDateKey = null;
       } else if (_onlyNoSummary) {
-        // “仅看无总结”模式：保持原有行为，仅限制行数；由 SQL 侧过滤无总结事件
+        // “仅看无总结”模式保持原有列表行为，只做字段截断降低 CursorWindow 风险。
         const int fetchLimit = 100;
         segments = await _db.listSegmentsEx(
           limit: fetchLimit,
           onlyNoSummary: true,
           endMillis: rebuildCutoffEndMillis,
+          truncateResultColumns: true,
         );
+        segmentsByDay = _groupSegmentsByDay(segments);
         loadedDayKeys = _orderedDayKeysFromSegments(segments);
+        dayCountsByKey = _countSegmentsByDay(segments);
+        selectedDateKey = loadedDayKeys.contains(_selectedDateKey)
+            ? _selectedDateKey
+            : (loadedDayKeys.isEmpty ? null : loadedDayKeys.first);
       } else {
         final String pinnedDateKey = (_selectedDateKey ?? '').trim();
-        final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
-          distinctDayCount: _SegmentStatusPageState._initialDayTabs,
-          pinnedDateKey: pinnedDateKey.isEmpty ? null : pinnedDateKey,
-          maxDateKeyInclusive: rebuildCutoffDayKey,
-          requireSamples: true,
-        );
-        segments = batch.segments;
+        final SegmentTimelineDayBatch batch = await _db
+            .listSegmentTimelineDayBatch(
+              distinctDayCount: _SegmentStatusPageState._initialDayTabs,
+              pinnedDateKey: pinnedDateKey.isEmpty ? null : pinnedDateKey,
+              maxDateKeyInclusive: rebuildCutoffDayKey,
+              requireSamples: true,
+            );
         loadedDayKeys = batch.dayKeys;
+        dayCountsByKey = batch.dayCountsByKey;
         hasMoreOlder = batch.hasMoreOlder;
+        selectedDateKey = loadedDayKeys.contains(pinnedDateKey)
+            ? pinnedDateKey
+            : (loadedDayKeys.isEmpty ? null : loadedDayKeys.first);
+        if (selectedDateKey != null) {
+          segments = await _db.listSegmentTimelineDaySegments(
+            dateKey: selectedDateKey,
+            maxDateKeyInclusive: rebuildCutoffDayKey,
+            requireSamples: true,
+            truncateResultColumns: true,
+          );
+          segmentsByDay = <String, List<Map<String, dynamic>>>{
+            selectedDateKey: segments,
+          };
+          dayCountsByKey = <String, int>{
+            ...dayCountsByKey,
+            selectedDateKey: segments.length,
+          };
+        }
       }
       DynamicEntryPerfService.instance.mark(
         'segment.refresh.timeline.done',
         detail:
-            'ms=${timelineSw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length} hasMoreOlder=$hasMoreOlder hideAll=$hideAllUntilCurrentDay',
+            'ms=${timelineSw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length} loadedDay=${selectedDateKey ?? ''} hasMoreOlder=$hasMoreOlder hideAll=$hideAllUntilCurrentDay',
       );
 
       if (!mounted) return;
+      if (generation != _timelineLoadGeneration) {
+        _endEntryPerfLoad(
+          'segment.refresh',
+          detail: 'ms=${sw.elapsedMilliseconds} stale=true',
+        );
+        return;
+      }
       _segmentStatusSetState(() {
         _active = active;
         _segments = segments;
+        _segmentsByDay = segmentsByDay;
         _loadedDayKeys = loadedDayKeys;
+        _dayCountsByKey = dayCountsByKey;
+        _loadingDayKeys = const <String>{};
+        _selectedDateKey = selectedDateKey;
         _maxVisibleDayTabs = loadedDayKeys.isEmpty
             ? _SegmentStatusPageState._initialDayTabs
             : loadedDayKeys.length;
@@ -253,7 +330,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       _endEntryPerfLoad(
         'segment.refresh',
         detail:
-            'ms=${sw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length}',
+            'ms=${sw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length} loadedDay=${selectedDateKey ?? ''}',
       );
     } catch (e) {
       _failEntryPerfLoad(
@@ -263,7 +340,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       );
       // Keep previous state on error.
     } finally {
-      if (mounted) {
+      if (mounted && generation == _timelineLoadGeneration) {
         _segmentStatusSetState(() {
           _loading = false;
         });
@@ -479,6 +556,77 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
     );
   }
 
+  Future<void> _loadSegmentDayIfNeeded(String dateKey) async {
+    final String normalized = dateKey.trim();
+    if (normalized.isEmpty ||
+        _onlyNoSummary ||
+        _shouldHideTimelineUntilRebuildAdvances() ||
+        _segmentsByDay.containsKey(normalized) ||
+        _loadingDayKeys.contains(normalized)) {
+      return;
+    }
+    final int generation = _timelineLoadGeneration;
+    _segmentStatusSetState(() {
+      _loadingDayKeys = <String>{..._loadingDayKeys, normalized};
+    });
+    final Stopwatch sw = Stopwatch()..start();
+    try {
+      final List<Map<String, dynamic>> segments = await _db
+          .listSegmentTimelineDaySegments(
+            dateKey: normalized,
+            maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
+            requireSamples: true,
+            truncateResultColumns: true,
+          );
+      DynamicEntryPerfService.instance.mark(
+        'segment.dayLoad.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} day=$normalized segments=${segments.length}',
+      );
+      if (!mounted || generation != _timelineLoadGeneration) return;
+      final Map<String, List<Map<String, dynamic>>> nextSegmentsByDay =
+          <String, List<Map<String, dynamic>>>{
+            ..._segmentsByDay,
+            normalized: segments,
+          };
+      final Set<String> nextLoading = <String>{..._loadingDayKeys}
+        ..remove(normalized);
+      _segmentStatusSetState(() {
+        _segmentsByDay = nextSegmentsByDay;
+        _segments = _flattenSegmentsByDay(nextSegmentsByDay, _loadedDayKeys);
+        _dayCountsByKey = <String, int>{
+          ..._dayCountsByKey,
+          normalized: segments.length,
+        };
+        _loadingDayKeys = nextLoading;
+      });
+    } catch (e) {
+      DynamicEntryPerfService.instance.mark(
+        'segment.dayLoad.error',
+        detail:
+            'ms=${sw.elapsedMilliseconds} day=$normalized error=${e.toString()}',
+      );
+      if (!mounted || generation != _timelineLoadGeneration) return;
+      _segmentStatusSetState(() {
+        _loadingDayKeys = <String>{..._loadingDayKeys}..remove(normalized);
+      });
+    }
+  }
+
+  void _handleActiveDateChanged(String? dateKey) {
+    if (!mounted) return;
+    final String normalized = (dateKey ?? '').trim();
+    final String? nextDateKey = normalized.isEmpty ? null : normalized;
+    if (_selectedDateKey != nextDateKey) {
+      _segmentStatusSetState(() {
+        _selectedDateKey = nextDateKey;
+      });
+    }
+    if (nextDateKey != null) {
+      unawaited(_loadSegmentDayIfNeeded(nextDateKey));
+    }
+  }
+
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
     if (_onlyNoSummary ||
         _isLoadingMoreDays ||
@@ -486,9 +634,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
         _shouldHideTimelineUntilRebuildAdvances()) {
       return;
     }
-    final List<String> currentDayKeys = _loadedDayKeys.isNotEmpty
-        ? _loadedDayKeys
-        : _orderedDayKeysFromSegments(_segments);
+    final List<String> currentDayKeys = _loadedDayKeys;
     final String beforeDateKey = currentDayKeys.isEmpty
         ? ''
         : currentDayKeys.last;
@@ -499,53 +645,41 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       return;
     }
 
-    _isLoadingMoreDays = true;
+    _segmentStatusSetState(() => _isLoadingMoreDays = true);
     try {
-      final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
-        distinctDayCount: _SegmentStatusPageState._appendDayTabs,
-        beforeDateKey: beforeDateKey,
-        maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
-        requireSamples: true,
-      );
-      final List<Map<String, dynamic>> more = batch.segments;
-      if (more.isEmpty) {
+      final SegmentTimelineDayBatch batch = await _db
+          .listSegmentTimelineDayBatch(
+            distinctDayCount: _SegmentStatusPageState._appendDayTabs,
+            beforeDateKey: beforeDateKey,
+            maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
+            requireSamples: true,
+          );
+      if (batch.days.isEmpty) {
         if (!_noMoreOlderSegments) {
           _segmentStatusSetState(() => _noMoreOlderSegments = true);
         }
         return;
       }
 
-      // 合并去重并按 start_time DESC 排序，保证 UI 与时间线顺序一致
-      final Map<int, Map<String, dynamic>> byId = <int, Map<String, dynamic>>{};
-      for (final m in _segments) {
-        final int id = (m['id'] as int?) ?? 0;
-        if (id <= 0) continue;
-        byId[id] = m;
-      }
-      for (final m in more) {
-        final int id = (m['id'] as int?) ?? 0;
-        if (id <= 0) continue;
-        byId[id] = m;
-      }
-      final List<Map<String, dynamic>> merged = byId.values.toList()
-        ..sort((a, b) {
-          final int ta = (a['start_time'] as int?) ?? 0;
-          final int tb = (b['start_time'] as int?) ?? 0;
-          return tb.compareTo(ta); // 按时间倒序
-        });
-      final List<String> mergedDayKeys = <String>[
+      final List<String> mergedDayKeys = <String>{
         ..._loadedDayKeys,
         ...batch.dayKeys,
-      ].toSet().toList()..sort((a, b) => b.compareTo(a));
+      }.toList()..sort((a, b) => b.compareTo(a));
+      final Map<String, int> mergedCounts = <String, int>{
+        ..._dayCountsByKey,
+        ...batch.dayCountsByKey,
+      };
 
       _segmentStatusSetState(() {
-        _segments = merged;
         _loadedDayKeys = mergedDayKeys;
+        _dayCountsByKey = mergedCounts;
         _maxVisibleDayTabs = mergedDayKeys.length;
         _noMoreOlderSegments = !batch.hasMoreOlder;
       });
     } finally {
-      _isLoadingMoreDays = false;
+      if (mounted) {
+        _segmentStatusSetState(() => _isLoadingMoreDays = false);
+      }
     }
   }
 
