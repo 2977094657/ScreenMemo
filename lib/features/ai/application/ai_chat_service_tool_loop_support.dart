@@ -20,6 +20,8 @@ extension AIChatServiceToolLoopSupportExt on AIChatService {
       content: parsed.cleaned,
       modelUsed: result.modelUsed,
       toolCalls: parsed.calls,
+      webSearchCalls: result.webSearchCalls,
+      citations: result.citations,
       reasoning: result.reasoning,
       reasoningDuration: result.reasoningDuration,
       usagePromptTokens: result.usagePromptTokens,

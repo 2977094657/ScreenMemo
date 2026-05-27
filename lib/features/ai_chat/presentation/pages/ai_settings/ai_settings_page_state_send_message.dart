@@ -53,7 +53,18 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
         a.usageTotalTokens == b.usageTotalTokens &&
         a.usageCacheHitTokens == b.usageCacheHitTokens &&
         a.usageCacheMissTokens == b.usageCacheMissTokens &&
-        a.responseDuration == b.responseDuration;
+        a.responseDuration == b.responseDuration &&
+        _sameWebSearchCalls(a.webSearchCalls, b.webSearchCalls) &&
+        _sameUrlCitations(a.citations, b.citations);
+  }
+
+  bool _sameWebSearchCalls(List<AIWebSearchCall> a, List<AIWebSearchCall> b) {
+    return AIMessage.encodeWebSearchCallsJson(a) ==
+        AIMessage.encodeWebSearchCallsJson(b);
+  }
+
+  bool _sameUrlCitations(List<AIUrlCitation> a, List<AIUrlCitation> b) {
+    return AIMessage.encodeCitationsJson(a) == AIMessage.encodeCitationsJson(b);
   }
 
   AIMessage _mergeCompletedAssistantForDisplay(
@@ -86,6 +97,11 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       usageCacheMissTokens:
           completed.usageCacheMissTokens ?? target.usageCacheMissTokens,
       responseDuration: completed.responseDuration ?? target.responseDuration,
+      webSearchCalls: mergeAIWebSearchCalls(
+        target.webSearchCalls,
+        completed.webSearchCalls,
+      ),
+      citations: mergeAIUrlCitations(target.citations, completed.citations),
     );
   }
 
@@ -1283,6 +1299,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                       usageCacheHitTokens: target.usageCacheHitTokens,
                       usageCacheMissTokens: target.usageCacheMissTokens,
                       responseDuration: target.responseDuration,
+                      webSearchCalls: target.webSearchCalls,
+                      citations: target.citations,
                     );
                     final newList = List<AIMessage>.from(_messages);
                     newList[targetIdx] = updated;
@@ -1859,6 +1877,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               usageCacheHitTokens: assistant.usageCacheHitTokens,
               usageCacheMissTokens: assistant.usageCacheMissTokens,
               responseDuration: assistant.responseDuration,
+              webSearchCalls: assistant.webSearchCalls,
+              citations: assistant.citations,
             );
             _syncContentSegmentsForFullContent(assistantIdx, assistant.content);
           });

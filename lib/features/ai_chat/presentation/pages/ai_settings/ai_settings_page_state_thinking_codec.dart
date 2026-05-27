@@ -293,6 +293,8 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         usageCacheHitTokens: m.usageCacheHitTokens,
         usageCacheMissTokens: m.usageCacheMissTokens,
         responseDuration: m.responseDuration,
+        webSearchCalls: m.webSearchCalls,
+        citations: m.citations,
       );
     }
     return out;

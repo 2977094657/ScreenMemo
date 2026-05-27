@@ -326,9 +326,17 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           final bool keepTailDisplayContent =
               m.role == 'user' && hasComposerImageMarker(t);
           final bool keepTailMetadata = metaScore(t) > 0;
+          final List<AIWebSearchCall> webSearchCalls = mergeAIWebSearchCalls(
+            m.webSearchCalls,
+            t.webSearchCalls,
+          );
+          final List<AIUrlCitation> citations = mergeAIUrlCitations(
+            m.citations,
+            t.citations,
+          );
           final AIMessage patched =
               (!keepTailDisplayContent && !keepTailMetadata)
-              ? m
+              ? m.copyWith(webSearchCalls: webSearchCalls, citations: citations)
               : AIMessage(
                   role: m.role,
                   content: keepTailDisplayContent ? t.content : m.content,
@@ -360,6 +368,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
                   responseDuration: keepTailMetadata
                       ? t.responseDuration
                       : m.responseDuration,
+                  webSearchCalls: webSearchCalls,
+                  citations: citations,
                 );
           merged.add(patched);
         }
@@ -1763,6 +1773,14 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       );
       return;
     }
+    if (type == 'web_search_call') {
+      _mergeWebSearchCallForAssistant(assistantIdx, payload['call']);
+      return;
+    }
+    if (type == 'url_citation') {
+      _mergeUrlCitationForAssistant(assistantIdx, payload['citation']);
+      return;
+    }
     if (type == 'tool_batch_begin' || type == 'tool_call_end') {
       unawaited(
         FlutterLogger.nativeInfo(
@@ -1927,6 +1945,56 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     }
   }
 
+  void _mergeWebSearchCallForAssistant(int assistantIdx, Object? rawCall) {
+    if (assistantIdx < 0 ||
+        assistantIdx >= _messages.length ||
+        _messages[assistantIdx].role != 'assistant' ||
+        rawCall is! Map) {
+      return;
+    }
+    final AIWebSearchCall call = AIWebSearchCall.fromJson(
+      Map<String, dynamic>.from(rawCall),
+    );
+    if (call.isEmpty) return;
+    final AIMessage current = _messages[assistantIdx];
+    final List<AIWebSearchCall> merged = mergeAIWebSearchCalls(
+      current.webSearchCalls,
+      <AIWebSearchCall>[call],
+    );
+    if (AIMessage.encodeWebSearchCallsJson(merged) ==
+        AIMessage.encodeWebSearchCallsJson(current.webSearchCalls)) {
+      return;
+    }
+    final List<AIMessage> nextMessages = List<AIMessage>.from(_messages);
+    nextMessages[assistantIdx] = current.copyWith(webSearchCalls: merged);
+    _messages = nextMessages;
+  }
+
+  void _mergeUrlCitationForAssistant(int assistantIdx, Object? rawCitation) {
+    if (assistantIdx < 0 ||
+        assistantIdx >= _messages.length ||
+        _messages[assistantIdx].role != 'assistant' ||
+        rawCitation is! Map) {
+      return;
+    }
+    final AIUrlCitation citation = AIUrlCitation.fromJson(
+      Map<String, dynamic>.from(rawCitation),
+    );
+    if (citation.url.trim().isEmpty) return;
+    final AIMessage current = _messages[assistantIdx];
+    final List<AIUrlCitation> merged = mergeAIUrlCitations(
+      current.citations,
+      <AIUrlCitation>[citation],
+    );
+    if (AIMessage.encodeCitationsJson(merged) ==
+        AIMessage.encodeCitationsJson(current.citations)) {
+      return;
+    }
+    final List<AIMessage> nextMessages = List<AIMessage>.from(_messages);
+    nextMessages[assistantIdx] = current.copyWith(citations: merged);
+    _messages = nextMessages;
+  }
+
   List<String> _parseStringList(Object? raw) {
     if (raw is List) {
       return raw
@@ -2011,6 +2079,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       usageCacheHitTokens: current.usageCacheHitTokens,
       usageCacheMissTokens: current.usageCacheMissTokens,
       responseDuration: current.responseDuration,
+      webSearchCalls: current.webSearchCalls,
+      citations: current.citations,
     );
     final List<AIMessage> nextMessages = List<AIMessage>.from(_messages);
     nextMessages[assistantIdx] = updated;
@@ -2075,6 +2145,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       usageCacheHitTokens: current.usageCacheHitTokens,
       usageCacheMissTokens: current.usageCacheMissTokens,
       responseDuration: current.responseDuration,
+      webSearchCalls: current.webSearchCalls,
+      citations: current.citations,
     );
     final List<AIMessage> nextMessages = List<AIMessage>.from(_messages);
     nextMessages[assistantIdx] = updated;

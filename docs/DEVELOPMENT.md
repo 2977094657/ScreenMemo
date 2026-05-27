@@ -178,13 +178,36 @@ Flutter 代码按分层架构整理：
 - `lib/core/`：跨功能基础设施，包括主题、通用组件、日志、性能记录、生命周期、语言服务和通用工具
 - `lib/data/`：跨功能数据、平台与安全基础设施，例如数据库、路径、设置和安全存储
 - `lib/features/`：按功能收拢页面、组件与应用服务代码，例如应用选择、收藏、备份、AI、AI 对话、诊断、桌面合并、图库、搜索、存储分析、设置、权限、采集、App 运行状态、NSFW、每日总结与时间线
-  - `lib/features/settings/presentation/pages/settings_page*.dart`：设置页按功能拆成入口状态、布局、权限、截图、段落总结、备份、显示/高级、App 运行状态、NSFW 与每日提醒等 part 文件，避免继续形成单个超大页面文件
-  - `lib/features/search/presentation/pages/search_page*.dart`：搜索页按搜索加载、筛选、视图、文档、动态结果和通用组件拆分
-  - `lib/features/timeline/presentation/pages/segment_status_page*.dart`：动态状态页按状态辅助、动态重建、详情、时间轴和单条动态卡片拆分
-  - `lib/features/ai_providers/presentation/pages/provider_edit_page*.dart`：AI 提供商编辑页按状态、批量维护、保存、模型卡片、Key 管理和表单 UI 拆分
-  - `lib/features/capture/presentation/pages/home_page*.dart`：首页按数据加载、诊断、晨间建议、权限 UI、内容列表和语言切换拆分
-  - `lib/features/gallery/presentation/pages/screenshot_gallery_page*.dart`：截图图库页按日期 Tab、数据加载、操作、网格、单项和批量选择拆分
-  - `lib/features/ai_chat/presentation/widgets/chat_context_sheet*.dart`：对话上下文面板按状态刷新、导出/操作和展示卡片拆分
+
+## AI 对话性能日志
+
+AI 对话页面的加载、token 状态条、Markdown 图片渲染和图片路径解析会写入原生日志标签 `AI_CHAT_PERF`。排查慢加载时优先按该标签过滤日志。
+
+关键阶段：
+
+- `AIChat.contextChanged.*`：提供商、模型或会话切换后的处理路径。`sameConversation` 表示只刷新配置，不重载消息。
+- `AIChat.loadAll.*`：会话 CID、尾部历史、完整分页、合并历史、状态写入、首帧绘制等耗时。
+- `AppBarUsage.refresh.*`：顶部 token 使用条的 CID、会话行、prompt usage event、模型 caps、Codex-style usage 和 setState 耗时。
+- `ContextPanel.*`：对话上下文面板的 snapshot、trim event、usage event 和 Codex-style usage 耗时。
+- `AIChat.md.*` 与 `AIChat.evidence.*`：Markdown 预处理、evidence 引用扫描、缺失路径解析、NSFW 预加载耗时。
+- `DB.EvidencePath.*`：证据截图按 filename/basename 解析路径的数据库与文件系统阶段。若出现 `stage=filesystem_scan`，说明已落到递归扫描截图目录，在大图库中需要重点关注。
+- `DB.GeneratedImage.*` 与 `GeneratedImage.resolve.*`：AI 生成图按 filename 查询 `ai_generated_images` 表、检查文件存在、命中进程内缓存的耗时。
+
+AI 对话里的证据图片引用必须遵守本地路径隔离：
+
+- 模型与 provider 只能看到 `[evidence: filename]`，不能看到本机绝对路径。
+- 工具执行时若已拿到 `filename -> absolute path`，只能通过 UI-only 的 `evidence_path_map` 事件传给前端状态，不写入 `ui_thinking_json`。
+- 最终 assistant 内容落库前，本地会用这份映射把 `[evidence: filename]` 固化为 `[evidence: /absolute/path]`，避免首次渲染时再对大图库做 basename 查库或文件系统扫描。
+
+页面拆分维护约定：
+
+- `lib/features/settings/presentation/pages/settings_page*.dart`：设置页按功能拆成入口状态、布局、权限、截图、段落总结、备份、显示/高级、App 运行状态、NSFW 与每日提醒等 part 文件，避免继续形成单个超大页面文件
+- `lib/features/search/presentation/pages/search_page*.dart`：搜索页按搜索加载、筛选、视图、文档、动态结果和通用组件拆分
+- `lib/features/timeline/presentation/pages/segment_status_page*.dart`：动态状态页按状态辅助、动态重建、详情、时间轴和单条动态卡片拆分
+- `lib/features/ai_providers/presentation/pages/provider_edit_page*.dart`：AI 提供商编辑页按状态、批量维护、保存、模型卡片、Key 管理和表单 UI 拆分
+- `lib/features/capture/presentation/pages/home_page*.dart`：首页按数据加载、诊断、晨间建议、权限 UI、内容列表和语言切换拆分
+- `lib/features/gallery/presentation/pages/screenshot_gallery_page*.dart`：截图图库页按日期 Tab、数据加载、操作、网格、单项和批量选择拆分
+- `lib/features/ai_chat/presentation/widgets/chat_context_sheet*.dart`：对话上下文面板按状态刷新、导出/操作和展示卡片拆分
 - `lib/models/` 与 `lib/l10n/`：保留共享模型与生成的国际化代码
 
 首页首屏加载需要保持“缓存优先、后台刷新”的节奏：`home_page_data_part.dart` 先读取已保存监控应用和统计缓存并渲染列表，再等待已安装应用扫描、最新统计和权限检查。不要把“列表尚未加载完成”直接展示为“暂无监控应用”；应用列表缓存过期时也应先返回旧缓存，再在后台刷新安装状态和图标。

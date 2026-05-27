@@ -159,6 +159,14 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
           final String content = m.content.trim().isNotEmpty
               ? m.content
               : _contentSegmentsForMessageIndex(index).join();
+          if (m.webSearchCalls.isNotEmpty) {
+            children.add(
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                child: _WebSearchCallsCard(calls: m.webSearchCalls),
+              ),
+            );
+          }
           if (content.trim().isNotEmpty) {
             children.add(
               Padding(
@@ -170,6 +178,14 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                   fg: fg,
                   isCurrentStreaming: isCurrentStreaming,
                 ),
+              ),
+            );
+          }
+          if (m.citations.isNotEmpty) {
+            children.add(
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                child: _UrlCitationsRow(citations: m.citations),
               ),
             );
           }

@@ -13,6 +13,7 @@ import 'package:screen_memo/features/app_health/application/app_health_service.d
 class AIGatewayEventKind {
   static const String content = 'content';
   static const String reasoning = 'reasoning';
+  static const String ui = 'ui';
 }
 
 /// 流式事件（内容或思考增量）
@@ -29,6 +30,8 @@ class AIGatewayResult {
     required this.content,
     required this.modelUsed,
     this.toolCalls = const <AIToolCall>[],
+    this.webSearchCalls = const <AIWebSearchCall>[],
+    this.citations = const <AIUrlCitation>[],
     this.reasoning,
     this.reasoningDuration,
     this.usagePromptTokens,
@@ -41,6 +44,8 @@ class AIGatewayResult {
   final String content;
   final String modelUsed;
   final List<AIToolCall> toolCalls;
+  final List<AIWebSearchCall> webSearchCalls;
+  final List<AIUrlCitation> citations;
   final String? reasoning;
   final Duration? reasoningDuration;
   final int? usagePromptTokens;
@@ -293,6 +298,8 @@ class AIRequestGateway {
           return AIGatewayResult(
             content: aggregate.content,
             toolCalls: aggregate.toolCalls,
+            webSearchCalls: aggregate.webSearchCalls,
+            citations: aggregate.citations,
             reasoning: aggregate.reasoning,
             reasoningDuration: aggregate.reasoningDuration,
             modelUsed: endpoint.model,
@@ -380,6 +387,8 @@ class AIRequestGateway {
         return AIGatewayResult(
           content: aggregate.content,
           toolCalls: aggregate.toolCalls,
+          webSearchCalls: aggregate.webSearchCalls,
+          citations: aggregate.citations,
           reasoning: aggregate.reasoning,
           reasoningDuration: aggregate.reasoningDuration,
           modelUsed: endpoint.model,
@@ -457,6 +466,8 @@ class AIRequestGateway {
             return AIGatewayResult(
               content: aggregate.content,
               toolCalls: aggregate.toolCalls,
+              webSearchCalls: aggregate.webSearchCalls,
+              citations: aggregate.citations,
               reasoning: aggregate.reasoning,
               reasoningDuration: aggregate.reasoningDuration,
               modelUsed: chatEndpoint.model,
@@ -518,6 +529,8 @@ class AIRequestGateway {
               return AIGatewayResult(
                 content: aggregate.content,
                 toolCalls: aggregate.toolCalls,
+                webSearchCalls: aggregate.webSearchCalls,
+                citations: aggregate.citations,
                 reasoning: aggregate.reasoning,
                 reasoningDuration: aggregate.reasoningDuration,
                 modelUsed: chatEndpoint.model,
@@ -618,6 +631,8 @@ class AIRequestGateway {
               AIGatewayResult(
                 content: aggregate.content,
                 toolCalls: aggregate.toolCalls,
+                webSearchCalls: aggregate.webSearchCalls,
+                citations: aggregate.citations,
                 reasoning: aggregate.reasoning,
                 reasoningDuration: aggregate.reasoningDuration,
                 modelUsed: endpoint.model,
@@ -702,6 +717,8 @@ class AIRequestGateway {
                 AIGatewayResult(
                   content: aggregate.content,
                   toolCalls: aggregate.toolCalls,
+                  webSearchCalls: aggregate.webSearchCalls,
+                  citations: aggregate.citations,
                   reasoning: aggregate.reasoning,
                   reasoningDuration: aggregate.reasoningDuration,
                   modelUsed: endpoint.model,
@@ -836,12 +853,15 @@ class AIRequestGateway {
     final Uri uri = useResponsesApi
         ? _buildResponsesUriFromBase(baseUri, endpoint.chatPath)
         : _buildEndpointUriFromBase(baseUri, endpoint.chatPath);
+    final List<Map<String, dynamic>> effectiveTools = useResponsesApi
+        ? _withAutoResponsesWebSearchTool(endpoint, tools)
+        : tools;
     final Map<String, dynamic> payload = useResponsesApi
         ? _buildResponsesPayload(
             endpoint: endpoint,
             messages: messages,
             stream: stream,
-            tools: tools,
+            tools: effectiveTools,
             toolChoice: toolChoice,
             reasoningLevel: reasoningLevel,
           )
@@ -849,7 +869,7 @@ class AIRequestGateway {
             endpoint: endpoint,
             messages: messages,
             stream: stream,
-            tools: tools,
+            tools: effectiveTools,
             toolChoice: toolChoice,
             reasoningLevel: reasoningLevel,
           );
@@ -871,7 +891,7 @@ class AIRequestGateway {
       headers: headers,
       body: jsonEncode(payload),
       isGoogle: false,
-      hasTools: tools.isNotEmpty,
+      hasTools: effectiveTools.isNotEmpty,
       useResponsesApi: useResponsesApi,
       promptCacheKey: effectivePromptCacheKey,
     );
@@ -1424,6 +1444,51 @@ class AIRequestGateway {
     return out;
   }
 
+  List<Map<String, dynamic>> _withAutoResponsesWebSearchTool(
+    AIEndpoint endpoint,
+    List<Map<String, dynamic>> tools,
+  ) {
+    if (!_shouldAutoInjectResponsesWebSearch(endpoint)) {
+      return tools;
+    }
+    final bool hasWebSearch = tools.any((Map<String, dynamic> tool) {
+      final String type = (tool['type'] as String? ?? '').trim().toLowerCase();
+      return type == 'web_search';
+    });
+    if (hasWebSearch) return tools;
+    return <Map<String, dynamic>>[
+      ...tools,
+      <String, dynamic>{'type': 'web_search'},
+    ];
+  }
+
+  bool _shouldAutoInjectResponsesWebSearch(AIEndpoint endpoint) {
+    if (!_modelLooksOpenAITextModel(endpoint.model)) return false;
+    return true;
+  }
+
+  bool _modelLooksOpenAITextModel(String model) {
+    String m = model.trim().toLowerCase();
+    if (m.startsWith('openai/')) {
+      m = m.substring('openai/'.length);
+    }
+    if (m.isEmpty) return false;
+    if (m.startsWith('gpt-image') ||
+        m.startsWith('dall-e') ||
+        m.startsWith('tts-') ||
+        m.startsWith('whisper') ||
+        m.startsWith('text-embedding') ||
+        m.contains('embedding') ||
+        m.startsWith('sora')) {
+      return false;
+    }
+    return m.startsWith('gpt-') ||
+        m.startsWith('chatgpt-') ||
+        m.startsWith('o1') ||
+        m.startsWith('o3') ||
+        m.startsWith('o4');
+  }
+
   List<Map<String, dynamic>> _normalizeChatCompletionsTools(
     List<Map<String, dynamic>> tools,
   ) {
@@ -1819,7 +1884,9 @@ class AIRequestGateway {
       };
       if (extra != null) payload['extra'] = extra;
       try {
-        controller.add(AIGatewayEvent('ui', jsonEncode(payload)));
+        controller.add(
+          AIGatewayEvent(AIGatewayEventKind.ui, jsonEncode(payload)),
+        );
       } catch (_) {}
     }
 
@@ -2029,6 +2096,8 @@ class AIRequestGateway {
     return _GatewayAggregate(
       content: sanitized,
       toolCalls: parsed.toolCalls,
+      webSearchCalls: parsed.webSearchCalls,
+      citations: parsed.citations,
       reasoning: parsed.reasoning,
       reasoningDuration: null,
       usage: parsed.usage,
@@ -2055,6 +2124,9 @@ class AIRequestGateway {
     );
     final StringBuffer contentBuffer = StringBuffer();
     final StringBuffer reasoningBuffer = StringBuffer();
+    final Map<String, AIWebSearchCall> webSearchCallsByKey =
+        <String, AIWebSearchCall>{};
+    final Map<String, AIUrlCitation> citationsByKey = <String, AIUrlCitation>{};
     final DateTime reasoningStart = DateTime.now();
     String googleLastContent = '';
     String googleLastThought = '';
@@ -2166,6 +2238,109 @@ class AIRequestGateway {
       controller?.add(AIGatewayEvent(AIGatewayEventKind.reasoning, delta));
     }
 
+    AIWebSearchCall? rememberWebSearchCall(AIWebSearchCall call) {
+      if (call.isEmpty) return null;
+      final String id = (call.id ?? '').trim();
+      final String key = id.isNotEmpty
+          ? id
+          : [
+              (call.actionType ?? '').trim(),
+              (call.query ?? '').trim(),
+              call.queries.join('|'),
+              (call.url ?? '').trim(),
+              (call.pattern ?? '').trim(),
+            ].join('\u0001');
+      final AIWebSearchCall? previous = webSearchCallsByKey[key];
+      final List<AIWebSearchCall> existing = previous == null
+          ? const <AIWebSearchCall>[]
+          : <AIWebSearchCall>[previous];
+      final AIWebSearchCall merged = mergeAIWebSearchCalls(
+        existing,
+        <AIWebSearchCall>[call],
+      ).first;
+      webSearchCallsByKey[key] = merged;
+      return merged;
+    }
+
+    void emitWebSearchCall(AIWebSearchCall call) {
+      if (controller == null || call.isEmpty) return;
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'type': 'web_search_call',
+        'call': call.toJson(),
+      };
+      try {
+        controller.add(
+          AIGatewayEvent(AIGatewayEventKind.ui, jsonEncode(payload)),
+        );
+      } catch (_) {}
+    }
+
+    AIWebSearchCall webSearchStatusCallFromEvent(
+      Map<String, dynamic> eventJson,
+      String eventType,
+    ) {
+      String status = eventType.split('.').last.trim();
+      if (status == 'started') status = 'in_progress';
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final bool active = status == 'in_progress' || status == 'searching';
+      final bool finished = status == 'completed' || status == 'failed';
+      final String id =
+          ((eventJson['item_id'] as String?) ??
+                  (eventJson['itemId'] as String?) ??
+                  (eventJson['id'] as String?) ??
+                  '')
+              .trim();
+      return AIWebSearchCall(
+        id: id.isEmpty ? null : id,
+        status: status,
+        startedAtMs: active ? nowMs : null,
+        completedAtMs: finished ? nowMs : null,
+      );
+    }
+
+    void rememberCitation(AIUrlCitation citation) {
+      final String url = citation.url.trim();
+      if (url.isEmpty) return;
+      final String key = <Object?>[
+        url,
+        citation.title ?? '',
+        citation.startIndex ?? '',
+        citation.endIndex ?? '',
+      ].join('\u0001');
+      citationsByKey[key] = citation;
+    }
+
+    void emitCitation(AIUrlCitation citation) {
+      if (controller == null || citation.url.trim().isEmpty) return;
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'type': 'url_citation',
+        'citation': citation.toJson(),
+      };
+      try {
+        controller.add(
+          AIGatewayEvent(AIGatewayEventKind.ui, jsonEncode(payload)),
+        );
+      } catch (_) {}
+    }
+
+    void rememberAndEmitCitationsFromAnnotations(Object? raw) {
+      for (final AIUrlCitation citation in _extractUrlCitations(raw)) {
+        rememberCitation(citation);
+        emitCitation(citation);
+      }
+    }
+
+    void rememberCitationsFromResponsesMessage(Map<String, dynamic> item) {
+      if (item['type'] != 'message') return;
+      final dynamic content = item['content'];
+      if (content is! List) return;
+      for (final dynamic partRaw in content) {
+        if (partRaw is! Map) continue;
+        final Map<String, dynamic> part = Map<String, dynamic>.from(partRaw);
+        rememberAndEmitCitationsFromAnnotations(part['annotations']);
+      }
+    }
+
     String clip(String s, int maxLen) {
       if (s.length <= maxLen) return s;
       if (maxLen <= 32) {
@@ -2229,7 +2404,9 @@ class AIRequestGateway {
         payload['extra'] = extra;
       }
       try {
-        controller.add(AIGatewayEvent('ui', jsonEncode(payload)));
+        controller.add(
+          AIGatewayEvent(AIGatewayEventKind.ui, jsonEncode(payload)),
+        );
       } catch (_) {}
     }
 
@@ -2516,7 +2693,39 @@ class AIRequestGateway {
                 'EVENT completed',
                 extra: json['response'] ?? json['usage'] ?? '',
               );
+              final dynamic resp = json['response'];
+              if (resp is Map) {
+                final dynamic output = resp['output'];
+                if (output is List) {
+                  for (final dynamic rawItem in output) {
+                    if (rawItem is! Map) continue;
+                    final Map<String, dynamic> item = Map<String, dynamic>.from(
+                      rawItem,
+                    );
+                    final AIWebSearchCall? call = _parseWebSearchCall(item);
+                    if (call != null) {
+                      final AIWebSearchCall? merged = rememberWebSearchCall(
+                        call,
+                      );
+                      if (merged != null) emitWebSearchCall(merged);
+                    }
+                    rememberCitationsFromResponsesMessage(item);
+                  }
+                }
+              }
               done = true;
+              continue;
+            }
+            if (type.startsWith('response.web_search_call.')) {
+              final AIWebSearchCall? merged = rememberWebSearchCall(
+                webSearchStatusCallFromEvent(json, type),
+              );
+              if (merged != null) {
+                emitWebSearchCall(merged);
+                emitUiLog(
+                  'EVENT web_search_call status=${merged.status ?? '-'} id=${merged.id ?? '-'}',
+                );
+              }
               continue;
             }
             if (type == 'response.reasoning_summary_text.delta' ||
@@ -2620,7 +2829,20 @@ class AIRequestGateway {
                 );
                 final String itemType = (item['type'] as String?) ?? '';
 
+                if (itemType == 'web_search_call') {
+                  final AIWebSearchCall? call = _parseWebSearchCall(item);
+                  if (call != null) {
+                    final AIWebSearchCall? merged = rememberWebSearchCall(call);
+                    if (merged != null) emitWebSearchCall(merged);
+                    emitUiLog(
+                      'EVENT output_item.web_search status=${call.status ?? '-'} action=${call.actionType ?? '-'}',
+                    );
+                  }
+                  continue;
+                }
+
                 if (itemType == 'message') {
+                  rememberCitationsFromResponsesMessage(item);
                   String fullText = extractResponsesMessageOutputText(item);
                   if (fullText.isNotEmpty) {
                     // Best-effort normalization to improve dedupe when the stream also emits
@@ -2802,6 +3024,7 @@ class AIRequestGateway {
                 );
                 final String partType = (p['type'] as String?) ?? '';
                 final String txt = (p['text'] as String?) ?? '';
+                rememberAndEmitCitationsFromAnnotations(p['annotations']);
                 if (partType == 'output_text' && txt.isNotEmpty) {
                   final String key = responsesKey(
                     json,
@@ -2953,6 +3176,8 @@ class AIRequestGateway {
       return _GatewayAggregate(
         content: cleanedContent,
         toolCalls: toolCalls,
+        webSearchCalls: webSearchCallsByKey.values.toList(growable: false),
+        citations: citationsByKey.values.toList(growable: false),
         reasoning: reasoningText.isEmpty ? null : reasoningText,
         reasoningDuration: reasoningDuration,
         usage: usageSnapshot,
@@ -2982,10 +3207,48 @@ class AIRequestGateway {
     final Map<String, dynamic> data = jsonDecode(body) as Map<String, dynamic>;
     final _UsageSnapshot? usage = _extractUsageSnapshotFromAny(data);
     if (data['output'] is List) {
-      final List<dynamic> outs = (data['output'] as List).cast<dynamic>();
+      final List<dynamic> outs = data['output'] as List<dynamic>;
       final StringBuffer cbuf = StringBuffer();
       final StringBuffer rbuf = StringBuffer();
       final List<AIToolCall> toolCalls = <AIToolCall>[];
+      final Map<String, AIWebSearchCall> webSearchCallsByKey =
+          <String, AIWebSearchCall>{};
+      final Map<String, AIUrlCitation> citationsByKey =
+          <String, AIUrlCitation>{};
+      void rememberWebSearchCall(AIWebSearchCall call) {
+        if (call.isEmpty) return;
+        final String id = (call.id ?? '').trim();
+        final String key = id.isNotEmpty
+            ? id
+            : [
+                (call.actionType ?? '').trim(),
+                (call.query ?? '').trim(),
+                call.queries.join('|'),
+                (call.url ?? '').trim(),
+                (call.pattern ?? '').trim(),
+              ].join('\u0001');
+        final AIWebSearchCall? previous = webSearchCallsByKey[key];
+        final List<AIWebSearchCall> existing = previous == null
+            ? const <AIWebSearchCall>[]
+            : <AIWebSearchCall>[previous];
+        webSearchCallsByKey[key] = mergeAIWebSearchCalls(
+          existing,
+          <AIWebSearchCall>[call],
+        ).first;
+      }
+
+      void rememberCitation(AIUrlCitation citation) {
+        final String url = citation.url.trim();
+        if (url.isEmpty) return;
+        final String key = <Object?>[
+          url,
+          citation.title ?? '',
+          citation.startIndex ?? '',
+          citation.endIndex ?? '',
+        ].join('\u0001');
+        citationsByKey[key] = citation;
+      }
+
       for (final dynamic it in outs) {
         if (it is! Map<String, dynamic>) continue;
         final dynamic type = it['type'];
@@ -3026,11 +3289,19 @@ class AIRequestGateway {
           if (cont is List) {
             for (final dynamic p in cont) {
               if (p is Map<String, dynamic> && p['type'] == 'output_text') {
+                for (final AIUrlCitation citation in _extractUrlCitations(
+                  p['annotations'],
+                )) {
+                  rememberCitation(citation);
+                }
                 final String txt = (p['text'] as String?) ?? '';
                 if (txt.isNotEmpty) cbuf.write(txt);
               }
             }
           }
+        } else if (type == 'web_search_call') {
+          final AIWebSearchCall? call = _parseWebSearchCall(it);
+          if (call != null) rememberWebSearchCall(call);
         }
       }
       final String content = cbuf.toString();
@@ -3038,6 +3309,8 @@ class AIRequestGateway {
       return _OpenAIResponse(
         content: content,
         toolCalls: toolCalls,
+        webSearchCalls: webSearchCallsByKey.values.toList(growable: false),
+        citations: citationsByKey.values.toList(growable: false),
         reasoning: reasoning.isEmpty ? null : reasoning,
         usage: usage,
       );
@@ -3059,10 +3332,12 @@ class AIRequestGateway {
     if (toolCallsRaw is List) {
       for (final dynamic tc in toolCallsRaw) {
         if (tc is! Map) continue;
-        final map = Map<String, dynamic>.from(tc as Map);
+        final map = Map<String, dynamic>.from(tc);
         final String id = (map['id'] as String?) ?? '';
         final Map<String, dynamic>? fn = map['function'] is Map
-            ? Map<String, dynamic>.from(map['function'] as Map)
+            ? Map<String, dynamic>.from(
+                map['function'] as Map<dynamic, dynamic>,
+              )
             : null;
         final String name = (fn?['name'] as String?) ?? '';
         final String args = _stringifyJsonLike(fn?['arguments']);
@@ -3078,7 +3353,7 @@ class AIRequestGateway {
     } else {
       final dynamic fc = message['function_call'];
       if (fc is Map) {
-        final Map<String, dynamic> fn = Map<String, dynamic>.from(fc as Map);
+        final Map<String, dynamic> fn = Map<String, dynamic>.from(fc);
         final String name = (fn['name'] as String?) ?? '';
         final String args = _stringifyJsonLike(fn['arguments']);
         if (name.trim().isNotEmpty) {
@@ -3104,6 +3379,116 @@ class AIRequestGateway {
       reasoning: reasoning?.isEmpty == true ? null : reasoning,
       usage: usage,
     );
+  }
+
+  AIWebSearchCall? _parseWebSearchCall(Map<String, dynamic> item) {
+    if (item['type'] != 'web_search_call') return null;
+    String? readString(Object? value) {
+      final String text = value?.toString().trim() ?? '';
+      return text.isEmpty ? null : text;
+    }
+
+    int? readInt(Object? value) {
+      final int n = value is num
+          ? value.toInt()
+          : int.tryParse(value?.toString().trim() ?? '') ?? 0;
+      return n > 0 ? n : null;
+    }
+
+    List<String> readStrings(Object? value) {
+      if (value is! List) return const <String>[];
+      return value
+          .map((Object? e) => e?.toString().trim() ?? '')
+          .where((String e) => e.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    final Map<String, dynamic> action = item['action'] is Map
+        ? Map<String, dynamic>.from(item['action'] as Map)
+        : const <String, dynamic>{};
+    List<AIWebSearchSource> readSources(Object? value) {
+      if (value is! List) return const <AIWebSearchSource>[];
+      return value
+          .whereType<Map>()
+          .map(
+            (Map e) => AIWebSearchSource.fromJson(Map<String, dynamic>.from(e)),
+          )
+          .where((AIWebSearchSource e) => !e.isEmpty)
+          .toList(growable: false);
+    }
+
+    final String? status = readString(item['status']);
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    final bool activeStatus = status == 'in_progress' || status == 'searching';
+    final bool finishedStatus = status == 'completed' || status == 'failed';
+    final AIWebSearchCall call = AIWebSearchCall(
+      id: readString(item['id']),
+      status: status,
+      actionType: readString(action['type']),
+      query: readString(action['query']) ?? readString(item['query']),
+      queries: readStrings(action['queries'] ?? item['queries']),
+      url: readString(action['url']) ?? readString(item['url']),
+      pattern: readString(action['pattern']) ?? readString(item['pattern']),
+      sources: readSources(action['sources'] ?? item['sources']),
+      startedAtMs:
+          readInt(item['started_at_ms']) ??
+          readInt(item['startedAtMs']) ??
+          readInt(action['started_at_ms']) ??
+          readInt(action['startedAtMs']) ??
+          (activeStatus ? nowMs : null),
+      completedAtMs:
+          readInt(item['completed_at_ms']) ??
+          readInt(item['completedAtMs']) ??
+          readInt(action['completed_at_ms']) ??
+          readInt(action['completedAtMs']) ??
+          (finishedStatus ? nowMs : null),
+      durationMs:
+          readInt(item['duration_ms']) ??
+          readInt(item['durationMs']) ??
+          readInt(action['duration_ms']) ??
+          readInt(action['durationMs']),
+    );
+    return call.isEmpty ? null : call;
+  }
+
+  List<AIUrlCitation> _extractUrlCitations(Object? annotationsRaw) {
+    if (annotationsRaw is! List) return const <AIUrlCitation>[];
+    final List<AIUrlCitation> out = <AIUrlCitation>[];
+    int? readInt(Map<String, dynamic> map, String snake, String camel) {
+      final Object? value = map[snake] ?? map[camel];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value.trim());
+      return null;
+    }
+
+    String readString(Object? value) => value?.toString().trim() ?? '';
+
+    for (final Object? raw in annotationsRaw) {
+      if (raw is! Map) continue;
+      final Map<String, dynamic> map = Map<String, dynamic>.from(raw);
+      if (map['type'] != 'url_citation') continue;
+      final Object? nestedRaw = map['url_citation'];
+      final Map<String, dynamic> nested = nestedRaw is Map
+          ? Map<String, dynamic>.from(nestedRaw)
+          : const <String, dynamic>{};
+      final String url = readString(map['url']).isNotEmpty
+          ? readString(map['url'])
+          : readString(nested['url']);
+      if (url.isEmpty) continue;
+      final String title = readString(map['title']).isNotEmpty
+          ? readString(map['title'])
+          : readString(nested['title']);
+      out.add(
+        AIUrlCitation(
+          url: url,
+          title: title.isEmpty ? null : title,
+          startIndex: readInt(map, 'start_index', 'startIndex'),
+          endIndex: readInt(map, 'end_index', 'endIndex'),
+        ),
+      );
+    }
+    return out;
   }
 
   _GoogleResponse _parseGoogleResponse(String body) {
@@ -3274,6 +3659,8 @@ class _GatewayAggregate {
   const _GatewayAggregate({
     required this.content,
     this.toolCalls = const <AIToolCall>[],
+    this.webSearchCalls = const <AIWebSearchCall>[],
+    this.citations = const <AIUrlCitation>[],
     this.reasoning,
     this.reasoningDuration,
     this.usage,
@@ -3281,6 +3668,8 @@ class _GatewayAggregate {
 
   final String content;
   final List<AIToolCall> toolCalls;
+  final List<AIWebSearchCall> webSearchCalls;
+  final List<AIUrlCitation> citations;
   final String? reasoning;
   final Duration? reasoningDuration;
   final _UsageSnapshot? usage;
@@ -3290,12 +3679,16 @@ class _OpenAIResponse {
   const _OpenAIResponse({
     required this.content,
     this.toolCalls = const <AIToolCall>[],
+    this.webSearchCalls = const <AIWebSearchCall>[],
+    this.citations = const <AIUrlCitation>[],
     this.reasoning,
     this.usage,
   });
 
   final String content;
   final List<AIToolCall> toolCalls;
+  final List<AIWebSearchCall> webSearchCalls;
+  final List<AIUrlCitation> citations;
   final String? reasoning;
   final _UsageSnapshot? usage;
 }
@@ -3365,16 +3758,12 @@ _GoogleStreamParts _extractGoogleStreamParts(Map<String, dynamic> json) {
   }
   final dynamic first = candidates.first;
   if (first is! Map) return const _GoogleStreamParts(content: '', thought: '');
-  final Map<String, dynamic> candidate = Map<String, dynamic>.from(
-    first as Map,
-  );
+  final Map<String, dynamic> candidate = Map<String, dynamic>.from(first);
   final dynamic content = candidate['content'];
   if (content is! Map) {
     return const _GoogleStreamParts(content: '', thought: '');
   }
-  final Map<String, dynamic> contentMap = Map<String, dynamic>.from(
-    content as Map,
-  );
+  final Map<String, dynamic> contentMap = Map<String, dynamic>.from(content);
   final dynamic parts = contentMap['parts'];
   if (parts is! List || parts.isEmpty) {
     return const _GoogleStreamParts(content: '', thought: '');
@@ -3383,7 +3772,7 @@ _GoogleStreamParts _extractGoogleStreamParts(Map<String, dynamic> json) {
   final StringBuffer thoughtOut = StringBuffer();
   for (final dynamic p in parts) {
     if (p is! Map) continue;
-    final Map<String, dynamic> part = Map<String, dynamic>.from(p as Map);
+    final Map<String, dynamic> part = Map<String, dynamic>.from(p);
     final dynamic text = part['text'];
     if (text is String && text.isNotEmpty) {
       final bool thought = (part['thought'] as bool?) ?? false;

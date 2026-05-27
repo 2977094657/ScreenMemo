@@ -183,6 +183,812 @@ String _formatToolDurationMs(int? durationMs) {
   return '${(ms / 1000.0).toStringAsFixed(1)}s';
 }
 
+String _hostFromUrl(String url) {
+  final Uri? uri = Uri.tryParse(url.trim());
+  final String host = uri?.host.trim() ?? '';
+  return host.startsWith('www.') ? host.substring(4) : host;
+}
+
+String _hostFromText(String value) {
+  String s = value.trim();
+  if (s.isEmpty) return '';
+  s = s.replaceFirst(RegExp(r'^site:', caseSensitive: false), '').trim();
+  final Uri? uri = Uri.tryParse(s);
+  final String parsedHost = uri?.host.trim() ?? '';
+  if (parsedHost.isNotEmpty) {
+    return parsedHost.startsWith('www.') ? parsedHost.substring(4) : parsedHost;
+  }
+  s = s.replaceFirst(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://'), '');
+  s = s.split(RegExp(r'[,\s]+')).first.trim();
+  s = s.split('/').first.split('?').first.split('#').first;
+  if (s.contains('@')) s = s.split('@').last;
+  if (s.contains(':')) s = s.split(':').first;
+  return s.startsWith('www.') ? s.substring(4) : s;
+}
+
+Uri? _externalUriFromUrl(String url) {
+  final Uri? uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.host.trim().isEmpty) return null;
+  final String scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  return uri;
+}
+
+String _faviconUrlForHost(String host) {
+  final String h = _hostFromText(host);
+  if (h.isEmpty) return '';
+  return 'https://favicon.im/${Uri.encodeComponent(h)}';
+}
+
+Color _webSearchBlue(BuildContext context) {
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  return dark ? const Color(0xFF7DB7FF) : const Color(0xFF2563EB);
+}
+
+Color _webSearchPanelColor(BuildContext context) {
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  return _webSearchBlue(context).withValues(alpha: dark ? 0.12 : 0.07);
+}
+
+Color _webSearchItemColor(BuildContext context) {
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  return _webSearchBlue(context).withValues(alpha: dark ? 0.16 : 0.08);
+}
+
+Color _webSearchBorderColor(BuildContext context) {
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  return _webSearchBlue(context).withValues(alpha: dark ? 0.28 : 0.18);
+}
+
+bool _webSearchCallActive(AIWebSearchCall call) {
+  final String status = (call.status ?? '').trim();
+  return status == 'in_progress' || status == 'searching';
+}
+
+Future<void> _openExternalUrl(String url) async {
+  final Uri? uri = _externalUriFromUrl(url);
+  if (uri == null) return;
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+}
+
+class _WebSearchCallsCard extends StatefulWidget {
+  const _WebSearchCallsCard({required this.calls});
+
+  final List<AIWebSearchCall> calls;
+
+  @override
+  State<_WebSearchCallsCard> createState() => _WebSearchCallsCardState();
+}
+
+class _WebSearchCallsCardState extends State<_WebSearchCallsCard> {
+  bool _expanded = true;
+  Timer? _elapsedTimer;
+  DateTime? _localStartedAt;
+
+  List<AIWebSearchCall> get _visibleCalls => widget.calls
+      .where((AIWebSearchCall call) => !call.isEmpty)
+      .toList(growable: false);
+
+  bool get _isLoading => _visibleCalls.any(_webSearchCallActive);
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = _isLoading;
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WebSearchCallsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool wasLoading = oldWidget.calls.any(_webSearchCallActive);
+    final bool isLoading = _isLoading;
+    if (!wasLoading && isLoading) {
+      _expanded = true;
+      _localStartedAt ??= DateTime.now();
+    }
+    if (wasLoading && !isLoading) {
+      _expanded = false;
+    }
+    if (wasLoading != isLoading) _syncTimer();
+  }
+
+  @override
+  void dispose() {
+    _elapsedTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+    if (_isLoading) {
+      _localStartedAt ??= DateTime.now();
+      _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {});
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final List<AIWebSearchCall> visible = _visibleCalls;
+    if (visible.isEmpty) return const SizedBox.shrink();
+    final bool zh = _isZhLocaleUi(context);
+    final bool loading = _isLoading;
+    final Color accent = _webSearchBlue(context);
+    final String title = loading
+        ? (zh ? '联网搜索 · 搜索中' : 'Web search · Searching')
+        : (zh ? '联网搜索过程' : 'Web search process');
+    final String duration = _durationLabel(visible, loading);
+
+    return Material(
+      color: _webSearchPanelColor(context),
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          border: Border.all(color: _webSearchBorderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                child: Row(
+                  children: [
+                    _Shimmer(
+                      active: loading,
+                      baseColor: accent,
+                      child: Icon(
+                        Icons.travel_explore_rounded,
+                        size: 16,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _Shimmer(
+                        active: loading,
+                        baseColor: accent,
+                        child: Text(
+                          title,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (duration.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        duration,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: accent,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: accent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 6),
+              for (int i = 0; i < visible.length; i++) ...[
+                _WebSearchCallLine(call: visible[i]),
+                if (i != visible.length - 1)
+                  const SizedBox(height: AppTheme.spacing1),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _durationLabel(List<AIWebSearchCall> calls, bool loading) {
+    int? startedAtMs;
+    int? completedAtMs;
+    int? durationMs;
+    for (final AIWebSearchCall call in calls) {
+      final int start = call.startedAtMs ?? 0;
+      if (start > 0 && (startedAtMs == null || start < startedAtMs)) {
+        startedAtMs = start;
+      }
+      final int completed = call.completedAtMs ?? 0;
+      if (completed > 0 &&
+          (completedAtMs == null || completed > completedAtMs)) {
+        completedAtMs = completed;
+      }
+      final int duration = call.durationMs ?? 0;
+      if (duration > 0 && (durationMs == null || duration > durationMs)) {
+        durationMs = duration;
+      }
+    }
+    if (durationMs == null && startedAtMs != null && completedAtMs != null) {
+      durationMs = completedAtMs - startedAtMs;
+    }
+    if (loading) {
+      final DateTime? start = startedAtMs != null
+          ? DateTime.fromMillisecondsSinceEpoch(startedAtMs)
+          : _localStartedAt;
+      if (start == null) return '';
+      durationMs = DateTime.now().difference(start).inMilliseconds;
+    }
+    return _formatWebSearchDurationMs(durationMs);
+  }
+}
+
+String _formatWebSearchDurationMs(int? durationMs) {
+  final int ms = durationMs ?? 0;
+  if (ms <= 0) return '';
+  if (ms < 1000) return '${(ms / 1000.0).toStringAsFixed(1)}s';
+  final int totalSeconds = (ms / 1000).round().clamp(0, 24 * 3600);
+  final int h = totalSeconds ~/ 3600;
+  final int m = (totalSeconds % 3600) ~/ 60;
+  final int s = totalSeconds % 60;
+  if (h > 0) {
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+  return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+}
+
+class _WebSearchCallLine extends StatelessWidget {
+  const _WebSearchCallLine({required this.call});
+
+  final AIWebSearchCall call;
+
+  @override
+  Widget build(BuildContext context) {
+    final String actionType = (call.actionType ?? '').trim();
+    final String action = _actionText(context, call);
+    final String status = _statusText(context, call.status, actionType);
+    final String? host = _hostText(call);
+    final String url = _primaryUrl(call);
+    final List<_SearchQueryDisplay> queries = _queryDisplays(call);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (actionType != 'search')
+          _WebActionLine(
+            action: actionType == 'open_page' ? '' : action,
+            status: status,
+            url: url,
+            host: host,
+            icon: actionType == 'open_page'
+                ? Icons.link_rounded
+                : Icons.travel_explore_rounded,
+          ),
+        if (queries.isNotEmpty) ...[
+          if (actionType != 'search') const SizedBox(height: 4),
+          for (int i = 0; i < queries.length; i++) ...[
+            _SearchQueryLine(query: queries[i]),
+            if (i != queries.length - 1) const SizedBox(height: 3),
+          ],
+        ],
+        if (call.sources.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (int i = 0; i < call.sources.take(4).length; i++) ...[
+                _WebSearchSourceTile(source: call.sources[i]),
+                if (i != call.sources.take(4).length - 1)
+                  const SizedBox(height: 4),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _actionText(BuildContext context, AIWebSearchCall call) {
+    final bool zh = _isZhLocaleUi(context);
+    switch ((call.actionType ?? '').trim()) {
+      case 'open_page':
+        return zh ? '查看网页' : 'View page';
+      case 'find_in_page':
+        return zh ? '页内查找' : 'Find in page';
+      case 'search':
+        return zh ? '联网搜索' : 'Web search';
+      default:
+        return zh ? '联网搜索' : 'Web search';
+    }
+  }
+
+  List<_SearchQueryDisplay> _queryDisplays(AIWebSearchCall call) {
+    final List<String> rawQueries = <String>[
+      if ((call.query ?? '').trim().isNotEmpty) call.query!.trim(),
+      ...call.queries.map((String e) => e.trim()).where((e) => e.isNotEmpty),
+    ];
+    final Set<String> seen = <String>{};
+    final List<_SearchQueryDisplay> out = <_SearchQueryDisplay>[];
+    for (final String raw in rawQueries) {
+      if (!seen.add(raw)) continue;
+      out.add(_SearchQueryDisplay.parse(raw));
+    }
+    if (out.isNotEmpty) return out;
+
+    final String pattern = (call.pattern ?? '').trim();
+    final String url = (call.url ?? '').trim();
+    final String host = _hostFromUrl(url);
+    if (pattern.isNotEmpty) {
+      return <_SearchQueryDisplay>[
+        _SearchQueryDisplay(keyword: pattern, site: host.isEmpty ? null : host),
+      ];
+    }
+    return const <_SearchQueryDisplay>[];
+  }
+
+  String _statusText(BuildContext context, String? raw, String actionType) {
+    final String status = (raw ?? '').trim();
+    if (status.isEmpty) return '';
+    final bool zh = _isZhLocaleUi(context);
+    if (!zh) return status;
+    switch (status) {
+      case 'completed':
+        if (actionType == 'open_page') return '已查看';
+        return '已完成';
+      case 'in_progress':
+      case 'searching':
+        return '搜索中';
+      case 'failed':
+        return '失败';
+      default:
+        return status;
+    }
+  }
+
+  String? _hostText(AIWebSearchCall call) {
+    final String direct = _hostFromUrl((call.url ?? '').trim());
+    if (direct.isNotEmpty) return direct;
+    for (final AIWebSearchSource source in call.sources) {
+      final String host = _hostFromUrl(source.url.trim());
+      if (host.isNotEmpty) return host;
+    }
+    return null;
+  }
+
+  String _primaryUrl(AIWebSearchCall call) {
+    final String direct = (call.url ?? '').trim();
+    if (_externalUriFromUrl(direct) != null) return direct;
+    for (final AIWebSearchSource source in call.sources) {
+      final String url = source.url.trim();
+      if (_externalUriFromUrl(url) != null) return url;
+    }
+    return '';
+  }
+}
+
+class _WebActionLine extends StatelessWidget {
+  const _WebActionLine({
+    required this.action,
+    required this.status,
+    required this.url,
+    required this.host,
+    required this.icon,
+  });
+
+  final String action;
+  final String status;
+  final String url;
+  final String? host;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Color accent = _webSearchBlue(context);
+    final String iconHost = _hostFromText(
+      (host ?? '').isNotEmpty ? host! : url,
+    );
+    final TextStyle? style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.25,
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+        color: _webSearchItemColor(context),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: iconHost.isNotEmpty
+                ? _WebSourceAvatar(host: iconHost, color: accent)
+                : Icon(icon, size: 14, color: accent),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: style,
+                children: [
+                  if (action.isNotEmpty)
+                    TextSpan(
+                      text: action,
+                      style: style?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  if (url.isNotEmpty) ...[
+                    if (action.isNotEmpty) const TextSpan(text: '  '),
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.middle,
+                      child: _InlineWebLink(url: url, host: host),
+                    ),
+                  ],
+                  if (status.isNotEmpty) TextSpan(text: ' · $status'),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchQueryDisplay {
+  const _SearchQueryDisplay({required this.keyword, this.site});
+
+  final String keyword;
+  final String? site;
+
+  static final RegExp _sitePrefix = RegExp(r'\bsite:([^\s]+)\s*');
+
+  factory _SearchQueryDisplay.parse(String raw) {
+    String keyword = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final List<String> sites = <String>[];
+    keyword = keyword.replaceAllMapped(_sitePrefix, (Match match) {
+      final String site = (match.group(1) ?? '').trim();
+      if (site.isNotEmpty) sites.add(site);
+      return '';
+    }).trim();
+    return _SearchQueryDisplay(
+      keyword: keyword.isEmpty ? raw.trim() : keyword,
+      site: sites.isEmpty ? null : sites.join(', '),
+    );
+  }
+}
+
+class _SearchQueryLine extends StatelessWidget {
+  const _SearchQueryLine({required this.query});
+
+  final _SearchQueryDisplay query;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final String siteHost = _hostFromText(query.site ?? '');
+    final TextStyle? style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.25,
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+        color: _webSearchItemColor(context),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: siteHost.isNotEmpty
+                ? _WebSourceAvatar(
+                    host: siteHost,
+                    color: _webSearchBlue(context),
+                  )
+                : Icon(
+                    Icons.search_rounded,
+                    size: 14,
+                    color: _webSearchBlue(context),
+                  ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if ((query.site ?? '').trim().isNotEmpty)
+                  Text(
+                    query.site!.trim(),
+                    overflow: TextOverflow.ellipsis,
+                    style: style?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                Text(
+                  query.keyword,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WebSourceAvatar extends StatelessWidget {
+  const _WebSourceAvatar({required this.host, required this.color});
+
+  final String? host;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final String h = _hostFromText(host ?? '');
+    if (h.isEmpty) {
+      return Icon(Icons.travel_explore_rounded, size: 16, color: color);
+    }
+    final String normalized = h.replaceFirst(RegExp(r'^www\.'), '');
+    final String letter = normalized.isEmpty ? '' : normalized[0].toUpperCase();
+    final Widget fallback = Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.14),
+      ),
+      child: Text(
+        letter,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          height: 1,
+        ),
+      ),
+    );
+    final String faviconUrl = _faviconUrlForHost(h);
+    if (faviconUrl.isEmpty) return fallback;
+    return ClipOval(
+      child: Image.network(
+        faviconUrl,
+        width: 16,
+        height: 16,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      ),
+    );
+  }
+}
+
+class _InlineWebLink extends StatelessWidget {
+  const _InlineWebLink({required this.url, required this.host});
+
+  final String url;
+  final String? host;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Color accent = _webSearchBlue(context);
+    final String label = (host ?? '').trim().isNotEmpty ? host!.trim() : url;
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => _openExternalUrl(url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 180),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: accent,
+                    decoration: TextDecoration.underline,
+                    decorationColor: accent,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebSearchSourceTile extends StatelessWidget {
+  const _WebSearchSourceTile({required this.source});
+
+  final AIWebSearchSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final String title = (source.title ?? '').trim();
+    final String host = _hostFromUrl(source.url.trim());
+    final String label = title.isNotEmpty
+        ? title
+        : (host.isNotEmpty ? host : source.url.trim());
+    if (label.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+      onTap: () => _openExternalUrl(source.url),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+          border: Border.all(color: _webSearchBorderColor(context)),
+          color: _webSearchItemColor(context),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: _WebSourceAvatar(
+                host: host,
+                color: _webSearchBlue(context),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UrlCitationsRow extends StatelessWidget {
+  const _UrlCitationsRow({required this.citations});
+
+  final List<AIUrlCitation> citations;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<AIUrlCitation> visible = citations
+        .where((AIUrlCitation e) => e.url.trim().isNotEmpty)
+        .toList(growable: false);
+    if (visible.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final bool zh = _isZhLocaleUi(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+          child: Text(
+            zh ? '来源' : 'Sources',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: _webSearchBlue(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < visible.length; i++) ...[
+              _UrlCitationTile(index: i + 1, citation: visible[i]),
+              if (i != visible.length - 1)
+                const SizedBox(height: AppTheme.spacing1),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _UrlCitationTile extends StatelessWidget {
+  const _UrlCitationTile({required this.index, required this.citation});
+
+  final int index;
+  final AIUrlCitation citation;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final String title = (citation.title ?? '').trim();
+    final String host = _hostFromUrl(citation.url.trim());
+    final String label = title.isNotEmpty
+        ? title
+        : (host.isNotEmpty ? host : citation.url.trim());
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      onTap: () => _openExternalUrl(citation.url),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          border: Border.all(color: _webSearchBorderColor(context)),
+          color: _webSearchPanelColor(context),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: Text(
+                '$index',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _webSearchBlue(context),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: _WebSourceAvatar(
+                host: host,
+                color: _webSearchBlue(context),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ThinkingTimelineCard extends StatefulWidget {
   const _ThinkingTimelineCard({
     super.key,

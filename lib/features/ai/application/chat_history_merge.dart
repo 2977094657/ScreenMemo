@@ -261,6 +261,14 @@ List<AIMessage> mergeCompletedTurnIntoHistory({
         assistantFinal.usageCacheMissTokens ?? base.usageCacheMissTokens;
     final Duration? responseDuration =
         assistantFinal.responseDuration ?? base.responseDuration;
+    final List<AIWebSearchCall> webSearchCalls = mergeAIWebSearchCalls(
+      base.webSearchCalls,
+      assistantFinal.webSearchCalls,
+    );
+    final List<AIUrlCitation> citations = mergeAIUrlCitations(
+      base.citations,
+      assistantFinal.citations,
+    );
 
     String? ui = pickBetterUiThinkingJson(
       base.uiThinkingJson,
@@ -281,6 +289,8 @@ List<AIMessage> mergeCompletedTurnIntoHistory({
       usageCacheHitTokens: usageCacheHit,
       usageCacheMissTokens: usageCacheMiss,
       responseDuration: responseDuration,
+      webSearchCalls: webSearchCalls,
+      citations: citations,
     );
   }
 

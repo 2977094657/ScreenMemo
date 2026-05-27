@@ -157,6 +157,8 @@ class _ToolUiThinkingPersister {
         usageCacheHitTokens: base.usageCacheHitTokens,
         usageCacheMissTokens: base.usageCacheMissTokens,
         responseDuration: base.responseDuration,
+        webSearchCalls: base.webSearchCalls,
+        citations: base.citations,
       );
       await settings.saveChatHistoryByCid(cidTrim, out);
       return;
@@ -336,6 +338,8 @@ extension AIChatServiceSendExt on AIChatService {
       usageCacheHitTokens: result.usageCacheHitTokens,
       usageCacheMissTokens: result.usageCacheMissTokens,
       responseDuration: responseDuration,
+      webSearchCalls: result.webSearchCalls,
+      citations: result.citations,
     );
   }
 
@@ -3333,6 +3337,8 @@ extension AIChatServiceSendExt on AIChatService {
         toolCalls: result.toolCalls
             .map((e) => e.toOpenAIToolCallJson())
             .toList(),
+        webSearchCalls: result.webSearchCalls,
+        citations: result.citations,
       );
       unawaited(
         FlutterLogger.nativeDebug(
@@ -3627,6 +3633,8 @@ extension AIChatServiceSendExt on AIChatService {
         result = AIGatewayResult(
           content: finalMarkers.join('\n\n'),
           modelUsed: result.modelUsed,
+          webSearchCalls: result.webSearchCalls,
+          citations: result.citations,
           reasoning: result.reasoning,
           reasoningDuration: result.reasoningDuration,
           usagePromptTokens: result.usagePromptTokens,

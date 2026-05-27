@@ -308,4 +308,467 @@ void main() {
       await server.close(force: true);
     },
   );
+
+  test('OpenAI Responses GPT models auto inject web_search tool', () async {
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    Map<String, dynamic>? captured;
+
+    final Future<void> serverDone = () async {
+      await for (final HttpRequest req in server) {
+        captured =
+            jsonDecode(await utf8.decoder.bind(req).join())
+                as Map<String, dynamic>;
+        req.response.statusCode = HttpStatus.ok;
+        req.response.headers.contentType = ContentType.json;
+        req.response.write(
+          jsonEncode(<String, dynamic>{
+            'output': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'message',
+                'role': 'assistant',
+                'content': <Map<String, dynamic>>[
+                  <String, dynamic>{'type': 'output_text', 'text': 'ok'},
+                ],
+              },
+            ],
+          }),
+        );
+        await req.response.close();
+        break;
+      }
+    }();
+
+    final AIGatewayResult result = await AIRequestGateway.instance.complete(
+      endpoints: <AIEndpoint>[
+        AIEndpoint(
+          groupId: null,
+          baseUrl: 'http://127.0.0.1:${server.port}',
+          apiKey: 'test-key',
+          model: 'openai/gpt-5.2',
+          chatPath: '/v1/responses',
+          useResponseApi: true,
+        ),
+      ],
+      messages: <AIMessage>[AIMessage(role: 'user', content: 'latest news')],
+      responseStartMarker: '',
+      preferStreaming: false,
+      trackKeyStats: false,
+    );
+
+    await serverDone;
+    await server.close(force: true);
+
+    expect(result.content, 'ok');
+    final List<dynamic> tools = captured?['tools'] as List<dynamic>;
+    expect(
+      tools.where(
+        (dynamic tool) =>
+            tool is Map &&
+            ((tool['type'] as String?) ?? '').trim() == 'web_search',
+      ),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'Chat Completions GPT models do not auto inject web_search tool',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      Map<String, dynamic>? captured;
+
+      final Future<void> serverDone = () async {
+        await for (final HttpRequest req in server) {
+          captured =
+              jsonDecode(await utf8.decoder.bind(req).join())
+                  as Map<String, dynamic>;
+          req.response.statusCode = HttpStatus.ok;
+          req.response.headers.contentType = ContentType.json;
+          req.response.write(
+            jsonEncode(<String, dynamic>{
+              'choices': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'message': <String, dynamic>{'content': 'ok'},
+                },
+              ],
+            }),
+          );
+          await req.response.close();
+          break;
+        }
+      }();
+
+      final AIGatewayResult result = await AIRequestGateway.instance.complete(
+        endpoints: <AIEndpoint>[
+          AIEndpoint(
+            groupId: null,
+            baseUrl: 'http://127.0.0.1:${server.port}',
+            apiKey: 'test-key',
+            model: 'gpt-5.2',
+            chatPath: '/v1/chat/completions',
+            useResponseApi: false,
+          ),
+        ],
+        messages: <AIMessage>[AIMessage(role: 'user', content: 'latest news')],
+        responseStartMarker: '',
+        preferStreaming: false,
+        trackKeyStats: false,
+      );
+
+      await serverDone;
+      await server.close(force: true);
+
+      expect(result.content, 'ok');
+      expect(captured?.containsKey('tools'), isFalse);
+    },
+  );
+
+  test(
+    'explicit web_search tool is not duplicated for Responses GPT models',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      Map<String, dynamic>? captured;
+
+      final Future<void> serverDone = () async {
+        await for (final HttpRequest req in server) {
+          captured =
+              jsonDecode(await utf8.decoder.bind(req).join())
+                  as Map<String, dynamic>;
+          req.response.statusCode = HttpStatus.ok;
+          req.response.headers.contentType = ContentType.json;
+          req.response.write(
+            jsonEncode(<String, dynamic>{
+              'output': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'type': 'message',
+                  'role': 'assistant',
+                  'content': <Map<String, dynamic>>[
+                    <String, dynamic>{'type': 'output_text', 'text': 'ok'},
+                  ],
+                },
+              ],
+            }),
+          );
+          await req.response.close();
+          break;
+        }
+      }();
+
+      final AIGatewayResult result = await AIRequestGateway.instance.complete(
+        endpoints: <AIEndpoint>[
+          AIEndpoint(
+            groupId: null,
+            baseUrl: 'http://127.0.0.1:${server.port}',
+            apiKey: 'test-key',
+            model: 'gpt-5.2',
+            chatPath: '/v1/responses',
+            useResponseApi: true,
+          ),
+        ],
+        messages: <AIMessage>[AIMessage(role: 'user', content: 'latest news')],
+        responseStartMarker: '',
+        preferStreaming: false,
+        tools: const <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'web_search', 'search_context_size': 'low'},
+        ],
+        trackKeyStats: false,
+      );
+
+      await serverDone;
+      await server.close(force: true);
+
+      expect(result.content, 'ok');
+      final List<dynamic> tools = captured?['tools'] as List<dynamic>;
+      expect(
+        tools.where(
+          (dynamic tool) =>
+              tool is Map &&
+              ((tool['type'] as String?) ?? '').trim() == 'web_search',
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('parses Responses web_search_call and url_citation metadata', () async {
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+
+    final Future<void> serverDone = () async {
+      await for (final HttpRequest req in server) {
+        await utf8.decoder.bind(req).join();
+        req.response.statusCode = HttpStatus.ok;
+        req.response.headers.contentType = ContentType.json;
+        req.response.write(
+          jsonEncode(<String, dynamic>{
+            'output': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'web_search_call',
+                'id': 'ws_123',
+                'status': 'completed',
+                'action': <String, dynamic>{
+                  'type': 'search',
+                  'query': 'weather seattle',
+                  'queries': <String>['weather seattle', 'seattle weather now'],
+                },
+              },
+              <String, dynamic>{
+                'type': 'message',
+                'role': 'assistant',
+                'content': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'type': 'output_text',
+                    'text': 'Seattle weather is mild today.',
+                    'annotations': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'type': 'url_citation',
+                        'start_index': 0,
+                        'end_index': 15,
+                        'url': 'https://example.com/weather',
+                        'title': 'Example Weather',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+        await req.response.close();
+        break;
+      }
+    }();
+
+    final AIGatewayResult result = await AIRequestGateway.instance.complete(
+      endpoints: <AIEndpoint>[
+        AIEndpoint(
+          groupId: null,
+          baseUrl: 'http://127.0.0.1:${server.port}',
+          apiKey: 'test-key',
+          model: 'gpt-5.2',
+          chatPath: '/v1/responses',
+          useResponseApi: true,
+        ),
+      ],
+      messages: <AIMessage>[AIMessage(role: 'user', content: 'weather?')],
+      responseStartMarker: '',
+      preferStreaming: false,
+      trackKeyStats: false,
+    );
+
+    await serverDone;
+    await server.close(force: true);
+
+    expect(result.content, 'Seattle weather is mild today.');
+    expect(result.webSearchCalls, hasLength(1));
+    expect(result.webSearchCalls.single.id, 'ws_123');
+    expect(result.webSearchCalls.single.status, 'completed');
+    expect(result.webSearchCalls.single.actionType, 'search');
+    expect(result.webSearchCalls.single.query, 'weather seattle');
+    expect(
+      result.webSearchCalls.single.queries,
+      contains('seattle weather now'),
+    );
+    expect(result.citations, hasLength(1));
+    expect(result.citations.single.title, 'Example Weather');
+    expect(result.citations.single.url, 'https://example.com/weather');
+    expect(result.citations.single.startIndex, 0);
+    expect(result.citations.single.endIndex, 15);
+  });
+
+  test('streams Responses web_search_call ui metadata', () async {
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+
+    final Future<void> serverDone = () async {
+      await for (final HttpRequest req in server) {
+        if (req.method != 'POST' || req.uri.path != '/v1/responses') {
+          req.response.statusCode = HttpStatus.notFound;
+          await req.response.close();
+          continue;
+        }
+
+        await utf8.decoder.bind(req).join();
+
+        req.response.statusCode = HttpStatus.ok;
+        req.response.headers.set(
+          HttpHeaders.contentTypeHeader,
+          'text/event-stream; charset=utf-8',
+        );
+        req.response.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+
+        await _writeSseEvent(
+          req.response,
+          'response.output_item.added',
+          <String, dynamic>{
+            'type': 'response.output_item.added',
+            'output_index': 1,
+            'item': <String, dynamic>{
+              'id': 'ws_live',
+              'type': 'web_search_call',
+              'status': 'in_progress',
+            },
+          },
+        );
+        await _writeSseEvent(
+          req.response,
+          'response.web_search_call.searching',
+          <String, dynamic>{
+            'type': 'response.web_search_call.searching',
+            'output_index': 1,
+            'item_id': 'ws_live',
+          },
+        );
+        await _writeSseEvent(req.response, 'response.output_item.done', <
+          String,
+          dynamic
+        >{
+          'type': 'response.output_item.done',
+          'output_index': 1,
+          'item': <String, dynamic>{
+            'id': 'ws_live',
+            'type': 'web_search_call',
+            'status': 'completed',
+            'action': <String, dynamic>{
+              'type': 'search',
+              'queries': <String>[
+                'Responses API web_search_call url_citation fields',
+              ],
+              'sources': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'title': 'Web search',
+                  'url':
+                      'https://platform.openai.com/docs/guides/tools-web-search',
+                },
+              ],
+            },
+          },
+        });
+        await _writeSseEvent(req.response, 'response.output_item.done', <
+          String,
+          dynamic
+        >{
+          'type': 'response.output_item.done',
+          'output_index': 2,
+          'item': <String, dynamic>{
+            'id': 'msg_live',
+            'type': 'message',
+            'role': 'assistant',
+            'status': 'completed',
+            'content': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'output_text',
+                'text': 'OpenAI documents the web search tool.',
+                'annotations': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'type': 'url_citation',
+                    'start_index': 0,
+                    'end_index': 6,
+                    'title': 'Web search',
+                    'url':
+                        'https://platform.openai.com/docs/guides/tools-web-search',
+                  },
+                ],
+              },
+            ],
+          },
+        });
+        await _writeSseEvent(
+          req.response,
+          'response.completed',
+          <String, dynamic>{
+            'type': 'response.completed',
+            'response': <String, dynamic>{
+              'output': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'ws_live',
+                  'type': 'web_search_call',
+                  'status': 'completed',
+                  'action': <String, dynamic>{
+                    'type': 'search',
+                    'queries': <String>[
+                      'Responses API web_search_call url_citation fields',
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        );
+        await req.response.close();
+        break;
+      }
+    }();
+
+    final AIGatewayStreamingSession session = AIRequestGateway.instance
+        .startStreaming(
+          endpoints: <AIEndpoint>[
+            AIEndpoint(
+              groupId: null,
+              baseUrl: 'http://127.0.0.1:${server.port}',
+              apiKey: 'test-key',
+              model: 'gpt-5.4-mini',
+              chatPath: '/v1/responses',
+              useResponseApi: true,
+            ),
+          ],
+          messages: <AIMessage>[
+            AIMessage(role: 'user', content: 'search docs'),
+          ],
+          responseStartMarker: '',
+          trackKeyStats: false,
+        );
+
+    final List<Map<String, dynamic>> webSearchEvents = <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> citationEvents = <Map<String, dynamic>>[];
+    await for (final AIGatewayEvent event in session.stream) {
+      if (event.kind != AIGatewayEventKind.ui) continue;
+      final Map<String, dynamic> payload =
+          jsonDecode(event.data) as Map<String, dynamic>;
+      final String type = (payload['type'] ?? '').toString();
+      if (type == 'web_search_call') webSearchEvents.add(payload);
+      if (type == 'url_citation') citationEvents.add(payload);
+    }
+    final AIGatewayResult result = await session.completed;
+
+    await serverDone;
+    await server.close(force: true);
+
+    expect(result.content, 'OpenAI documents the web search tool.');
+    expect(result.webSearchCalls, hasLength(1));
+    expect(result.webSearchCalls.single.id, 'ws_live');
+    expect(result.webSearchCalls.single.status, 'completed');
+    expect(result.webSearchCalls.single.actionType, 'search');
+    expect(result.webSearchCalls.single.startedAtMs, isNotNull);
+    expect(result.webSearchCalls.single.completedAtMs, isNotNull);
+    expect(result.webSearchCalls.single.durationMs, greaterThanOrEqualTo(0));
+    expect(
+      result.webSearchCalls.single.queries.single,
+      'Responses API web_search_call url_citation fields',
+    );
+    expect(result.webSearchCalls.single.sources, hasLength(1));
+    expect(result.citations, hasLength(1));
+    expect(webSearchEvents.length, greaterThanOrEqualTo(3));
+    expect(
+      webSearchEvents
+          .map((Map<String, dynamic> e) => e['call'])
+          .whereType<Map>()
+          .map((Map e) => e['status'])
+          .toList(),
+      containsAllInOrder(<String>['in_progress', 'searching', 'completed']),
+    );
+    expect(citationEvents, hasLength(1));
+  });
 }

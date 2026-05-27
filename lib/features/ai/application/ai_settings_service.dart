@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/core/localization/locale_service.dart';
@@ -1075,6 +1076,12 @@ class AISettingsService {
         responseDuration: ((e['response_duration_ms'] as int?) != null)
             ? Duration(milliseconds: (e['response_duration_ms'] as int))
             : null,
+        webSearchCalls: AIMessage.decodeWebSearchCallsJson(
+          e['web_search_calls_json'] as String?,
+        ),
+        citations: AIMessage.decodeCitationsJson(
+          e['citations_json'] as String?,
+        ),
       );
     }).toList();
   }
@@ -1142,6 +1149,12 @@ class AISettingsService {
 
         final batch = txn.batch();
         for (final m in trimmed) {
+          final String? webSearchCallsJson = AIMessage.encodeWebSearchCallsJson(
+            m.webSearchCalls,
+          );
+          final String? citationsJson = AIMessage.encodeCitationsJson(
+            m.citations,
+          );
           batch.insert('ai_messages', {
             'conversation_id': conversationCid,
             'role': m.role,
@@ -1163,6 +1176,9 @@ class AISettingsService {
               'usage_cache_miss_tokens': m.usageCacheMissTokens,
             if (m.responseDuration != null)
               'response_duration_ms': m.responseDuration!.inMilliseconds,
+            if (webSearchCallsJson != null)
+              'web_search_calls_json': webSearchCallsJson,
+            if (citationsJson != null) 'citations_json': citationsJson,
             'created_at': m.createdAt.millisecondsSinceEpoch,
           });
         }
@@ -1282,6 +1298,372 @@ class AISettingsService {
   }
 }
 
+/// OpenAI Responses 内置搜索调用元数据，仅用于本地渲染和持久化。
+class AIWebSearchSource {
+  const AIWebSearchSource({required this.url, this.title});
+
+  final String url;
+  final String? title;
+
+  bool get isEmpty => url.trim().isEmpty && (title ?? '').trim().isEmpty;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    if (url.trim().isNotEmpty) 'url': url.trim(),
+    if ((title ?? '').trim().isNotEmpty) 'title': title!.trim(),
+  };
+
+  factory AIWebSearchSource.fromJson(Map<String, dynamic> json) {
+    final String url = (json['url'] ?? json['uri'] ?? json['link'] ?? '')
+        .toString()
+        .trim();
+    final String title = (json['title'] ?? json['name'] ?? '')
+        .toString()
+        .trim();
+    return AIWebSearchSource(url: url, title: title.isEmpty ? null : title);
+  }
+}
+
+class AIWebSearchCall {
+  const AIWebSearchCall({
+    this.id,
+    this.status,
+    this.actionType,
+    this.query,
+    this.queries = const <String>[],
+    this.url,
+    this.pattern,
+    this.sources = const <AIWebSearchSource>[],
+    this.startedAtMs,
+    this.completedAtMs,
+    this.durationMs,
+  });
+
+  final String? id;
+  final String? status;
+  final String? actionType;
+  final String? query;
+  final List<String> queries;
+  final String? url;
+  final String? pattern;
+  final List<AIWebSearchSource> sources;
+  final int? startedAtMs;
+  final int? completedAtMs;
+  final int? durationMs;
+
+  bool get isEmpty =>
+      (id ?? '').trim().isEmpty &&
+      (status ?? '').trim().isEmpty &&
+      (actionType ?? '').trim().isEmpty &&
+      (query ?? '').trim().isEmpty &&
+      queries.where((String e) => e.trim().isNotEmpty).isEmpty &&
+      (url ?? '').trim().isEmpty &&
+      (pattern ?? '').trim().isEmpty &&
+      sources.where((AIWebSearchSource e) => !e.isEmpty).isEmpty &&
+      (startedAtMs ?? 0) <= 0 &&
+      (completedAtMs ?? 0) <= 0 &&
+      (durationMs ?? 0) <= 0;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    if ((id ?? '').trim().isNotEmpty) 'id': id!.trim(),
+    if ((status ?? '').trim().isNotEmpty) 'status': status!.trim(),
+    if ((actionType ?? '').trim().isNotEmpty) 'action_type': actionType!.trim(),
+    if ((query ?? '').trim().isNotEmpty) 'query': query!.trim(),
+    if (queries.where((String e) => e.trim().isNotEmpty).isNotEmpty)
+      'queries': queries
+          .map((String e) => e.trim())
+          .where((String e) => e.isNotEmpty)
+          .toList(growable: false),
+    if ((url ?? '').trim().isNotEmpty) 'url': url!.trim(),
+    if ((pattern ?? '').trim().isNotEmpty) 'pattern': pattern!.trim(),
+    if (sources.where((AIWebSearchSource e) => !e.isEmpty).isNotEmpty)
+      'sources': sources
+          .where((AIWebSearchSource e) => !e.isEmpty)
+          .map((AIWebSearchSource e) => e.toJson())
+          .where((Map<String, dynamic> e) => e.isNotEmpty)
+          .toList(growable: false),
+    if ((startedAtMs ?? 0) > 0) 'started_at_ms': startedAtMs,
+    if ((completedAtMs ?? 0) > 0) 'completed_at_ms': completedAtMs,
+    if ((durationMs ?? 0) > 0) 'duration_ms': durationMs,
+  };
+
+  factory AIWebSearchCall.fromJson(Map<String, dynamic> json) {
+    String? readString(String key) {
+      final Object? value = json[key];
+      final String text = value?.toString().trim() ?? '';
+      return text.isEmpty ? null : text;
+    }
+
+    int? readInt(String key) {
+      final Object? value = json[key];
+      final int n = value is num
+          ? value.toInt()
+          : int.tryParse(value?.toString().trim() ?? '') ?? 0;
+      return n > 0 ? n : null;
+    }
+
+    List<String> readStrings(String key) {
+      final Object? value = json[key];
+      if (value is! List) return const <String>[];
+      return value
+          .map((Object? e) => e?.toString().trim() ?? '')
+          .where((String e) => e.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    List<AIWebSearchSource> readSources(String key) {
+      final Object? value = json[key];
+      if (value is! List) return const <AIWebSearchSource>[];
+      return value
+          .whereType<Map>()
+          .map(
+            (Map e) => AIWebSearchSource.fromJson(Map<String, dynamic>.from(e)),
+          )
+          .where((AIWebSearchSource e) => !e.isEmpty)
+          .toList(growable: false);
+    }
+
+    return AIWebSearchCall(
+      id: readString('id'),
+      status: readString('status'),
+      actionType: readString('action_type') ?? readString('actionType'),
+      query: readString('query'),
+      queries: readStrings('queries'),
+      url: readString('url'),
+      pattern: readString('pattern'),
+      sources: readSources('sources'),
+      startedAtMs: readInt('started_at_ms') ?? readInt('startedAtMs'),
+      completedAtMs: readInt('completed_at_ms') ?? readInt('completedAtMs'),
+      durationMs: readInt('duration_ms') ?? readInt('durationMs'),
+    );
+  }
+}
+
+String _webSearchCallMergeKey(AIWebSearchCall call) {
+  final String id = (call.id ?? '').trim();
+  if (id.isNotEmpty) return 'id:$id';
+  return <String>[
+    (call.actionType ?? '').trim(),
+    (call.query ?? '').trim(),
+    call.queries
+        .map((String e) => e.trim())
+        .where((String e) => e.isNotEmpty)
+        .join('|'),
+    (call.url ?? '').trim(),
+    (call.pattern ?? '').trim(),
+  ].join('\u0001');
+}
+
+int _webSearchStatusRank(String? raw) {
+  switch ((raw ?? '').trim()) {
+    case 'completed':
+    case 'failed':
+      return 4;
+    case 'searching':
+      return 3;
+    case 'in_progress':
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+List<AIWebSearchSource> mergeAIWebSearchSources(
+  List<AIWebSearchSource> base,
+  List<AIWebSearchSource> incoming,
+) {
+  final Map<String, AIWebSearchSource> byKey = <String, AIWebSearchSource>{};
+  void add(AIWebSearchSource source) {
+    if (source.isEmpty) return;
+    final String url = source.url.trim();
+    final String title = (source.title ?? '').trim();
+    final String key = url.isNotEmpty ? url : title;
+    if (key.isEmpty) return;
+    final AIWebSearchSource? prev = byKey[key];
+    byKey[key] = AIWebSearchSource(
+      url: url.isNotEmpty ? url : prev?.url ?? '',
+      title: title.isNotEmpty ? title : prev?.title,
+    );
+  }
+
+  for (final AIWebSearchSource source in base) {
+    add(source);
+  }
+  for (final AIWebSearchSource source in incoming) {
+    add(source);
+  }
+  return byKey.values.toList(growable: false);
+}
+
+AIWebSearchCall _mergeAIWebSearchCall(
+  AIWebSearchCall base,
+  AIWebSearchCall incoming,
+) {
+  String? pickText(String? oldValue, String? newValue) {
+    final String text = (newValue ?? '').trim();
+    return text.isNotEmpty ? text : oldValue;
+  }
+
+  final String? incomingStatus = (incoming.status ?? '').trim().isEmpty
+      ? null
+      : incoming.status;
+  final String? baseStatus = (base.status ?? '').trim().isEmpty
+      ? null
+      : base.status;
+  final String? status =
+      incomingStatus != null &&
+          _webSearchStatusRank(incomingStatus) >=
+              _webSearchStatusRank(baseStatus)
+      ? incomingStatus
+      : baseStatus;
+  final int? startedAtMs = _minPositiveInt(
+    base.startedAtMs,
+    incoming.startedAtMs,
+  );
+  final int? completedAtMs = _maxPositiveInt(
+    base.completedAtMs,
+    incoming.completedAtMs,
+  );
+  final int? explicitDurationMs = _maxPositiveInt(
+    base.durationMs,
+    incoming.durationMs,
+  );
+  final int? computedDurationMs =
+      explicitDurationMs ??
+      ((startedAtMs ?? 0) > 0 &&
+              (completedAtMs ?? 0) > 0 &&
+              completedAtMs! >= startedAtMs!
+          ? completedAtMs - startedAtMs
+          : null);
+
+  return AIWebSearchCall(
+    id: pickText(base.id, incoming.id),
+    status: status,
+    actionType: pickText(base.actionType, incoming.actionType),
+    query: pickText(base.query, incoming.query),
+    queries: incoming.queries.isNotEmpty ? incoming.queries : base.queries,
+    url: pickText(base.url, incoming.url),
+    pattern: pickText(base.pattern, incoming.pattern),
+    sources: mergeAIWebSearchSources(base.sources, incoming.sources),
+    startedAtMs: startedAtMs,
+    completedAtMs: completedAtMs,
+    durationMs: computedDurationMs,
+  );
+}
+
+int? _minPositiveInt(int? a, int? b) {
+  final int av = a ?? 0;
+  final int bv = b ?? 0;
+  if (av <= 0) return bv > 0 ? bv : null;
+  if (bv <= 0) return av;
+  return av < bv ? av : bv;
+}
+
+int? _maxPositiveInt(int? a, int? b) {
+  final int av = a ?? 0;
+  final int bv = b ?? 0;
+  if (av <= 0) return bv > 0 ? bv : null;
+  if (bv <= 0) return av;
+  return av > bv ? av : bv;
+}
+
+List<AIWebSearchCall> mergeAIWebSearchCalls(
+  List<AIWebSearchCall> base,
+  List<AIWebSearchCall> incoming,
+) {
+  final Map<String, AIWebSearchCall> byKey = <String, AIWebSearchCall>{};
+
+  void add(AIWebSearchCall call) {
+    if (call.isEmpty) return;
+    final String key = _webSearchCallMergeKey(call);
+    if (key.trim().isEmpty) return;
+    final AIWebSearchCall? prev = byKey[key];
+    byKey[key] = prev == null ? call : _mergeAIWebSearchCall(prev, call);
+  }
+
+  for (final AIWebSearchCall call in base) {
+    add(call);
+  }
+  for (final AIWebSearchCall call in incoming) {
+    add(call);
+  }
+  return byKey.values.toList(growable: false);
+}
+
+List<AIUrlCitation> mergeAIUrlCitations(
+  List<AIUrlCitation> base,
+  List<AIUrlCitation> incoming,
+) {
+  final Map<String, AIUrlCitation> byKey = <String, AIUrlCitation>{};
+
+  void add(AIUrlCitation citation) {
+    final String url = citation.url.trim();
+    if (url.isEmpty) return;
+    final String title = (citation.title ?? '').trim();
+    final String key = <Object?>[
+      url,
+      title,
+      citation.startIndex ?? '',
+      citation.endIndex ?? '',
+    ].join('\u0001');
+    final AIUrlCitation? prev = byKey[key];
+    byKey[key] = AIUrlCitation(
+      url: url,
+      title: title.isNotEmpty ? title : prev?.title,
+      startIndex: citation.startIndex ?? prev?.startIndex,
+      endIndex: citation.endIndex ?? prev?.endIndex,
+    );
+  }
+
+  for (final AIUrlCitation citation in base) {
+    add(citation);
+  }
+  for (final AIUrlCitation citation in incoming) {
+    add(citation);
+  }
+  return byKey.values.toList(growable: false);
+}
+
+/// OpenAI Responses 输出文本里的 URL 引用标注。
+class AIUrlCitation {
+  const AIUrlCitation({
+    required this.url,
+    this.title,
+    this.startIndex,
+    this.endIndex,
+  });
+
+  final String url;
+  final String? title;
+  final int? startIndex;
+  final int? endIndex;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'url': url.trim(),
+    if ((title ?? '').trim().isNotEmpty) 'title': title!.trim(),
+    if (startIndex != null) 'start_index': startIndex,
+    if (endIndex != null) 'end_index': endIndex,
+  };
+
+  factory AIUrlCitation.fromJson(Map<String, dynamic> json) {
+    int? readInt(String key) {
+      final Object? value = json[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value.trim());
+      return null;
+    }
+
+    final String url = (json['url']?.toString() ?? '').trim();
+    final String title = (json['title']?.toString() ?? '').trim();
+    return AIUrlCitation(
+      url: url,
+      title: title.isEmpty ? null : title,
+      startIndex: readInt('start_index') ?? readInt('startIndex'),
+      endIndex: readInt('end_index') ?? readInt('endIndex'),
+    );
+  }
+}
+
 /// 简单的对话消息模型
 class AIMessage {
   static final RegExp _evidenceRefPattern = RegExp(
@@ -1305,6 +1687,9 @@ class AIMessage {
   final int? usageCacheHitTokens;
   final int? usageCacheMissTokens;
   final Duration? responseDuration;
+  // UI-only: OpenAI Responses web_search 调用与引用来源。
+  final List<AIWebSearchCall> webSearchCalls;
+  final List<AIUrlCitation> citations;
   // —— 以下字段仅用于上行请求（不参与本地持久化）——
   // 多模态/结构化 content：如 [{type:'text',text:'..'},{type:'image_url',image_url:{url:'data:...'}}]
   final Object? apiContent;
@@ -1325,10 +1710,63 @@ class AIMessage {
     this.usageCacheHitTokens,
     this.usageCacheMissTokens,
     this.responseDuration,
+    this.webSearchCalls = const <AIWebSearchCall>[],
+    this.citations = const <AIUrlCitation>[],
     this.apiContent,
     this.toolCalls,
     this.toolCallId,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  static List<AIWebSearchCall> decodeWebSearchCallsJson(String? raw) {
+    final String text = (raw ?? '').trim();
+    if (text.isEmpty) return const <AIWebSearchCall>[];
+    try {
+      final Object? decoded = jsonDecode(text);
+      if (decoded is! List) return const <AIWebSearchCall>[];
+      return decoded
+          .whereType<Map>()
+          .map(
+            (Map e) => AIWebSearchCall.fromJson(Map<String, dynamic>.from(e)),
+          )
+          .where((AIWebSearchCall e) => !e.isEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const <AIWebSearchCall>[];
+    }
+  }
+
+  static List<AIUrlCitation> decodeCitationsJson(String? raw) {
+    final String text = (raw ?? '').trim();
+    if (text.isEmpty) return const <AIUrlCitation>[];
+    try {
+      final Object? decoded = jsonDecode(text);
+      if (decoded is! List) return const <AIUrlCitation>[];
+      return decoded
+          .whereType<Map>()
+          .map((Map e) => AIUrlCitation.fromJson(Map<String, dynamic>.from(e)))
+          .where((AIUrlCitation e) => e.url.trim().isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const <AIUrlCitation>[];
+    }
+  }
+
+  static String? encodeWebSearchCallsJson(List<AIWebSearchCall> calls) {
+    final List<Map<String, dynamic>> data = calls
+        .where((AIWebSearchCall e) => !e.isEmpty)
+        .map((AIWebSearchCall e) => e.toJson())
+        .where((Map<String, dynamic> e) => e.isNotEmpty)
+        .toList(growable: false);
+    return data.isEmpty ? null : jsonEncode(data);
+  }
+
+  static String? encodeCitationsJson(List<AIUrlCitation> citations) {
+    final List<Map<String, dynamic>> data = citations
+        .where((AIUrlCitation e) => e.url.trim().isNotEmpty)
+        .map((AIUrlCitation e) => e.toJson())
+        .toList(growable: false);
+    return data.isEmpty ? null : jsonEncode(data);
+  }
 
   String get providerContent => sanitizeEvidenceRefsForProvider(content);
 
@@ -1488,6 +1926,8 @@ class AIMessage {
     int? usageCacheHitTokens,
     int? usageCacheMissTokens,
     Duration? responseDuration,
+    List<AIWebSearchCall>? webSearchCalls,
+    List<AIUrlCitation>? citations,
     Object? apiContent,
     List<Map<String, dynamic>>? toolCalls,
     String? toolCallId,
@@ -1506,6 +1946,8 @@ class AIMessage {
       usageCacheHitTokens: usageCacheHitTokens ?? this.usageCacheHitTokens,
       usageCacheMissTokens: usageCacheMissTokens ?? this.usageCacheMissTokens,
       responseDuration: responseDuration ?? this.responseDuration,
+      webSearchCalls: webSearchCalls ?? this.webSearchCalls,
+      citations: citations ?? this.citations,
       apiContent: apiContent ?? this.apiContent,
       toolCalls: toolCalls ?? this.toolCalls,
       toolCallId: toolCallId ?? this.toolCallId,

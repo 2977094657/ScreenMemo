@@ -762,6 +762,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         usage_cache_hit_tokens INTEGER,
         usage_cache_miss_tokens INTEGER,
         response_duration_ms INTEGER,
+        web_search_calls_json TEXT,
+        citations_json TEXT,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
@@ -1770,6 +1772,21 @@ ORDER BY day ASC
     } catch (_) {}
   }
 
+  Future<void> _ensureAiMessageSearchMetadataColumns(
+    DatabaseExecutor db,
+  ) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN web_search_calls_json TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_messages ADD COLUMN citations_json TEXT',
+      );
+    } catch (_) {}
+  }
+
   Future<void> _ensureAiMessagesRawReasoningColumn(DatabaseExecutor db) async {
     try {
       await db.execute(
@@ -1795,6 +1812,7 @@ ORDER BY day ASC
     try {
       final db = await database;
       await _ensureAiMessageUsageColumns(db);
+      await _ensureAiMessageSearchMetadataColumns(db);
       await _ensureAiMessagesRawReasoningColumn(db);
       await _ensureAiPromptUsageCacheColumns(db);
     } catch (_) {}
@@ -1947,6 +1965,8 @@ ORDER BY day ASC
     int? usageCacheHitTokens,
     int? usageCacheMissTokens,
     int? responseDurationMs,
+    String? webSearchCallsJson,
+    String? citationsJson,
   }) async {
     try {
       final db = await database;
@@ -1978,6 +1998,9 @@ ORDER BY day ASC
           'usage_cache_miss_tokens': usageCacheMissTokens,
         if (responseDurationMs != null)
           'response_duration_ms': responseDurationMs,
+        if (webSearchCallsJson != null)
+          'web_search_calls_json': webSearchCallsJson,
+        if (citationsJson != null) 'citations_json': citationsJson,
         if (createdAt != null) 'created_at': createdAt,
       });
 
