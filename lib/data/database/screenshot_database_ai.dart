@@ -2252,6 +2252,17 @@ ORDER BY day ASC
     try {
       final rows = await db.query(
         'ai_conversations',
+        columns: const <String>[
+          'id',
+          'cid',
+          'title',
+          'provider_id',
+          'model',
+          'pinned',
+          'archived',
+          'created_at',
+          'updated_at',
+        ],
         orderBy: 'pinned DESC, updated_at DESC, id DESC',
         limit: limit,
         offset: offset,

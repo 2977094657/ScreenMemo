@@ -82,6 +82,15 @@ Before
     expect(incompleteProcessed, isNot(contains('<$kChartBlockTag>')));
   });
 
+  test('preprocess removes parentheses around markdown links', () {
+    const String markdown =
+        'Source ([abc.net.au](https://abc.net.au/news)) and `([keep](code))`.';
+    final String processed = preprocessForChatMarkdown(markdown);
+    expect(processed, contains('Source [abc.net.au](https://abc.net.au/news)'));
+    expect(processed, contains('`([keep](code))`'));
+    expect(processed, isNot(contains('([abc.net.au]')));
+  });
+
   testWidgets('Markdown renders text and chart block together', (
     WidgetTester tester,
   ) async {

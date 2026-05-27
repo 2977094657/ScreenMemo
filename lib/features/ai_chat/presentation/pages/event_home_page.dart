@@ -207,8 +207,10 @@ class _EventHomePageState extends State<EventHomePage> {
   Future<void> _loadConversations() async {
     _beginEntryPerfLoad('event.conversations');
     try {
-      final list = await _settings.listAiConversations();
-      final active = await _settings.getActiveConversationCid();
+      final listFuture = _settings.listAiConversations();
+      final activeFuture = _settings.getActiveConversationCid();
+      final list = await listFuture;
+      final active = await activeFuture;
       if (!mounted) return;
       setState(() {
         _conversations = list;

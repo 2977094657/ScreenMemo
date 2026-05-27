@@ -17,6 +17,7 @@ import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/models/app_info.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 说明：
 /// - 仅在 AI 对话页面使用，用于渲染 Markdown 中的 LaTeX 数学公式；<think> 思考块在此阶段被移除。
@@ -128,8 +129,9 @@ String preprocessForChatMarkdown(String content) {
       final s3 = _normalizeEvidenceTagsSkippingInlineCode(s2);
       final s4 = _removeTrailingPunctuationAfterEvidence(s3);
       final s5 = _ensureEvidenceBlocksOnOwnLine(s4);
-      final s6 = _ensureGeneratedImagesOnOwnLine(s5);
-      buf.write(s6);
+      final s6 = _removeParenthesesAroundMarkdownLinksSkippingInlineCode(s5);
+      final s7 = _ensureGeneratedImagesOnOwnLine(s6);
+      buf.write(s7);
     }
   }
   return buf.toString();
@@ -212,6 +214,32 @@ String _removeTrailingPunctuationAfterEvidence(String input) {
     (m) => m.group(1) ?? '',
   );
   return input;
+}
+
+String _removeParenthesesAroundMarkdownLinksSkippingInlineCode(String input) {
+  final inlineCode = RegExp(r'`[^`\n]*`');
+  final parts = <String>[];
+  int p = 0;
+  for (final m in inlineCode.allMatches(input)) {
+    if (m.start > p) {
+      parts.add(
+        _removeParenthesesAroundMarkdownLinks(input.substring(p, m.start)),
+      );
+    }
+    parts.add(input.substring(m.start, m.end));
+    p = m.end;
+  }
+  if (p < input.length) {
+    parts.add(_removeParenthesesAroundMarkdownLinks(input.substring(p)));
+  }
+  return parts.join();
+}
+
+String _removeParenthesesAroundMarkdownLinks(String input) {
+  return input.replaceAllMapped(
+    RegExp(r'\((\[[^\]\n]+\]\([^)]+\))\)'),
+    (m) => m.group(1) ?? m.group(0) ?? '',
+  );
 }
 
 /// 将含有 [evidence: ...] 的行进行重排：
@@ -622,6 +650,105 @@ class _ChartBlockBuilder extends MarkdownElementBuilder {
       spec: rawJson == null ? null : ChatChartSpecV1.tryParseJson(rawJson),
     );
   }
+}
+
+class _LinkChipBuilder extends MarkdownElementBuilder {
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final String href = (element.attributes['href'] ?? '').trim();
+    if (href.isEmpty) return null;
+
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color accent = dark
+        ? const Color(0xFF7DB7FF)
+        : const Color(0xFF2563EB);
+    final TextStyle baseStyle =
+        preferredStyle ??
+        parentStyle ??
+        theme.textTheme.bodyMedium ??
+        const TextStyle(fontSize: 13, height: 1.2);
+    final String host = _markdownLinkHost(element.textContent, href);
+    final Widget fallback = Icon(Icons.link_rounded, size: 13, color: accent);
+    final Widget icon = host.isEmpty
+        ? fallback
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Image.network(
+              _markdownFaviconUrlForHost(host),
+              width: 16,
+              height: 16,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
+          );
+
+    final Widget chip = SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(child: icon),
+    );
+
+    final Widget tappable = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openMarkdownLink(href),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+        child: chip,
+      ),
+    );
+
+    return Text.rich(
+      TextSpan(
+        style: baseStyle,
+        children: <InlineSpan>[
+          WidgetSpan(alignment: PlaceholderAlignment.middle, child: tappable),
+        ],
+      ),
+    );
+  }
+}
+
+String _markdownLinkHost(String rawText, String href) {
+  final String fromHref = _markdownHostFromText(href);
+  if (fromHref.isNotEmpty) return fromHref;
+  return _markdownHostFromText(rawText);
+}
+
+String _markdownHostFromText(String value) {
+  String s = value.trim();
+  if (s.isEmpty) return '';
+  final Uri? uri = Uri.tryParse(s);
+  final String parsedHost = uri?.host.trim() ?? '';
+  if (parsedHost.isNotEmpty) {
+    return parsedHost.startsWith('www.') ? parsedHost.substring(4) : parsedHost;
+  }
+  s = s.replaceFirst(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://'), '');
+  s = s.split(RegExp(r'[,\s]+')).first.trim();
+  s = s.split('/').first.split('?').first.split('#').first;
+  if (s.contains('@')) s = s.split('@').last;
+  if (s.contains(':')) s = s.split(':').first;
+  if (!s.contains('.')) return '';
+  return s.startsWith('www.') ? s.substring(4) : s;
+}
+
+String _markdownFaviconUrlForHost(String host) {
+  final String h = _markdownHostFromText(host);
+  if (h.isEmpty) return '';
+  return 'https://favicon.im/${Uri.encodeComponent(h)}';
+}
+
+Future<void> _openMarkdownLink(String href) async {
+  final Uri? uri = Uri.tryParse(href.trim());
+  if (uri == null) return;
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
 }
 
 class _AppRefBuilder extends MarkdownElementBuilder {
@@ -1592,6 +1719,7 @@ class MarkdownMathConfig {
   Map<String, MarkdownElementBuilder> get builders => {
     'math-inline': _MathBuilder(inlineTextStyle: inlineTextStyle),
     'math-block': _MathBuilder(blockTextStyle: blockTextStyle),
+    'a': _LinkChipBuilder(),
     kChartBlockTag: _ChartBlockBuilder(),
     'app-ref': _AppRefBuilder(
       appIconByPackage: _appIconByPackage,
