@@ -23,7 +23,6 @@ import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/data/settings/user_settings_service.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/constants/user_settings_keys.dart';
-import 'package:screen_memo/features/ai/application/ai_request_log_parser.dart';
 import 'package:screen_memo/features/ai/application/native_ai_request_log_parser.dart';
 import 'package:screen_memo/core/utils/merged_event_summary.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';
@@ -34,6 +33,7 @@ import 'package:screen_memo/features/gallery/presentation/widgets/screenshot_ima
 import 'package:screen_memo/core/widgets/screenshot_style_tab_bar.dart';
 import 'package:screen_memo/core/widgets/search_styles.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
+import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/features/daily_summary/presentation/pages/daily_summary_page.dart';
 
@@ -419,6 +419,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           noMoreOlderSegments: _noMoreOlderSegments,
           onLastDayTabReached: _handleLastDayTabReached,
           onActiveDateChanged: _handleActiveDateChanged,
+          loadAvailableYears: _loadSegmentTimelineYears,
+          loadMonthDayCounts: _loadSegmentTimelineMonthDayCounts,
+          onDateJumpRequested: _jumpToSegmentTimelineDate,
         ),
       ),
     );

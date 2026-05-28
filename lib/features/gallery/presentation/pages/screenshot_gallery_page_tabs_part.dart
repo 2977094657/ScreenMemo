@@ -79,10 +79,16 @@ extension _ScreenshotGalleryTabsPart on _ScreenshotGalleryPageState {
     } catch (_) {}
   }
 
-  Future<void> _prefetchAllTabsFirst8() async {
-    for (int i = 0; i < _dayTabs.length; i++) {
-      // 顺序预取，避免并发压力
-      await _prefetchFirstPageForTab(i);
+  Future<void> _prefetchAdjacentTabs(int center) async {
+    if (!mounted || _dayTabs.isEmpty) return;
+    final List<int> candidates = <int>{
+      center - 1,
+      center + 1,
+    }.where((i) => i >= 0 && i < _dayTabs.length).toList();
+    for (final int i in candidates) {
+      try {
+        await _prefetchFirstPageForTab(i);
+      } catch (_) {}
     }
   }
 
@@ -144,5 +150,178 @@ extension _ScreenshotGalleryTabsPart on _ScreenshotGalleryPageState {
         _dateFilterEndMillis = null;
       });
     }
+  }
+
+  DateTime? _dateFromKey(String? dateKey) {
+    final String normalized = (dateKey ?? '').trim();
+    if (normalized.isEmpty) return null;
+    final List<String> parts = normalized.split('-');
+    if (parts.length != 3) return null;
+    final int? year = int.tryParse(parts[0]);
+    final int? month = int.tryParse(parts[1]);
+    final int? day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateTime(year, month, day);
+  }
+
+  String? _selectedDateKey() {
+    if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) {
+      return null;
+    }
+    return _dateKeyForDay(_dayTabs[_currentTabIndex].day);
+  }
+
+  bool _shouldShowDateCalendarButton() {
+    return _dayTabs.isNotEmpty && _hasValidRouteArgs;
+  }
+
+  Widget _buildDateCalendarButton(BuildContext context) {
+    if (!_shouldShowDateCalendarButton()) return const SizedBox.shrink();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: AppLocalizations.of(context).dateJumpOpenTooltip,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _openDateCalendarSheet,
+          child: SizedBox(
+            width: 30,
+            height: 30,
+            child: Center(
+              child: Icon(
+                Icons.calendar_today_outlined,
+                size: 14,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<DateJumpDayInfo>> _loadGalleryMonthDayCounts(
+    int year,
+    int month,
+  ) async {
+    final rows = await ScreenshotService.instance.listAvailableMonthDaysForApp(
+      _packageName,
+      year: year,
+      month: month,
+    );
+    return rows
+        .map(
+          (row) => DateJumpDayInfo(
+            dayKey: (row['date'] as String?) ?? '',
+            count: _readCount(row['count']),
+          ),
+        )
+        .where((info) => info.dayKey.isNotEmpty && info.count > 0)
+        .toList(growable: false);
+  }
+
+  Future<List<int>> _loadGalleryAvailableYears() {
+    return ScreenshotService.instance.listAvailableYearsForApp(_packageName);
+  }
+
+  Future<void> _openDateCalendarSheet() async {
+    final DateTime initialDate =
+        _dateFromKey(_selectedDateKey()) ??
+        (_dayTabs.isEmpty ? null : _dayTabs.first.day) ??
+        DateTime.now();
+    final DateJumpDaySelection? selection =
+        await showModalBottomSheet<DateJumpDaySelection>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (sheetContext) {
+            final ColorScheme cs = Theme.of(sheetContext).colorScheme;
+            return DraggableScrollableSheet(
+              initialChildSize: 0.62,
+              minChildSize: 0.42,
+              maxChildSize: 0.88,
+              expand: false,
+              builder: (_, scrollController) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(AppTheme.radiusLg),
+                    topRight: Radius.circular(AppTheme.radiusLg),
+                  ),
+                  child: ColoredBox(
+                    color: cs.surface,
+                    child: SafeArea(
+                      top: false,
+                      child: DateJumpCalendarMonthSheet(
+                        initialDate: initialDate,
+                        selectedDateKey: _selectedDateKey(),
+                        scrollController: scrollController,
+                        loadAvailableYears: _loadGalleryAvailableYears,
+                        loadMonthDayCounts: _loadGalleryMonthDayCounts,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+    if (selection == null || !mounted) return;
+    await _jumpToGalleryDate(selection.dateKey, selection.count);
+  }
+
+  Future<void> _jumpToGalleryDate(String dateKey, int knownCount) async {
+    final DateTime? targetDay = _dateFromKey(dateKey);
+    if (targetDay == null) return;
+    final int targetStart = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+    ).millisecondsSinceEpoch;
+    final int targetEnd = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+      23,
+      59,
+      59,
+    ).millisecondsSinceEpoch;
+
+    int index = _dayTabs.indexWhere(
+      (tab) => tab.startMillis == targetStart && tab.endMillis == targetEnd,
+    );
+    if (index < 0) {
+      final _DayTabInfo target = _DayTabInfo(
+        day: DateTime(targetDay.year, targetDay.month, targetDay.day),
+        startMillis: targetStart,
+        endMillis: targetEnd,
+        count: knownCount,
+      );
+      _gallerySetState(() {
+        final Map<String, _DayTabInfo> byKey = <String, _DayTabInfo>{
+          for (final tab in _allDayTabs) _dateKeyForDay(tab.day): tab,
+          _dateKeyForDay(target.day): target,
+        };
+        _allDayTabs
+          ..clear()
+          ..addAll(byKey.values)
+          ..sort((a, b) => b.startMillis.compareTo(a.startMillis));
+        _dayTabs
+          ..clear()
+          ..addAll(_allDayTabs);
+      });
+      _tabController?.removeListener(_onTabControllerChanged);
+      _tabController?.dispose();
+      _tabController = TabController(length: _dayTabs.length, vsync: this);
+      _tabController!.addListener(_onTabControllerChanged);
+      index = _dayTabs.indexWhere(
+        (tab) => tab.startMillis == targetStart && tab.endMillis == targetEnd,
+      );
+    }
+
+    if (index < 0 || _tabController == null) return;
+    _tabController!.index = index;
+    await _onTabIndexSelected(index);
   }
 }

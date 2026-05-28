@@ -20,6 +20,7 @@ import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:screen_memo/features/timeline/application/replay_export_service.dart';
 import 'package:screen_memo/core/widgets/screenshot_style_tab_bar.dart';
+import 'package:screen_memo/core/widgets/date_jump_calendar_sheet.dart';
 import 'package:screen_memo/features/timeline/presentation/widgets/timeline_replay_sheet.dart';
 
 /// 全局时间线页面（骨架）
@@ -777,9 +778,6 @@ class _TimelinePageState extends State<TimelinePage>
                         if (_dayTabs.isEmpty || _tabController == null) {
                           return const SizedBox(height: 32);
                         }
-                        final bool hasMoreTabs =
-                            _dayTabs.length < _allDayTabs.length ||
-                            _hasMoreDayTabs;
                         return SizedBox(
                           height: 32,
                           child: Transform.translate(
@@ -815,28 +813,13 @@ class _TimelinePageState extends State<TimelinePage>
                                     }).toList(),
                                   ),
                                 ),
-                                if (hasMoreTabs)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: AppTheme.spacing2,
-                                    ),
-                                    child: TextButton.icon(
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: AppTheme.spacing2,
-                                        ),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                      onPressed: _expandDayTabsIfNeeded,
-                                      icon: const Icon(
-                                        Icons.more_horiz,
-                                        size: 18,
-                                      ),
-                                      label: Text(
-                                        AppLocalizations.of(context).loadMore,
-                                      ),
-                                    ),
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: AppTheme.spacing2,
+                                    right: AppTheme.spacing4,
                                   ),
+                                  child: _buildDateCalendarButton(context),
+                                ),
                               ],
                             ),
                           ),
@@ -1047,6 +1030,161 @@ class _TimelinePageState extends State<TimelinePage>
       _tabOffset[newIndex] = 0;
       _tabHasMore[newIndex] = true;
     });
+  }
+
+  String _dateKeyForDay(DateTime day) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${day.year.toString().padLeft(4, '0')}-${two(day.month)}-${two(day.day)}';
+  }
+
+  DateTime? _dateFromKey(String? dateKey) {
+    final String normalized = (dateKey ?? '').trim();
+    if (normalized.isEmpty) return null;
+    final List<String> parts = normalized.split('-');
+    if (parts.length != 3) return null;
+    final int? year = int.tryParse(parts[0]);
+    final int? month = int.tryParse(parts[1]);
+    final int? day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateTime(year, month, day);
+  }
+
+  String? _selectedDateKey() {
+    if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) {
+      return null;
+    }
+    return _dateKeyForDay(_dayTabs[_currentTabIndex].day);
+  }
+
+  bool _shouldShowDateCalendarButton() {
+    return _dayTabs.isNotEmpty;
+  }
+
+  Widget _buildDateCalendarButton(BuildContext context) {
+    if (!_shouldShowDateCalendarButton()) return const SizedBox.shrink();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: AppLocalizations.of(context).dateJumpOpenTooltip,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _openDateCalendarSheet,
+          child: SizedBox(
+            width: 30,
+            height: 30,
+            child: Center(
+              child: Icon(
+                Icons.calendar_today_outlined,
+                size: 14,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<DateJumpDayInfo>> _loadTimelineMonthDayCounts(
+    int year,
+    int month,
+  ) async {
+    final rows = await ScreenshotService.instance.listAvailableMonthDaysGlobal(
+      year: year,
+      month: month,
+    );
+    return rows
+        .map(
+          (row) => DateJumpDayInfo(
+            dayKey: (row['date'] as String?) ?? '',
+            count: _readInt(row['count']),
+          ),
+        )
+        .where((info) => info.dayKey.isNotEmpty && info.count > 0)
+        .toList(growable: false);
+  }
+
+  Future<List<int>> _loadTimelineAvailableYears() {
+    return ScreenshotService.instance.listAvailableYearsGlobal();
+  }
+
+  Future<void> _openDateCalendarSheet() async {
+    final DateTime initialDate =
+        _dateFromKey(_selectedDateKey()) ??
+        (_dayTabs.isEmpty ? null : _dayTabs.first.day) ??
+        DateTime.now();
+    final DateJumpDaySelection? selection =
+        await showModalBottomSheet<DateJumpDaySelection>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (sheetContext) {
+            final ColorScheme cs = Theme.of(sheetContext).colorScheme;
+            return DraggableScrollableSheet(
+              initialChildSize: 0.62,
+              minChildSize: 0.42,
+              maxChildSize: 0.88,
+              expand: false,
+              builder: (_, scrollController) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(AppTheme.radiusLg),
+                    topRight: Radius.circular(AppTheme.radiusLg),
+                  ),
+                  child: ColoredBox(
+                    color: cs.surface,
+                    child: SafeArea(
+                      top: false,
+                      child: DateJumpCalendarMonthSheet(
+                        initialDate: initialDate,
+                        selectedDateKey: _selectedDateKey(),
+                        scrollController: scrollController,
+                        loadAvailableYears: _loadTimelineAvailableYears,
+                        loadMonthDayCounts: _loadTimelineMonthDayCounts,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+    if (selection == null || !mounted) return;
+    await _jumpToTimelineDate(selection.dateKey, selection.count);
+  }
+
+  Future<void> _jumpToTimelineDate(String dateKey, int knownCount) async {
+    final DateTime? targetDay = _dateFromKey(dateKey);
+    if (targetDay == null) return;
+    await _ensureTabsIncludeDate(targetDay);
+    if (!mounted || _tabController == null || _dayTabs.isEmpty) return;
+
+    final int targetStart = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+    ).millisecondsSinceEpoch;
+    final int targetEnd = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+      23,
+      59,
+      59,
+    ).millisecondsSinceEpoch;
+    final int tabIndex = _dayTabs.indexWhere(
+      (tab) => tab.startMillis == targetStart && tab.endMillis == targetEnd,
+    );
+    if (tabIndex < 0) return;
+    if (knownCount > 0) {
+      setState(() {
+        _dayTabs[tabIndex].count = knownCount;
+      });
+    }
+    _tabController!.index = tabIndex;
+    _onTabChanged();
   }
 
   Future<void> _handleJumpRequestIfPossible() async {

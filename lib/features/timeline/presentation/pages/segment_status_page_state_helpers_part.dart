@@ -367,7 +367,7 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
     final bool showDailySummary = _selectedDateKey != null;
     double width = 0;
     if (canPop) width += 52;
-    if (showDailySummary) width += 104;
+    if (showDailySummary) width += 52;
     if (showDailySummary && _dynamicEntryLogIconEnabled) width += 52;
     return width;
   }
@@ -538,13 +538,6 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
             tooltip: AppLocalizations.of(context).viewOrGenerateForDay,
             onPressed: _openSelectedDailySummary,
           ),
-        if (showDailySummary)
-          IconButton(
-            style: IconButton.styleFrom(foregroundColor: actionColor),
-            icon: const Icon(Icons.auto_fix_high_rounded),
-            tooltip: '补全当天动态',
-            onPressed: _confirmStartSelectedDayDynamicBackfill,
-          ),
         if (showDailySummary && _dynamicEntryLogIconEnabled)
           IconButton(
             style: IconButton.styleFrom(foregroundColor: actionColor),
@@ -610,6 +603,100 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       _segmentStatusSetState(() {
         _loadingDayKeys = <String>{..._loadingDayKeys}..remove(normalized);
       });
+    }
+  }
+
+  Future<List<SegmentTimelineDayInfo>> _loadSegmentTimelineMonthDayCounts(
+    int year,
+    int month,
+  ) async {
+    return _db.listSegmentTimelineMonthDayCounts(
+      year: year,
+      month: month,
+      maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
+      requireSamples: true,
+    );
+  }
+
+  Future<List<int>> _loadSegmentTimelineYears() async {
+    return _db.listSegmentTimelineYears(
+      maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
+      requireSamples: true,
+    );
+  }
+
+  Future<void> _jumpToSegmentTimelineDate(
+    String dateKey,
+    int knownCount,
+  ) async {
+    final String normalized = dateKey.trim();
+    if (normalized.isEmpty ||
+        _onlyNoSummary ||
+        _shouldHideTimelineUntilRebuildAdvances()) {
+      return;
+    }
+    final String? cutoff = _dynamicRebuildTimelineCutoffDayKey();
+    if (cutoff != null &&
+        cutoff.isNotEmpty &&
+        normalized.compareTo(cutoff) > 0) {
+      if (!mounted) return;
+      UINotifier.info(
+        context,
+        AppLocalizations.of(
+          context,
+        ).segmentTimelineNotAvailableForDate(normalized),
+      );
+      return;
+    }
+
+    final int generation = ++_timelineLoadGeneration;
+    final List<String> nextDayKeys = <String>{
+      ..._loadedDayKeys,
+      normalized,
+    }.toList()..sort((String a, String b) => b.compareTo(a));
+    _segmentStatusSetState(() {
+      _selectedDateKey = normalized;
+      _loadedDayKeys = nextDayKeys;
+      _maxVisibleDayTabs = nextDayKeys.length;
+      _dayCountsByKey = <String, int>{
+        ..._dayCountsByKey,
+        if (knownCount > 0) normalized: knownCount,
+      };
+      _loadingDayKeys = <String>{..._loadingDayKeys, normalized};
+    });
+
+    try {
+      final List<Map<String, dynamic>> segments = await _db
+          .listSegmentTimelineDaySegments(
+            dateKey: normalized,
+            maxDateKeyInclusive: cutoff,
+            requireSamples: true,
+            truncateResultColumns: true,
+          );
+      if (!mounted || generation != _timelineLoadGeneration) return;
+      final Map<String, List<Map<String, dynamic>>> nextSegmentsByDay =
+          <String, List<Map<String, dynamic>>>{
+            ..._segmentsByDay,
+            normalized: segments,
+          };
+      final Set<String> nextLoadingDayKeys = <String>{..._loadingDayKeys}
+        ..remove(normalized);
+      _segmentStatusSetState(() {
+        _selectedDateKey = normalized;
+        _segmentsByDay = nextSegmentsByDay;
+        _segments = _flattenSegmentsByDay(nextSegmentsByDay, _loadedDayKeys);
+        _dayCountsByKey = <String, int>{
+          ..._dayCountsByKey,
+          normalized: segments.isEmpty ? knownCount : segments.length,
+        };
+        _loadingDayKeys = nextLoadingDayKeys;
+      });
+    } catch (_) {
+      if (!mounted || generation != _timelineLoadGeneration) return;
+      _segmentStatusSetState(() {
+        _loadingDayKeys = <String>{..._loadingDayKeys}..remove(normalized);
+      });
+      UINotifier.error(context, AppLocalizations.of(context).dateJumpFailed);
     }
   }
 

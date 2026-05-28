@@ -2699,6 +2699,15 @@ class ScreenshotService {
     }
   }
 
+  /// 获取指定应用最新截图时间戳（毫秒）
+  Future<int?> getLatestCaptureTimeMillisForApp(String appPackageName) async {
+    try {
+      return await _database.getLatestCaptureTimeMillisForApp(appPackageName);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 全局列出指定时间范围内所有有数据的日期（本地时区），按日期倒序
   Future<List<Map<String, dynamic>>> listAvailableDaysGlobalRange({
     required int startMillis,
@@ -2711,6 +2720,30 @@ class ScreenshotService {
       );
     } catch (_) {
       return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 全局列出指定年月内有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableMonthDaysGlobal({
+    required int year,
+    required int month,
+  }) async {
+    try {
+      return await _database.listAvailableMonthDaysGlobal(
+        year: year,
+        month: month,
+      );
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 全局列出有截图分库的年份，按倒序
+  Future<List<int>> listAvailableYearsGlobal() async {
+    try {
+      return await _database.listAvailableYearsGlobal();
+    } catch (_) {
+      return const <int>[];
     }
   }
 
@@ -2829,6 +2862,49 @@ class ScreenshotService {
       return await _database.listAvailableDaysForApp(appPackageName);
     } catch (_) {
       return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 指定应用列出时间范围内有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableDaysForAppRange(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    try {
+      return await _database.listAvailableDaysForAppRange(
+        appPackageName,
+        startMillis: startMillis,
+        endMillis: endMillis,
+      );
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 指定应用列出指定年月内有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableMonthDaysForApp(
+    String appPackageName, {
+    required int year,
+    required int month,
+  }) async {
+    try {
+      return await _database.listAvailableMonthDaysForApp(
+        appPackageName,
+        year: year,
+        month: month,
+      );
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 指定应用列出有截图分库的年份，按倒序
+  Future<List<int>> listAvailableYearsForApp(String appPackageName) async {
+    try {
+      return await _database.listAvailableYearsForApp(appPackageName);
+    } catch (_) {
+      return const <int>[];
     }
   }
 }

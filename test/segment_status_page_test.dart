@@ -43,6 +43,7 @@ Map<String, Object?> _mockDynamicRebuildStatus = <String, Object?>{
   'workers': <Object?>[],
 };
 String? _mockTodayLogsDir;
+final List<Directory> _tempDirsToDelete = <Directory>[];
 
 String _dateKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -54,6 +55,20 @@ String _tabLabel(DateTime date) => '${date.month}月${date.day}日 1';
 
 Future<void> _prepareDesktopDbRoot(Directory root) async {
   await ScreenshotDatabase.instance.initializeForDesktop(root.path);
+}
+
+void _scheduleTempDelete(Directory tmp) {
+  _tempDirsToDelete.add(tmp);
+}
+
+Future<void> _deleteScheduledTempDirs() async {
+  final List<Directory> dirs = List<Directory>.from(_tempDirsToDelete);
+  _tempDirsToDelete.clear();
+  for (final Directory tmp in dirs) {
+    if (await tmp.exists()) {
+      await tmp.delete(recursive: true);
+    }
+  }
 }
 
 Future<void> _seedTimelineDays(List<DateTime> days) async {
@@ -198,6 +213,7 @@ void main() {
     try {
       await ScreenshotDatabase.instance.disposeDesktop();
     } catch (_) {}
+    await _deleteScheduledTempDirs();
   });
 
   tearDownAll(() async {
@@ -241,9 +257,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
       } finally {
-        if (await tmp.exists()) {
-          await tmp.delete(recursive: true);
-        }
+        _scheduleTempDelete(tmp);
       }
     },
   );
@@ -290,9 +304,57 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
+    }
+  });
+
+  testWidgets('date overlay calendar jumps to a day in another month', (
+    WidgetTester tester,
+  ) async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'screen_memo_segment_page_calendar_jump_',
+    );
+    try {
+      final Directory root = Directory(p.join(tmp.path, 'root'));
+      await root.create(recursive: true);
+      await _prepareDesktopDbRoot(root);
+      final DateTime latest = DateTime(2024, 4, 10);
+      final List<DateTime> days = List<DateTime>.generate(
+        45,
+        (int index) => latest.subtract(Duration(days: index)),
+      );
+      await _seedTimelineDays(days);
+
+      await tester.pumpWidget(_buildHarness());
+      await _pumpUntilFound(tester, find.text(_summaryText(latest)));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.byTooltip('打开日期日历'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('跳转日期'), findsOneWidget);
+      expect(find.text('2024 年'), findsOneWidget);
+      expect(find.text('4 月'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('上个月'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final DateTime targetDay = DateTime(2024, 3, 1);
+      await tester.tap(
+        find.byKey(
+          ValueKey<String>('segment-calendar-day-${_dateKey(targetDay)}'),
+        ),
+      );
+      await tester.pump();
+      await _pumpUntilFound(tester, find.text(_summaryText(targetDay)));
+      expect(find.text(_summaryText(targetDay)), findsWidgets);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    } finally {
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -313,18 +375,22 @@ void main() {
       await _pumpUntilFound(tester, find.text(_summaryText(day)));
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byTooltip('补全当天动态'), findsOneWidget);
+      expect(find.byTooltip('补全当天动态'), findsNothing);
 
-      await tester.tap(find.byTooltip('补全当天动态'));
+      await tester.tap(find.byTooltip('动态任务'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('补全'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.text('补全当天动态'), findsOneWidget);
+      expect(find.text('补全全部'), findsOneWidget);
       expect(
         find.textContaining('只补全 ${_dateKey(day)} 缺失动态和缺失总结'),
         findsOneWidget,
       );
 
-      await tester.tap(find.text('补全当天'));
+      await tester.tap(find.text('补全当天').last);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -334,17 +400,15 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
-  testWidgets('selected day backfill shows conflict when task is active', (
+  testWidgets('backfill scope can switch to all days', (
     WidgetTester tester,
   ) async {
     final Directory tmp = await Directory.systemTemp.createTemp(
-      'screen_memo_segment_page_day_backfill_conflict_',
+      'screen_memo_segment_page_all_backfill_',
     );
     try {
       final Directory root = Directory(p.join(tmp.path, 'root'));
@@ -352,36 +416,34 @@ void main() {
       await _prepareDesktopDbRoot(root);
       final DateTime day = DateTime(2024, 4, 10);
       await _seedTimelineDays(<DateTime>[day]);
-      _mockDynamicRebuildStatus = <String, Object?>{
-        ..._mockDynamicRebuildStatus,
-        'taskId': 'dynamic_rebuild_running',
-        'taskMode': 'backfill',
-        'status': 'running',
-        'isActive': true,
-        'totalSegments': 3,
-        'processedSegments': 1,
-        'totalDays': 1,
-        'pendingDays': 1,
-      };
 
       await tester.pumpWidget(_buildHarness());
       await _pumpUntilFound(tester, find.text(_summaryText(day)));
       await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byTooltip('补全当天动态'));
+      await tester.tap(find.byTooltip('动态任务'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('补全'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
-      expect(find.text('已有动态任务运行中'), findsOneWidget);
-      expect(find.textContaining('请先在“动态任务”面板停止当前任务'), findsOneWidget);
+      await tester.tap(find.text('补全全部'));
+      await tester.pump();
+      expect(find.text('补全动态'), findsOneWidget);
+      expect(find.textContaining('补全会按截图时间扫描每一天'), findsOneWidget);
+
+      await tester.tap(find.text('开始补全'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(_mockDynamicRebuildStatus['taskMode'], 'backfill');
       expect(_mockDynamicRebuildStatus['targetDayKey'], '');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -443,9 +505,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -533,7 +593,7 @@ void main() {
         find.text(_summaryText(DateTime(2024, 4, 10))),
       );
 
-      await tester.tap(find.byTooltip('重建动态'));
+      await tester.tap(find.byTooltip('动态任务'));
       await tester.pumpAndSettle();
 
       expect(find.text('当前模型：gpt-4.1'), findsOneWidget);
@@ -544,9 +604,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -568,7 +626,7 @@ void main() {
         find.text(_summaryText(DateTime(2024, 4, 10))),
       );
 
-      await tester.tap(find.byTooltip('重建动态'));
+      await tester.tap(find.byTooltip('动态任务'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
@@ -585,9 +643,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -654,7 +710,7 @@ void main() {
         find.text(_summaryText(DateTime(2024, 4, 10))),
       );
 
-      await tester.tap(find.byTooltip('重建动态'));
+      await tester.tap(find.byTooltip('动态任务'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
@@ -671,9 +727,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     } finally {
-      if (await tmp.exists()) {
-        await tmp.delete(recursive: true);
-      }
+      _scheduleTempDelete(tmp);
     }
   });
 
@@ -775,7 +829,7 @@ void main() {
           find.text(_summaryText(DateTime(2024, 4, 10))),
         );
 
-        await tester.tap(find.byTooltip('重建动态'));
+        await tester.tap(find.byTooltip('动态任务'));
         await tester.pumpAndSettle();
 
         expect(find.text('并发天数'), findsOneWidget);
@@ -793,9 +847,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
       } finally {
-        if (await tmp.exists()) {
-          await tmp.delete(recursive: true);
-        }
+        _scheduleTempDelete(tmp);
       }
     },
   );

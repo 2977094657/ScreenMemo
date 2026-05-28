@@ -3589,6 +3589,111 @@ ORDER BY day ASC
     return SegmentTimelineDayBatch(days: days, hasMoreOlder: hasMoreOlder);
   }
 
+  Future<List<SegmentTimelineDayInfo>> listSegmentTimelineMonthDayCounts({
+    required int year,
+    required int month,
+    String? maxDateKeyInclusive,
+    bool requireSamples = true,
+  }) async {
+    if (year <= 0 || month < 1 || month > 12) {
+      return const <SegmentTimelineDayInfo>[];
+    }
+    final DateTime firstDay = DateTime(year, month);
+    if (firstDay.year != year || firstDay.month != month) {
+      return const <SegmentTimelineDayInfo>[];
+    }
+    final DateTime lastDay = DateTime(year, month + 1, 0);
+    final String startKey =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-01';
+    final String naturalEndKey =
+        '${lastDay.year.toString().padLeft(4, '0')}-${lastDay.month.toString().padLeft(2, '0')}-${lastDay.day.toString().padLeft(2, '0')}';
+    final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
+    if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      return const <SegmentTimelineDayInfo>[];
+    }
+    if (maxKeyInclusive.isNotEmpty && maxKeyInclusive.compareTo(startKey) < 0) {
+      return const <SegmentTimelineDayInfo>[];
+    }
+    final String endKey =
+        maxKeyInclusive.isNotEmpty &&
+            maxKeyInclusive.compareTo(naturalEndKey) < 0
+        ? maxKeyInclusive
+        : naturalEndKey;
+
+    final db = await database;
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+    const String dayExpr =
+        "date(s.start_time / 1000, 'unixepoch', 'localtime')";
+    final List<String> whereClauses = <String>[
+      _segmentsRootWhere('s'),
+      "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+      "$dayExpr >= ?",
+      "$dayExpr <= ?",
+      if (requireSamples) hasSamplesCond,
+    ];
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT $dayExpr AS day_key, COUNT(*) AS segment_count
+      FROM segments s
+      WHERE ${whereClauses.join(' AND ')}
+      GROUP BY day_key
+      ORDER BY day_key DESC
+      ''',
+      <Object?>[startKey, endKey],
+    );
+    return rows
+        .map((Map<String, Object?> row) {
+          final String dayKey = (row['day_key'] as String?) ?? '';
+          final int count = (row['segment_count'] as int?) ?? 0;
+          return SegmentTimelineDayInfo(dayKey: dayKey, count: count);
+        })
+        .where(
+          (SegmentTimelineDayInfo info) =>
+              info.dayKey.isNotEmpty && info.count > 0,
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<int>> listSegmentTimelineYears({
+    String? maxDateKeyInclusive,
+    bool requireSamples = true,
+  }) async {
+    final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
+    if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      return const <int>[];
+    }
+
+    final db = await database;
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+    const String dayExpr =
+        "date(s.start_time / 1000, 'unixepoch', 'localtime')";
+    final List<String> whereClauses = <String>[
+      _segmentsRootWhere('s'),
+      "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+      if (maxKeyInclusive.isNotEmpty) "$dayExpr <= ?",
+      if (requireSamples) hasSamplesCond,
+    ];
+    final List<Object?> whereParams = <Object?>[
+      if (maxKeyInclusive.isNotEmpty) maxKeyInclusive,
+    ];
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
+      SELECT DISTINCT substr($dayExpr, 1, 4) AS year_key
+      FROM segments s
+      WHERE ${whereClauses.join(' AND ')}
+      ORDER BY year_key DESC
+      ''', whereParams);
+    return rows
+        .map((Map<String, Object?> row) {
+          final String raw = (row['year_key'] as String?) ?? '';
+          return int.tryParse(raw);
+        })
+        .whereType<int>()
+        .where((int year) => year > 0)
+        .toList(growable: false);
+  }
+
   Future<List<Map<String, dynamic>>> listSegmentTimelineDaySegments({
     required String dateKey,
     bool onlyNoSummary = false,

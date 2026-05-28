@@ -1,6 +1,20 @@
 part of 'segment_status_page.dart';
 
 // ========== 动态重建任务控制 ==========
+enum _DynamicBackfillScope { selectedDay, allDays }
+
+class _DynamicBackfillConfirmCopy {
+  const _DynamicBackfillConfirmCopy({
+    required this.title,
+    required this.message,
+    required this.confirmText,
+  });
+
+  final String title;
+  final String message;
+  final String confirmText;
+}
+
 extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
   Future<void> _loadDynamicRebuildDayConcurrency() async {
     try {
@@ -822,57 +836,360 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     }
   }
 
+  _DynamicBackfillConfirmCopy _dynamicBackfillConfirmCopy(
+    _DynamicBackfillScope scope,
+    String dateKey,
+  ) {
+    switch (scope) {
+      case _DynamicBackfillScope.selectedDay:
+        return _DynamicBackfillConfirmCopy(
+          title: '补全当天动态',
+          message:
+              '只补全 $dateKey 缺失动态和缺失总结，不会清空或覆盖已有动态。每条补全结果生成后，仍会检查是否能与上一条动态合并。确定开始吗？',
+          confirmText: '补全当天',
+        );
+      case _DynamicBackfillScope.allDays:
+        return const _DynamicBackfillConfirmCopy(
+          title: '补全动态',
+          message:
+              '补全会按截图时间扫描每一天，已被现有动态结果覆盖的窗口会跳过，只把缺失日期、缺失时间窗或缺失总结加入后台队列，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？',
+          confirmText: '开始补全',
+        );
+    }
+  }
+
+  Widget _buildDynamicBackfillScopeCard(
+    BuildContext context, {
+    required _DynamicBackfillScope scope,
+    required _DynamicBackfillScope selectedScope,
+    required String title,
+    required String subtitle,
+    required bool enabled,
+    required ValueChanged<_DynamicBackfillScope> onSelected,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool selected = scope == selectedScope;
+    final Color accent = _dynamicBackfillColor();
+    return Expanded(
+      child: Opacity(
+        opacity: enabled ? 1 : 0.5,
+        child: Material(
+          color: selected
+              ? accent.withValues(alpha: 0.12)
+              : cs.surfaceContainerHighest.withValues(alpha: 0.38),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: enabled ? () => onSelected(scope) : null,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 54),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing2,
+                vertical: 7,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(
+                  color: selected
+                      ? accent.withValues(alpha: 0.55)
+                      : cs.outline.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        size: 16,
+                        color: selected ? accent : cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: selected ? accent : cs.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<_DynamicBackfillScope?> _pickDynamicBackfillScope() async {
+    final String dateKey = (_selectedDateKey ?? '').trim();
+    final bool canBackfillSelectedDay = dateKey.isNotEmpty;
+    _DynamicBackfillScope selectedScope = canBackfillSelectedDay
+        ? _DynamicBackfillScope.selectedDay
+        : _DynamicBackfillScope.allDays;
+
+    return showGeneralDialog<_DynamicBackfillScope>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Backfill Scope',
+      barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.50),
+      transitionDuration: const Duration(milliseconds: 170),
+      pageBuilder: (dialogContext, _, __) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final ThemeData theme = Theme.of(dialogContext);
+            final ColorScheme cs = theme.colorScheme;
+            final bool isDark = theme.brightness == Brightness.dark;
+            final Color surface =
+                theme.dialogTheme.backgroundColor ?? cs.surface;
+            final Color divider = cs.outlineVariant.withValues(
+              alpha: isDark ? 0.95 : 1.0,
+            );
+            final _DynamicBackfillConfirmCopy copy =
+                _dynamicBackfillConfirmCopy(selectedScope, dateKey);
+            return PopScope(
+              child: SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing6,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: 420,
+                        minWidth: 300,
+                      ),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: surface,
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusLg,
+                            ),
+                            border: Border.all(color: divider),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  AppTheme.spacing6,
+                                  AppTheme.spacing6,
+                                  AppTheme.spacing6,
+                                  AppTheme.spacing2,
+                                ),
+                                child: Text(
+                                  copy.title,
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    color: cs.onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  AppTheme.spacing6,
+                                  AppTheme.spacing2,
+                                  AppTheme.spacing6,
+                                  AppTheme.spacing5,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      copy.message,
+                                      textAlign: TextAlign.center,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            height: 1.45,
+                                          ),
+                                    ),
+                                    const SizedBox(height: AppTheme.spacing4),
+                                    Row(
+                                      children: [
+                                        _buildDynamicBackfillScopeCard(
+                                          dialogContext,
+                                          scope:
+                                              _DynamicBackfillScope.selectedDay,
+                                          selectedScope: selectedScope,
+                                          title: '补全当天',
+                                          subtitle: canBackfillSelectedDay
+                                              ? dateKey
+                                              : '当前没有选中日期',
+                                          enabled: canBackfillSelectedDay,
+                                          onSelected: (scope) {
+                                            setDialogState(
+                                              () => selectedScope = scope,
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(
+                                          width: AppTheme.spacing2,
+                                        ),
+                                        _buildDynamicBackfillScopeCard(
+                                          dialogContext,
+                                          scope: _DynamicBackfillScope.allDays,
+                                          selectedScope: selectedScope,
+                                          title: '补全全部',
+                                          subtitle: '扫描所有日期',
+                                          enabled: true,
+                                          onSelected: (scope) {
+                                            setDialogState(
+                                              () => selectedScope = scope,
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(color: divider, width: 1),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: SizedBox(
+                                        height: 48,
+                                        child: TextButton(
+                                          onPressed: () {
+                                            Navigator.of(
+                                              dialogContext,
+                                            ).pop(null);
+                                          },
+                                          style: TextButton.styleFrom(
+                                            foregroundColor:
+                                                cs.onSurfaceVariant,
+                                            shape: const RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.zero,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            AppLocalizations.of(
+                                              dialogContext,
+                                            ).dialogCancel,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      height: 48,
+                                      color: divider,
+                                    ),
+                                    Expanded(
+                                      child: SizedBox(
+                                        height: 48,
+                                        child: TextButton(
+                                          onPressed: () {
+                                            Navigator.of(
+                                              dialogContext,
+                                            ).pop(selectedScope);
+                                          },
+                                          style: TextButton.styleFrom(
+                                            foregroundColor:
+                                                _dynamicBackfillColor(),
+                                            shape: const RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.zero,
+                                            ),
+                                            textStyle: theme
+                                                .textTheme
+                                                .labelLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          child: Text(copy.confirmText),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+      transitionBuilder: (dialogContext, animation, _, child) {
+        final Animation<double> curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _confirmStartDynamicBackfill() async {
     if (_dynamicRebuildTaskStatus.isActive || _startingDynamicRebuild) return;
     final bool continueExisting =
         _dynamicRebuildTaskStatus.canContinue &&
         _dynamicRebuildTaskStatus.isBackfillMode;
-    final bool ok = await UIDialogs.showConfirm(
-      context,
-      title: continueExisting ? '继续补全动态' : '补全动态',
-      message: continueExisting
-          ? '会继续处理未完成或失败待续的日期，只补齐缺失日期、缺失时间窗或缺失总结，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？'
-          : '补全会按截图时间扫描每一天，已被现有动态结果覆盖的窗口会跳过，只把缺失日期、缺失时间窗或缺失总结加入后台队列，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？',
-      confirmText: continueExisting ? '继续补全' : '开始补全',
-      cancelText: '取消',
-    );
-    if (!ok || !mounted) return;
-    if (continueExisting) {
-      await _continueDynamicRebuild();
-    } else {
-      await _startDynamicRebuild(taskMode: 'backfill');
-    }
-  }
-
-  Future<void> _confirmStartSelectedDayDynamicBackfill() async {
-    final String dateKey = (_selectedDateKey ?? '').trim();
-    if (dateKey.isEmpty || _startingDynamicRebuild) return;
-    if (_dynamicRebuildTaskStatus.isActive) {
-      await UIDialogs.showInfo(
-        context,
-        title: '已有动态任务运行中',
-        message: '请先在“动态任务”面板停止当前任务，再补全 $dateKey 的动态。',
-      );
-      return;
-    }
-    if (_dynamicRebuildTaskStatus.canContinue) {
-      await UIDialogs.showInfo(
-        context,
-        title: '存在未完成动态任务',
-        message: '请先在“动态任务”面板继续或退出旧任务，再补全 $dateKey 的动态，避免误恢复其他任务进度。',
+    if (!continueExisting) {
+      final _DynamicBackfillScope? scope = await _pickDynamicBackfillScope();
+      if (scope == null || !mounted) return;
+      await _startDynamicRebuild(
+        taskMode: 'backfill',
+        targetDayKey: scope == _DynamicBackfillScope.selectedDay
+            ? (_selectedDateKey ?? '').trim()
+            : null,
       );
       return;
     }
     final bool ok = await UIDialogs.showConfirm(
       context,
-      title: '补全当天动态',
+      title: '继续补全动态',
       message:
-          '只补全 $dateKey 缺失动态和缺失总结，不会清空或覆盖已有动态。每条补全结果生成后，仍会检查是否能与上一条动态合并。确定开始吗？',
-      confirmText: '补全当天',
+          '会继续处理未完成或失败待续的日期，只补齐缺失日期、缺失时间窗或缺失总结，不会清空当前动态。每条补全结果生成后，仍会检查是否能与上一条动态合并，但不会重新扫描遗漏窗口。确定继续吗？',
+      confirmText: '继续补全',
       cancelText: '取消',
     );
     if (!ok || !mounted) return;
-    await _startDynamicRebuild(taskMode: 'backfill', targetDayKey: dateKey);
+    await _continueDynamicRebuild();
   }
 
   Future<void> _startDynamicRebuild({
@@ -972,11 +1289,17 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       if (!mounted) return;
       _segmentStatusSetState(() => _dynamicRebuildTaskStatus = status);
       _publishDynamicRebuildUiSnapshot();
-      UINotifier.info(context, '已退出当前动态任务');
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).dynamicTaskExitSuccess,
+      );
       await _refresh(triggerSegmentTick: false);
     } catch (_) {
       if (mounted) {
-        UINotifier.error(context, '退出动态任务失败');
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).dynamicTaskExitFailed,
+        );
       }
     } finally {
       if (mounted) {

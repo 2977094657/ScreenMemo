@@ -67,7 +67,8 @@ class UIActionMenuButton<T> extends StatelessWidget {
     return PopupMenuButton<T>(
       tooltip: tooltip,
       enabled: enabled && items.any((item) => item.enabled),
-      initialValue: selectedValue,
+      // PopupMenuButton 会用 ThemeData.highlightColor 给 initialValue 匹配项
+      // 额外包一层背景；选中态由 _UIActionMenuTile 自己绘制即可。
       onSelected: onSelected,
       padding: padding,
       menuPadding: const EdgeInsets.symmetric(vertical: AppTheme.spacing1),
@@ -133,20 +134,22 @@ class _UIActionMenuTile extends StatelessWidget {
     final ColorScheme cs = theme.colorScheme;
     final Color baseColor = destructive ? cs.error : cs.onSurface;
     final Color contentColor = enabled
-        ? baseColor
+        ? (selected && !destructive ? cs.primary : baseColor)
         : cs.onSurfaceVariant.withValues(alpha: 0.44);
+    final Color selectedBackground = destructive
+        ? cs.errorContainer.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.34 : 0.50,
+          )
+        : cs.surfaceContainerHigh.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.72 : 0.82,
+          );
     final String? subtitleText = subtitle?.trim();
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: selected
-            ? (destructive ? cs.errorContainer : cs.primaryContainer)
-                  .withValues(
-                    alpha: theme.brightness == Brightness.dark ? 0.5 : 0.72,
-                  )
-            : Colors.transparent,
+        color: selected ? selectedBackground : Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
       ),
       padding: const EdgeInsets.symmetric(

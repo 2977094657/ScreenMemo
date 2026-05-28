@@ -171,23 +171,13 @@ extension _ScreenshotGalleryGridPart on _ScreenshotGalleryPageState {
                               .toList(),
                         ),
                       ),
-                      if (_dayTabs.length < _allDayTabs.length)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: AppTheme.spacing2,
-                          ),
-                          child: TextButton.icon(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppTheme.spacing2,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: _expandDayTabsIfNeeded,
-                            icon: const Icon(Icons.more_horiz, size: 18),
-                            label: Text(AppLocalizations.of(context).loadMore),
-                          ),
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: AppTheme.spacing2,
+                          right: AppTheme.spacing2,
                         ),
+                        child: _buildDateCalendarButton(context),
+                      ),
                     ],
                   ),
                 ),

@@ -10,6 +10,15 @@ Future<void> _prepareDesktopDbRoot(Directory root) async {
   await ScreenshotDatabase.instance.initializeForDesktop(root.path);
 }
 
+Future<void> _disposeAndDeleteTemp(Directory tmp) async {
+  try {
+    await ScreenshotDatabase.instance.disposeDesktop();
+  } catch (_) {}
+  if (await tmp.exists()) {
+    await tmp.delete(recursive: true);
+  }
+}
+
 String _dateKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
@@ -105,9 +114,7 @@ void main() {
         expect(batch.segments.length, 3);
         expect(batch.hasMoreOlder, isFalse);
       } finally {
-        if (await tmp.exists()) {
-          await tmp.delete(recursive: true);
-        }
+        await _disposeAndDeleteTemp(tmp);
       }
     },
   );
@@ -146,9 +153,7 @@ void main() {
         expect(second.dayKeys.last, '2024-02-26');
         expect(second.hasMoreOlder, isFalse);
       } finally {
-        if (await tmp.exists()) {
-          await tmp.delete(recursive: true);
-        }
+        await _disposeAndDeleteTemp(tmp);
       }
     },
   );
@@ -182,10 +187,64 @@ void main() {
         expect(batch.dayKeys.contains('2024-03-07'), isTrue);
         expect(batch.hasMoreOlder, isTrue);
       } finally {
-        if (await tmp.exists()) {
-          await tmp.delete(recursive: true);
-        }
+        await _disposeAndDeleteTemp(tmp);
       }
     },
   );
+
+  test('timeline month day counts only scan the requested month', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'screen_memo_timeline_month_counts_',
+    );
+    try {
+      final Directory root = Directory(p.join(tmp.path, 'root'));
+      await root.create(recursive: true);
+      await _prepareDesktopDbRoot(root);
+      await _seedTimelineDays(<DateTime>[
+        DateTime(2024, 3, 10),
+        DateTime(2024, 3, 10),
+        DateTime(2024, 3, 1),
+        DateTime(2024, 4, 1),
+      ]);
+
+      final List<SegmentTimelineDayInfo> days = await ScreenshotDatabase
+          .instance
+          .listSegmentTimelineMonthDayCounts(year: 2024, month: 3);
+      final Map<String, int> counts = <String, int>{
+        for (final SegmentTimelineDayInfo day in days) day.dayKey: day.count,
+      };
+
+      expect(counts['2024-03-10'], 2);
+      expect(counts['2024-03-01'], 1);
+      expect(counts.containsKey('2024-04-01'), isFalse);
+    } finally {
+      await _disposeAndDeleteTemp(tmp);
+    }
+  });
+
+  test('timeline year list only returns years with dynamic entries', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'screen_memo_timeline_years_',
+    );
+    try {
+      final Directory root = Directory(p.join(tmp.path, 'root'));
+      await root.create(recursive: true);
+      await _prepareDesktopDbRoot(root);
+      await _seedTimelineDays(<DateTime>[
+        DateTime(2022, 12, 31),
+        DateTime(2024, 1, 1),
+        DateTime(2024, 6, 8),
+      ]);
+
+      final List<int> years = await ScreenshotDatabase.instance
+          .listSegmentTimelineYears();
+      final List<int> cutoffYears = await ScreenshotDatabase.instance
+          .listSegmentTimelineYears(maxDateKeyInclusive: '2023-12-31');
+
+      expect(years, <int>[2024, 2022]);
+      expect(cutoffYears, <int>[2022]);
+    } finally {
+      await _disposeAndDeleteTemp(tmp);
+    }
+  });
 }

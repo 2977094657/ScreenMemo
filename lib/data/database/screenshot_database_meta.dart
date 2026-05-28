@@ -1311,6 +1311,32 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  /// 获取指定应用最新截图时间戳（毫秒）
+  ///
+  /// 读取主库 `app_stats.last_capture_time`，避免为日期 Tab 初始化扫描分库。
+  Future<int?> getLatestCaptureTimeMillisForApp(String appPackageName) async {
+    final String packageName = appPackageName.trim();
+    if (packageName.isEmpty) return null;
+    final db = await database; // 主库
+    try {
+      final List<Map<String, Object?>> rows = await db.query(
+        'app_stats',
+        columns: const <String>['last_capture_time'],
+        where: 'app_package_name = ?',
+        whereArgs: <Object?>[packageName],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      final Object? value = rows.first['last_capture_time'];
+      if (value == null) return null;
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<int> getTodayScreenshotCount() async {
     StartupProfiler.begin('ScreenshotDatabase.getTodayScreenshotCount');
     final db = await database; // 主库
@@ -3608,6 +3634,93 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  /// 列出指定应用在时间范围内所有有数据的日期（本地时区），按日期倒序返回。
+  ///
+  /// 相比 `listAvailableDaysForApp()`，该方法只扫描涉及的年月表，
+  /// 用于截图列表日期 Tab 首屏与增量加载。
+  Future<List<Map<String, dynamic>>> listAvailableDaysForAppRange(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    final String packageName = appPackageName.trim();
+    if (packageName.isEmpty || endMillis < startMillis) {
+      return <Map<String, dynamic>>[];
+    }
+    final Map<String, int> dayToCount = <String, int>{};
+    try {
+      final years = await _listShardYearsForApp(packageName);
+      if (years.isEmpty) return <Map<String, dynamic>>[];
+
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final List<List<int>> ymList = _listYearMonthBetween(s, e);
+      if (ymList.isEmpty) return <Map<String, dynamic>>[];
+
+      for (final ym in ymList) {
+        final int y = ym[0];
+        final int m = ym[1];
+        if (!years.contains(y)) continue;
+        final shardDb = await _openShardDb(packageName, y);
+        if (shardDb == null) continue;
+        final String t = _monthTableName(y, m);
+        if (!await _tableExists(shardDb, t)) continue;
+        try {
+          final List<Map<String, Object?>>
+          rows = await (shardDb as Database).rawQuery(
+            'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM '
+            '$t WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0 GROUP BY d',
+            <Object?>[startMillis, endMillis],
+          );
+          for (final r in rows) {
+            final String d = (r['d'] as String?) ?? '';
+            if (d.isEmpty) continue;
+            final int c = (r['c'] as int?) ?? 0;
+            if (c <= 0) continue;
+            dayToCount[d] = (dayToCount[d] ?? 0) + c;
+          }
+        } catch (_) {}
+      }
+      final List<Map<String, dynamic>> out = dayToCount.entries
+          .map((e) => <String, dynamic>{'date': e.key, 'count': e.value})
+          .toList();
+      out.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return out;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listAvailableMonthDaysForApp(
+    String appPackageName, {
+    required int year,
+    required int month,
+  }) async {
+    if (year <= 0 || month < 1 || month > 12) {
+      return <Map<String, dynamic>>[];
+    }
+    final DateTime start = DateTime(year, month);
+    final DateTime end = DateTime(year, month + 1, 0, 23, 59, 59);
+    return listAvailableDaysForAppRange(
+      appPackageName,
+      startMillis: start.millisecondsSinceEpoch,
+      endMillis: end.millisecondsSinceEpoch,
+    );
+  }
+
+  Future<List<int>> listAvailableYearsForApp(String appPackageName) async {
+    final String packageName = appPackageName.trim();
+    if (packageName.isEmpty) return const <int>[];
+    try {
+      final List<int> years = await _listShardYearsForApp(packageName);
+      final List<int> sorted = years.where((year) => year > 0).toSet().toList();
+      sorted.sort((int a, int b) => b.compareTo(a));
+      return sorted;
+    } catch (_) {
+      return const <int>[];
+    }
+  }
+
   /// 全局列出所有有数据的日期（本地时区），按日期倒序返回
   /// 返回元素：{ 'date': 'YYYY-MM-DD', 'count': <int> }
   Future<List<Map<String, dynamic>>> listAvailableDaysGlobal() async {
@@ -3720,6 +3833,43 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return out;
     } catch (_) {
       return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listAvailableMonthDaysGlobal({
+    required int year,
+    required int month,
+  }) async {
+    if (year <= 0 || month < 1 || month > 12) {
+      return <Map<String, dynamic>>[];
+    }
+    final DateTime start = DateTime(year, month);
+    final DateTime end = DateTime(year, month + 1, 0, 23, 59, 59);
+    return listAvailableDaysGlobalRange(
+      startMillis: start.millisecondsSinceEpoch,
+      endMillis: end.millisecondsSinceEpoch,
+    );
+  }
+
+  Future<List<int>> listAvailableYearsGlobal() async {
+    final db = await database; // 主库
+    try {
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        'SELECT DISTINCT year FROM shard_registry ORDER BY year DESC',
+      );
+      return rows
+          .map((row) => row['year'])
+          .map((value) {
+            if (value is int) return value;
+            if (value is num) return value.toInt();
+            return int.tryParse(value?.toString() ?? '') ?? 0;
+          })
+          .where((year) => year > 0)
+          .toSet()
+          .toList()
+        ..sort((int a, int b) => b.compareTo(a));
+    } catch (_) {
+      return const <int>[];
     }
   }
 

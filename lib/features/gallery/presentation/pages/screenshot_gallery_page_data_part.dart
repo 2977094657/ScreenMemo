@@ -49,45 +49,97 @@ extension _ScreenshotGalleryDataPart on _ScreenshotGalleryPageState {
     } catch (_) {}
   }
 
-  /// 基于数据库返回的“有数据的所有日期”生成 Tabs（倒序），默认仅展示最近14天，
+  String _dateKeyForDay(DateTime day) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${day.year.toString().padLeft(4, '0')}-${two(day.month)}-${two(day.day)}';
+  }
+
+  List<_DayTabInfo> _buildDayTabsFromRows(List<Map<String, dynamic>> rows) {
+    final List<_DayTabInfo> tabs = <_DayTabInfo>[];
+    for (final m in rows) {
+      final String ds = (m['date'] as String?) ?? '';
+      final int count = _readCount(m['count']);
+      if (ds.isEmpty || count <= 0) continue;
+      try {
+        final parts = ds.split('-');
+        if (parts.length != 3) continue;
+        final int y = int.parse(parts[0]);
+        final int mo = int.parse(parts[1]);
+        final int d = int.parse(parts[2]);
+        final DateTime day = DateTime(y, mo, d);
+        final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
+        final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
+        tabs.add(
+          _DayTabInfo(
+            day: day,
+            startMillis: start,
+            endMillis: end,
+            count: count,
+          ),
+        );
+      } catch (_) {}
+    }
+    tabs.sort((a, b) => b.startMillis.compareTo(a.startMillis));
+    return tabs;
+  }
+
+  int _readCount(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  /// 基于“最新截图附近的有数据日期”生成 Tabs（倒序），默认仅展示最近14天，
   /// 当用户滑动/切换到最后一个可见日期时，再按批次追加更早日期。
   Future<void> _prepareDayTabs() async {
     if (!mounted) return;
-    final List<_DayTabInfo> tabs = <_DayTabInfo>[];
+    _gallerySetState(() {
+      _isLoading = true;
+    });
+    List<_DayTabInfo> tabs = <_DayTabInfo>[];
     try {
-      final days = await ScreenshotService.instance.listAvailableDaysForApp(
-        _packageName,
+      final int? latestMillis = await ScreenshotService.instance
+          .getLatestCaptureTimeMillisForApp(_packageName);
+      final DateTime base = (latestMillis == null || latestMillis <= 0)
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(latestMillis);
+      final DateTime endDay = DateTime(base.year, base.month, base.day);
+      final DateTime startDay = endDay.subtract(
+        const Duration(
+          days: _ScreenshotGalleryPageState._dayTabsLookbackDays - 1,
+        ),
       );
-      for (final m in days) {
-        final String ds = (m['date'] as String?) ?? '';
-        final int count = (m['count'] as int?) ?? 0;
-        if (ds.isEmpty || count <= 0) continue;
-        try {
-          final parts = ds.split('-');
-          if (parts.length != 3) continue;
-          final int y = int.parse(parts[0]);
-          final int mo = int.parse(parts[1]);
-          final int d = int.parse(parts[2]);
-          final DateTime day = DateTime(y, mo, d);
-          final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
-          final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
-          tabs.add(
-            _DayTabInfo(
-              day: day,
-              startMillis: start,
-              endMillis: end,
-              count: count,
-            ),
+      final rows = await ScreenshotService.instance
+          .listAvailableDaysForAppRange(
+            _packageName,
+            startMillis: startDay.millisecondsSinceEpoch,
+            endMillis: DateTime(
+              endDay.year,
+              endDay.month,
+              endDay.day,
+              23,
+              59,
+              59,
+            ).millisecondsSinceEpoch,
           );
-        } catch (_) {}
+      tabs = _buildDayTabsFromRows(rows);
+
+      // 旧库或异常统计下保底退回全量日期查询，避免误显示空列表。
+      if (tabs.isEmpty) {
+        final days = await ScreenshotService.instance.listAvailableDaysForApp(
+          _packageName,
+        );
+        tabs = _buildDayTabsFromRows(days);
       }
     } catch (_) {}
 
     if (!mounted) return;
     _gallerySetState(() {
+      _resetTabDataState();
       _allDayTabs
         ..clear()
         ..addAll(tabs);
+      _hasMoreDayTabs = _allDayTabs.isNotEmpty;
       final int visibleCount = _allDayTabs.isEmpty
           ? 0
           : math.min(
@@ -114,9 +166,33 @@ extension _ScreenshotGalleryDataPart on _ScreenshotGalleryPageState {
       }
     });
     if (_dayTabs.isNotEmpty) {
-      await _prefetchAllTabsFirst8();
       await _onTabIndexSelected(0);
+      // ignore: unawaited_futures
+      _prefetchAdjacentTabs(0);
+    } else if (mounted) {
+      _gallerySetState(() {
+        _isLoading = false;
+      });
     }
+  }
+
+  void _resetTabDataState() {
+    _screenshots = <ScreenshotRecord>[];
+    _currentDisplayCount = 0;
+    _pageOffset = 0;
+    _hasMore = true;
+    _isLoadingMore = false;
+    _tabCache.clear();
+    _tabOffset.clear();
+    _tabHasMore.clear();
+    _tabScrollOffset.clear();
+    _itemKeys.clear();
+    for (final ScrollController controller in _tabControllers.values) {
+      try {
+        controller.dispose();
+      } catch (_) {}
+    }
+    _tabControllers.clear();
   }
 
   void _onTabControllerChanged() {
@@ -129,21 +205,29 @@ extension _ScreenshotGalleryDataPart on _ScreenshotGalleryPageState {
     }
     // 优先确保相邻Tab也有首屏缓存，提升滑动预览体验
     // ignore: unawaited_futures
-    _prefetchFirstPageForTab(idx - 1);
-    // ignore: unawaited_futures
-    _prefetchFirstPageForTab(idx + 1);
+    _prefetchAdjacentTabs(idx);
     _onTabIndexSelected(idx);
   }
 
   /// 当用户滑动到当前最后一个日期Tab附近时，尝试将可见窗口向前扩展14天
   void _expandDayTabsIfNeeded() {
+    // ignore: discarded_futures
+    _expandDayTabsIfNeededAsync();
+  }
+
+  Future<void> _expandDayTabsIfNeededAsync() async {
     if (!mounted) return;
     if (_isExpandingDayTabs) return;
-    if (_allDayTabs.isEmpty) return;
-    if (_dayTabs.length >= _allDayTabs.length) return; // 已展示全部日期
+    if (_dayTabs.isEmpty) return;
 
     _isExpandingDayTabs = true;
     try {
+      if (_dayTabs.length >= _allDayTabs.length) {
+        if (!_hasMoreDayTabs) return;
+        final bool appended = await _appendOlderDayTabsToBuffer();
+        if (!appended) return;
+      }
+
       final int currentVisible = _dayTabs.length;
       final int targetVisible = math.min(
         _allDayTabs.length,
@@ -171,6 +255,66 @@ extension _ScreenshotGalleryDataPart on _ScreenshotGalleryPageState {
     } finally {
       _isExpandingDayTabs = false;
     }
+  }
+
+  Future<bool> _appendOlderDayTabsToBuffer() async {
+    if (!mounted || _allDayTabs.isEmpty) return false;
+
+    final DateTime oldest = _allDayTabs.last.day;
+    final DateTime endDay = DateTime(
+      oldest.year,
+      oldest.month,
+      oldest.day,
+    ).subtract(const Duration(days: 1));
+    final int endMillis = DateTime(
+      endDay.year,
+      endDay.month,
+      endDay.day,
+      23,
+      59,
+      59,
+    ).millisecondsSinceEpoch;
+
+    int lookback = _ScreenshotGalleryPageState._dayTabsLookbackDays;
+    for (int attempt = 0; attempt < 4; attempt += 1) {
+      final int daysBack = lookback <= 0 ? 1 : lookback;
+      final DateTime startDay = DateTime(
+        endDay.year,
+        endDay.month,
+        endDay.day,
+      ).subtract(Duration(days: daysBack - 1));
+      final List<Map<String, dynamic>> rows = await ScreenshotService.instance
+          .listAvailableDaysForAppRange(
+            _packageName,
+            startMillis: startDay.millisecondsSinceEpoch,
+            endMillis: endMillis,
+          );
+      final List<_DayTabInfo> tabs = _buildDayTabsFromRows(rows);
+      if (tabs.isNotEmpty) {
+        final Set<String> existingKeys = _allDayTabs
+            .map((tab) => _dateKeyForDay(tab.day))
+            .toSet();
+        final List<_DayTabInfo> append = tabs
+            .where((tab) => !existingKeys.contains(_dateKeyForDay(tab.day)))
+            .toList();
+        if (append.isEmpty) return false;
+        if (!mounted) return false;
+        _gallerySetState(() {
+          _allDayTabs.addAll(append);
+          _allDayTabs.sort((a, b) => b.startMillis.compareTo(a.startMillis));
+          _hasMoreDayTabs = true;
+        });
+        return true;
+      }
+
+      if (lookback >= 3650) break;
+      lookback = math.min(3650, lookback * 3);
+    }
+
+    if (mounted) {
+      _gallerySetState(() => _hasMoreDayTabs = false);
+    }
+    return false;
   }
 
   Future<void> _onTabIndexSelected(int index) async {

@@ -246,7 +246,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               ),
               onPressed: snapshot.stopping ? null : _cancelDynamicRebuild,
               icon: const Icon(Icons.stop_circle_outlined),
-              label: Text(snapshot.stopping ? '停止中...' : stopLabel),
+              label: Text(
+                snapshot.stopping
+                    ? AppLocalizations.of(context).dynamicTaskStopping
+                    : stopLabel,
+              ),
             ),
           ),
           const SizedBox(height: AppTheme.spacing2),

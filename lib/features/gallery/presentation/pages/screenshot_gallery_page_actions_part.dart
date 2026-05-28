@@ -15,10 +15,11 @@ extension _ScreenshotGalleryActionsPart on _ScreenshotGalleryPageState {
       _gallerySetState(() {
         _baseDir = dir;
       });
-      await _loadScreenshots();
+      await _prepareDayTabs();
     } catch (e) {
       _gallerySetState(() {
         _error = AppLocalizations.of(context).initFailedWithError(e.toString());
+        _isLoading = false;
       });
     }
   }

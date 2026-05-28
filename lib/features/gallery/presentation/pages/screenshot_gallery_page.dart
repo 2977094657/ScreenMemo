@@ -19,6 +19,7 @@ import 'package:screen_memo/features/apps/application/app_selection_service.dart
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/features/favorites/application/favorite_service.dart';
 import 'package:screen_memo/data/platform/path_service.dart';
+import 'package:screen_memo/core/widgets/date_jump_calendar_sheet.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/features/nsfw/application/nsfw_preference_service.dart';
 
@@ -170,7 +171,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   // 日期窗口控制：默认最近14天，每次向前追加14天
   static const int _initialVisibleDayTabs = 14;
   static const int _appendVisibleDayTabs = 14;
+  static const int _dayTabsLookbackDays = 120;
   bool _isExpandingDayTabs = false;
+  bool _hasMoreDayTabs = false;
 
   @override
   void initState() {
@@ -207,9 +210,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _packageName = packageName;
       // ignore: unawaited_futures
       _loadInitialData();
-      // 准备日期Tabs（异步）
-      // ignore: unawaited_futures
-      _prepareDayTabs();
     } else {
       setState(() {
         _error = AppLocalizations.of(context).invalidArguments;
