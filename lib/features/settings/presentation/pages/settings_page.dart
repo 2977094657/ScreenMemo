@@ -123,6 +123,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isLoading = true;
   bool _isLoadingKeepAlive = true;
   int _screenshotInterval = 5;
+  bool _autoAddNewAppsToCapture = false;
   bool _privacyMode = true; // 隐私模式，默认开启
   // 段落采样设置
   int _segmentSampleIntervalSec = 20; // 最小5秒
@@ -280,6 +281,7 @@ class _SettingsPageState extends State<SettingsPage>
         break;
       case _SettingsSubPage.screenshot:
         unawaited(_loadScreenshotInterval());
+        unawaited(_loadAutoAddNewAppsToCapture());
         unawaited(_loadScreenshotDedupeMode());
         unawaited(_loadScreenshotQualitySettings());
         unawaited(_loadScreenshotExpireSettings());

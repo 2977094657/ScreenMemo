@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_memo/core/constants/user_settings_keys.dart';
+import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/models/app_info.dart';
 import 'package:screen_memo/core/performance/startup_profiler.dart';
 import 'package:screen_memo/features/capture/application/ime_exclusion_service.dart';
@@ -20,6 +21,8 @@ class AppSelectionService {
   static const String _sortModeKey = 'sort_mode';
   static const String _screenshotIntervalKey = 'screenshot_interval';
   static const String _screenshotEnabledKey = 'screenshot_enabled';
+  static const String _autoAddNewAppsToCaptureKey =
+      'auto_add_new_apps_to_capture';
   static const String _appsCacheKey = 'all_apps_cache';
   static const String _appsCacheTsKey = 'all_apps_cache_ts';
   static const String _appIdentityCacheKey = 'app_identity_cache';
@@ -33,6 +36,7 @@ class AppSelectionService {
       'timeDesc'; // 新排序键：timeAsc/timeDesc, sizeAsc/sizeDesc, countAsc/countDesc
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
+  bool _autoAddNewAppsToCapture = false;
   bool _privacyModeEnabled = true; // 默认开启
   Future<void>? _installedAppsRefreshFuture;
 
@@ -561,7 +565,41 @@ class AppSelectionService {
   String get sortMode => _sortMode;
   int get screenshotInterval => _screenshotInterval;
   bool get screenshotEnabled => _screenshotEnabled;
+  bool get autoAddNewAppsToCapture => _autoAddNewAppsToCapture;
   bool get privacyModeEnabled => _privacyModeEnabled;
+
+  /// 保存新安装应用自动加入截屏列表开关
+  Future<void> saveAutoAddNewAppsToCapture(bool enabled) async {
+    try {
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.autoAddNewAppsToCapture,
+        enabled,
+        legacyPrefKeys: const <String>[_autoAddNewAppsToCaptureKey],
+      );
+      _autoAddNewAppsToCapture = enabled;
+    } catch (e) {
+      unawaited(
+        FlutterLogger.warn('保存新安装应用自动加入截屏列表开关失败: $e'),
+      );
+    }
+  }
+
+  /// 获取新安装应用自动加入截屏列表开关
+  Future<bool> getAutoAddNewAppsToCapture() async {
+    try {
+      _autoAddNewAppsToCapture = await UserSettingsService.instance.getBool(
+        UserSettingKeys.autoAddNewAppsToCapture,
+        defaultValue: false,
+        legacyPrefKeys: const <String>[_autoAddNewAppsToCaptureKey],
+      );
+      return _autoAddNewAppsToCapture;
+    } catch (e) {
+      unawaited(
+        FlutterLogger.warn('获取新安装应用自动加入截屏列表开关失败: $e'),
+      );
+      return false;
+    }
+  }
 
   /// 保存隐私模式开关
   Future<void> savePrivacyModeEnabled(bool enabled) async {

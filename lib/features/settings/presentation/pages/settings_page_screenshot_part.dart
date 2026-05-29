@@ -198,6 +198,59 @@ extension _SettingsScreenshotPart on _SettingsPageState {
     );
   }
 
+  Widget _buildAutoAddNewAppsToCaptureItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        children: [
+          _buildSettingsLeadingIcon(context, Icons.playlist_add_check_outlined),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: AppTheme.spacing2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AppLocalizations.of(
+                      context,
+                    ).autoAddNewAppsToCaptureTitle,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    AppLocalizations.of(context).autoAddNewAppsToCaptureDesc,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: _autoAddNewAppsToCapture,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) async {
+                await _updateAutoAddNewAppsToCapture(v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScreenshotQualityItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -693,6 +746,30 @@ extension _SettingsScreenshotPart on _SettingsPageState {
       _settingsSetState(() {
         _screenshotInterval = interval;
       });
+    }
+  }
+
+  Future<void> _loadAutoAddNewAppsToCapture() async {
+    final enabled = await _appService.getAutoAddNewAppsToCapture();
+    if (mounted) {
+      _settingsSetState(() {
+        _autoAddNewAppsToCapture = enabled;
+      });
+    }
+  }
+
+  Future<void> _updateAutoAddNewAppsToCapture(bool enabled) async {
+    await _appService.saveAutoAddNewAppsToCapture(enabled);
+    if (mounted) {
+      _settingsSetState(() {
+        _autoAddNewAppsToCapture = enabled;
+      });
+      UINotifier.success(
+        context,
+        enabled
+            ? AppLocalizations.of(context).autoAddNewAppsToCaptureEnabledToast
+            : AppLocalizations.of(context).autoAddNewAppsToCaptureDisabledToast,
+      );
     }
   }
 

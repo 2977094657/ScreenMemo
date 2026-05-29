@@ -355,6 +355,8 @@
       "seconds": {}
     }
   },
+  "autoAddNewAppsToCaptureTitle": "Auto-add new apps",
+  "autoAddNewAppsToCaptureDesc": "Newly installed non-system apps are added to the capture list automatically.",
   "screenshotDedupeModeTitle": "Visual dedupe strength",
   "screenshotDedupeModeCurrent": "Current: {mode}",
   "@screenshotDedupeModeCurrent": {
@@ -634,6 +636,8 @@
   "privacyModeEnabledToast": "Privacy mode enabled",
   "privacyModeDisabledToast": "Privacy mode disabled",
   "screenshotQualitySettingsSaved": "Screenshot quality settings saved",
+  "autoAddNewAppsToCaptureEnabledToast": "Auto-add for new apps enabled",
+  "autoAddNewAppsToCaptureDisabledToast": "Auto-add for new apps disabled",
   "saveFailedError": "Save failed: {error}",
   "@saveFailedError": {
     "placeholders": {

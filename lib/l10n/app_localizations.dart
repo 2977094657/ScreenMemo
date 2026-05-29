@@ -1596,6 +1596,18 @@ abstract class AppLocalizations {
   /// **'Current interval: {seconds}s'**
   String screenshotIntervalDesc(Object seconds);
 
+  /// No description provided for @autoAddNewAppsToCaptureTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-add new apps'**
+  String get autoAddNewAppsToCaptureTitle;
+
+  /// No description provided for @autoAddNewAppsToCaptureDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Newly installed non-system apps are added to the capture list automatically.'**
+  String get autoAddNewAppsToCaptureDesc;
+
   /// No description provided for @screenshotDedupeModeTitle.
   ///
   /// In en, this message translates to:
@@ -2357,6 +2369,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Screenshot quality settings saved'**
   String get screenshotQualitySettingsSaved;
+
+  /// No description provided for @autoAddNewAppsToCaptureEnabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-add for new apps enabled'**
+  String get autoAddNewAppsToCaptureEnabledToast;
+
+  /// No description provided for @autoAddNewAppsToCaptureDisabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-add for new apps disabled'**
+  String get autoAddNewAppsToCaptureDisabledToast;
 
   /// No description provided for @saveFailedError.
   ///

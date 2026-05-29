@@ -803,6 +803,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get autoAddNewAppsToCaptureTitle => '新安装应用自动加入';
+
+  @override
+  String get autoAddNewAppsToCaptureDesc => '开启后，新安装的非系统应用会自动加入截屏列表。';
+
+  @override
   String get screenshotDedupeModeTitle => '画面去重强度';
 
   @override
@@ -1236,6 +1242,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get screenshotQualitySettingsSaved => '截图质量设置已保存';
+
+  @override
+  String get autoAddNewAppsToCaptureEnabledToast => '已开启新安装应用自动加入';
+
+  @override
+  String get autoAddNewAppsToCaptureDisabledToast => '已关闭新安装应用自动加入';
 
   @override
   String saveFailedError(Object error) {

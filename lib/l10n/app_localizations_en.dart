@@ -839,6 +839,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get autoAddNewAppsToCaptureTitle => 'Auto-add new apps';
+
+  @override
+  String get autoAddNewAppsToCaptureDesc =>
+      'Newly installed non-system apps are added to the capture list automatically.';
+
+  @override
   String get screenshotDedupeModeTitle => 'Visual dedupe strength';
 
   @override
@@ -1298,6 +1305,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get screenshotQualitySettingsSaved =>
       'Screenshot quality settings saved';
+
+  @override
+  String get autoAddNewAppsToCaptureEnabledToast =>
+      'Auto-add for new apps enabled';
+
+  @override
+  String get autoAddNewAppsToCaptureDisabledToast =>
+      'Auto-add for new apps disabled';
 
   @override
   String saveFailedError(Object error) {

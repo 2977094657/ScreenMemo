@@ -353,6 +353,8 @@
       "seconds": {}
     }
   },
+  "autoAddNewAppsToCaptureTitle": "新しいアプリを自動追加",
+  "autoAddNewAppsToCaptureDesc": "新しくインストールされた非システムアプリをキャプチャ一覧へ自動追加します。",
   "screenshotDedupeModeTitle": "画面重複除外の強度",
   "screenshotDedupeModeCurrent": "現在：{mode}",
   "@screenshotDedupeModeCurrent": {
@@ -632,6 +634,8 @@
   "privacyModeEnabledToast": "プライバシーモードを有効にしました",
   "privacyModeDisabledToast": "プライバシーモードを無効にしました",
   "screenshotQualitySettingsSaved": "スクリーンショットの品質設定を保存しました",
+  "autoAddNewAppsToCaptureEnabledToast": "新しいアプリの自動追加を有効にしました",
+  "autoAddNewAppsToCaptureDisabledToast": "新しいアプリの自動追加を無効にしました",
   "saveFailedError": "保存に失敗しました：{error}",
   "@saveFailedError": {
     "placeholders": {

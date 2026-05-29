@@ -22,9 +22,11 @@ import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.ComponentName
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -66,6 +68,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.android.gms.tasks.Tasks
 import com.fqyw.screen_memo.settings.UserSettingsKeysNative
 import com.fqyw.screen_memo.settings.UserSettingsStorage
+import org.json.JSONArray
+import org.json.JSONObject
 
 class ScreenCaptureAccessibilityService : AccessibilityService() {
     
@@ -225,6 +229,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     // 添加WakeLock防止Doze模式
     private var wakeLock: PowerManager.WakeLock? = null
+    private var packageInstallReceiver: BroadcastReceiver? = null
+    private val selectedAppsPrefsLock = Any()
 
     // 定时截屏相关
     private var screenshotTimer: Timer? = null
@@ -630,6 +636,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         instance = this
         FileLogger.e(TAG, "已在onCreate中设置instance")
         restoreMcpServerIfEnabled("accessibility_onCreate")
+        registerPackageInstallReceiver()
 
         FileLogger.e(TAG, "=== 无障碍服务 onCreate 完成 ===")
     }
@@ -747,6 +754,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 清理资源
         stopScreenCapture()
         releaseWakeLock()
+        unregisterPackageInstallReceiver()
 
         // 使用新的状态管理器保存状态
         ServiceStateManager.setAccessibilityServiceRunning(this, false)
@@ -795,6 +803,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 停止段落推进心跳
         stopSegmentTickTimer()
+        unregisterPackageInstallReceiver()
 
         // 关闭截图保存队列，避免服务销毁后继续编码/写文件
         try {
@@ -3145,6 +3154,193 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 检查应用是否在监控列表中
      */
+    private fun registerPackageInstallReceiver() {
+        if (packageInstallReceiver != null) return
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
+                if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+
+                val installedPackage = intent.data?.schemeSpecificPart?.trim().orEmpty()
+                if (installedPackage.isEmpty()) return
+
+                handler.post {
+                    maybeAutoAddNewInstalledApp(installedPackage)
+                }
+            }
+        }
+
+        val filter = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
+            addDataScheme("package")
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(receiver, filter)
+            }
+            packageInstallReceiver = receiver
+            FileLogger.i(TAG, "新安装应用监听已注册")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "注册新安装应用监听失败: ${e.message}")
+        }
+    }
+
+    private fun unregisterPackageInstallReceiver() {
+        val receiver = packageInstallReceiver ?: return
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        } finally {
+            packageInstallReceiver = null
+        }
+    }
+
+    private fun maybeAutoAddNewInstalledApp(packageName: String) {
+        try {
+            val enabled = UserSettingsStorage.getBoolean(
+                this,
+                UserSettingsKeysNative.AUTO_ADD_NEW_APPS_TO_CAPTURE,
+                false
+            )
+            if (!enabled) {
+                FileLogger.d(TAG, "新安装应用自动加入已关闭，忽略: $packageName")
+                return
+            }
+
+            val appInfo = resolveSelectableInstalledApp(packageName) ?: return
+            val added = appendAppToSelectedApps(appInfo)
+            if (added) {
+                FileLogger.i(TAG, "新安装应用已自动加入截屏列表: ${appInfo.appName}(${appInfo.packageName})")
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "处理新安装应用失败: $packageName, ${e.message}")
+        }
+    }
+
+    private data class AutoSelectedAppInfo(
+        val packageName: String,
+        val appName: String,
+        val version: String,
+        val isSystemApp: Boolean
+    )
+
+    private fun resolveSelectableInstalledApp(packageName: String): AutoSelectedAppInfo? {
+        if (packageName.isBlank() || packageName == this.packageName) return null
+        if (!staticLauncherPackages.contains(packageName) && !resolvedLauncherPackages.contains(packageName)) {
+            refreshResolvedLauncherPackages()
+        }
+        if (isImePackage(packageName) || isLauncherPackage(packageName) || isAutomationSkipPackage(packageName)) {
+            FileLogger.d(TAG, "新安装应用不适合自动加入截屏列表，已跳过: $packageName")
+            return null
+        }
+
+        return try {
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            val isSystemApp =
+                (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 ||
+                    (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            if (isSystemApp) {
+                FileLogger.d(TAG, "新安装系统应用已跳过: $packageName")
+                return null
+            }
+
+            val appName = packageManager.getApplicationLabel(applicationInfo)?.toString()
+                ?.takeIf { it.isNotBlank() }
+                ?: packageName
+            val version = try {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+            } catch (_: Exception) {
+                ""
+            }
+            AutoSelectedAppInfo(
+                packageName = packageName,
+                appName = appName,
+                version = version,
+                isSystemApp = false
+            )
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "解析新安装应用失败: $packageName - ${e.message}")
+            null
+        }
+    }
+
+    private fun appendAppToSelectedApps(appInfo: AutoSelectedAppInfo): Boolean {
+        synchronized(selectedAppsPrefsLock) {
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val selectedKey = "flutter.selected_apps"
+            val raw = prefs.getString(selectedKey, null)
+            val selectedArray = try {
+                if (raw.isNullOrBlank()) JSONArray() else JSONArray(raw)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "选中应用列表 JSON 解析失败，跳过自动加入: ${e.message}")
+                return false
+            }
+
+            if (jsonArrayContainsPackage(selectedArray, appInfo.packageName)) {
+                FileLogger.d(TAG, "新安装应用已在截屏列表中: ${appInfo.packageName}")
+                return false
+            }
+
+            val appJson = buildSelectedAppJson(appInfo)
+            selectedArray.put(appJson)
+
+            val editor = prefs.edit()
+                .putString(selectedKey, selectedArray.toString())
+                .remove("flutter.all_apps_cache")
+                .remove("flutter.all_apps_cache_ts")
+
+            appendAppIdentityCache(editor, prefs, appJson, appInfo.packageName)
+            editor.apply()
+            return true
+        }
+    }
+
+    private fun buildSelectedAppJson(appInfo: AutoSelectedAppInfo): JSONObject {
+        return JSONObject().apply {
+            put("packageName", appInfo.packageName)
+            put("appName", appInfo.appName)
+            put("version", appInfo.version)
+            put("isSystemApp", appInfo.isSystemApp)
+            put("isInstalled", true)
+            put("isSelected", true)
+            put("icon", JSONObject.NULL)
+        }
+    }
+
+    private fun appendAppIdentityCache(
+        editor: android.content.SharedPreferences.Editor,
+        prefs: android.content.SharedPreferences,
+        appJson: JSONObject,
+        packageName: String
+    ) {
+        val identityKey = "flutter.app_identity_cache"
+        val raw = prefs.getString(identityKey, null)
+        val identityArray = try {
+            if (raw.isNullOrBlank()) JSONArray() else JSONArray(raw)
+        } catch (_: Exception) {
+            JSONArray()
+        }
+        if (!jsonArrayContainsPackage(identityArray, packageName)) {
+            identityArray.put(JSONObject(appJson.toString()))
+            editor.putString(identityKey, identityArray.toString())
+        }
+    }
+
+    private fun jsonArrayContainsPackage(array: JSONArray, packageName: String): Boolean {
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            if (obj.optString("packageName") == packageName) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun isAppInMonitorList(packageName: String): Boolean {
         return try {
             val sharedPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)

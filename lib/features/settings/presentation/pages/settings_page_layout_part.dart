@@ -264,6 +264,7 @@ extension _SettingsLayoutPart on _SettingsPageState {
               context: context,
               children: [
                 _buildScreenshotIntervalItem(context),
+                _buildAutoAddNewAppsToCaptureItem(context),
                 _buildScreenshotDedupeItem(context),
                 _buildScreenshotQualityItem(context),
                 _buildGlobalHistoryCompressionItem(context),

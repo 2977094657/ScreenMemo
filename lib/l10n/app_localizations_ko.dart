@@ -817,6 +817,12 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get autoAddNewAppsToCaptureTitle => '새 앱 자동 추가';
+
+  @override
+  String get autoAddNewAppsToCaptureDesc => '새로 설치된 비시스템 앱을 캡처 목록에 자동으로 추가합니다.';
+
+  @override
   String get screenshotDedupeModeTitle => '화면 중복 제거 강도';
 
   @override
@@ -1256,6 +1262,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get screenshotQualitySettingsSaved => '스크린샷 품질 설정을 저장했습니다';
+
+  @override
+  String get autoAddNewAppsToCaptureEnabledToast => '새 앱 자동 추가를 켰습니다';
+
+  @override
+  String get autoAddNewAppsToCaptureDisabledToast => '새 앱 자동 추가를 껐습니다';
 
   @override
   String saveFailedError(Object error) {

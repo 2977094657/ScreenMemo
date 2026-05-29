@@ -355,6 +355,8 @@
       "seconds": {}
     }
   },
+  "autoAddNewAppsToCaptureTitle": "新安装应用自动加入",
+  "autoAddNewAppsToCaptureDesc": "开启后，新安装的非系统应用会自动加入截屏列表。",
   "screenshotDedupeModeTitle": "画面去重强度",
   "screenshotDedupeModeCurrent": "当前：{mode}",
   "@screenshotDedupeModeCurrent": {
@@ -634,6 +636,8 @@
   "privacyModeEnabledToast": "已开启隐私模式",
   "privacyModeDisabledToast": "已关闭隐私模式",
   "screenshotQualitySettingsSaved": "截图质量设置已保存",
+  "autoAddNewAppsToCaptureEnabledToast": "已开启新安装应用自动加入",
+  "autoAddNewAppsToCaptureDisabledToast": "已关闭新安装应用自动加入",
   "saveFailedError": "保存失败: {error}",
   "@saveFailedError": {
     "placeholders": {

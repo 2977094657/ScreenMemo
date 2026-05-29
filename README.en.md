@@ -301,7 +301,7 @@ flutter build linux -t lib/main_desktop_merger.dart --release
 | Notifications | Foreground service, export / repair / rebuild progress, daily reminders | Recommended |
 | Accessibility service | Automatic capture, activity rebuilding, some background AI flows | Required for core capture |
 | Usage stats | Foreground app detection, app-level filtering and statistics | Strongly recommended |
-| Installed app visibility | Enumerating installed apps for app selection, filtering, and statistics | Needed for the main app-selection flow |
+| Installed app visibility | Enumerating installed apps for app selection, auto-adding newly installed apps, filtering, and statistics | Needed for the main app-selection flow |
 | Ignore battery optimization / auto-start | Improves background capture and rebuild stability | Strongly recommended |
 | Exact alarm | Daily summary reminders | Optional |
 | Photos / downloads write access | Saving screenshots, replay videos, or export results | Optional |

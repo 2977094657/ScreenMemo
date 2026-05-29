@@ -818,6 +818,13 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get autoAddNewAppsToCaptureTitle => '新しいアプリを自動追加';
+
+  @override
+  String get autoAddNewAppsToCaptureDesc =>
+      '新しくインストールされた非システムアプリをキャプチャ一覧へ自動追加します。';
+
+  @override
   String get screenshotDedupeModeTitle => '画面重複除外の強度';
 
   @override
@@ -1258,6 +1265,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get screenshotQualitySettingsSaved => 'スクリーンショットの品質設定を保存しました';
+
+  @override
+  String get autoAddNewAppsToCaptureEnabledToast => '新しいアプリの自動追加を有効にしました';
+
+  @override
+  String get autoAddNewAppsToCaptureDisabledToast => '新しいアプリの自動追加を無効にしました';
 
   @override
   String saveFailedError(Object error) {
