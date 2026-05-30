@@ -40,12 +40,14 @@ object RuntimeDiagnostics {
     private const val EXIT_TRACE_MAX_LINE_CHARS = 240
     private const val EXIT_TRACE_MAX_CHARS = 16_000
     private const val EXIT_TRACE_LOG_CHUNK_CHARS = 1_800
+    private const val PROCESS_STATE_SUMMARY_MAX_BYTES = 1_024
 
     private val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     private val dateDirFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     private val dayFmt = SimpleDateFormat("dd", Locale.getDefault())
 
     fun logProcessStart(context: Context, tag: String, stage: String, force: Boolean = false) {
+        noteProcessState(context, stage)
         try {
             logRecentExitReasonsIfNeeded(context, tag, force)
         } catch (e: Exception) {
@@ -62,6 +64,7 @@ object RuntimeDiagnostics {
         force: Boolean = false,
     ) {
         try {
+            noteProcessState(context, stage, extras)
             val prefs = prefs(context)
             val lastCaptureAt = prefs.getLong(KEY_LAST_CAPTURE_SUCCESS_AT, 0L)
             val lastCaptureApp = prefs.getString(KEY_LAST_CAPTURE_SUCCESS_APP, "") ?: ""
@@ -104,6 +107,37 @@ object RuntimeDiagnostics {
             logLine(context, tag, message, force = force)
         } catch (e: Exception) {
             logLine(context, tag, "logSnapshot failed at $stage: ${e.message}", force = true, error = true)
+        }
+    }
+
+    fun noteProcessState(
+        context: Context,
+        stage: String,
+        extras: Map<String, Any?> = emptyMap(),
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return
+        }
+        try {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val payload = buildString {
+                append("stage=").append(stage)
+                append(" | pid=").append(android.os.Process.myPid())
+                append(" | at=").append(formatTs(System.currentTimeMillis()))
+                extras.forEach { (key, value) ->
+                    append(" | ").append(key).append('=').append(value ?: "-")
+                }
+            }
+            val bytes = payload.toByteArray(Charsets.UTF_8)
+            activityManager.setProcessStateSummary(
+                if (bytes.size > PROCESS_STATE_SUMMARY_MAX_BYTES) {
+                    bytes.copyOf(PROCESS_STATE_SUMMARY_MAX_BYTES)
+                } else {
+                    bytes
+                }
+            )
+        } catch (_: Exception) {
+            // 进程状态摘要只用于下次启动诊断，失败不能影响启动主流程。
         }
     }
 
@@ -242,6 +276,7 @@ object RuntimeDiagnostics {
             if (info.timestamp > lastLoggedTs) {
                 maxLoggedTs = maxOf(maxLoggedTs, info.timestamp)
                 val message = buildString {
+                    val processState = readProcessStateSummary(info)
                     append("recent_exit")
                     append(" | process=").append(info.processName ?: "-")
                     append(" | reason=").append(exitReasonName(info.reason))
@@ -249,6 +284,9 @@ object RuntimeDiagnostics {
                     append(" | importance=").append(info.importance)
                     append(" | timestamp=").append(formatTs(info.timestamp))
                     append(" | desc=").append(info.description ?: "-")
+                    if (!processState.isNullOrBlank()) {
+                        append(" | processState=").append(processState)
+                    }
                 }
                 logLine(context, tag, message, force = force)
             }
@@ -381,6 +419,20 @@ object RuntimeDiagnostics {
         }
     }
 
+    private fun readProcessStateSummary(info: ApplicationExitInfo): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+        return try {
+            info.processStateSummary
+                ?.toString(Charsets.UTF_8)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun logExitTracePreview(
         context: Context,
         tag: String,
@@ -476,6 +528,7 @@ object RuntimeDiagnostics {
         val detectedAt = System.currentTimeMillis()
         val reasonName = exitReasonName(info.reason)
         val logFilePath = buildPreferredLogFilePath(context, detectedAt, preferError = false)
+        val processState = readProcessStateSummary(info)
         val details = linkedMapOf<String, Any?>(
             "诊断类型" to "进程退出",
             "检测时间" to formatTs(detectedAt),
@@ -485,6 +538,7 @@ object RuntimeDiagnostics {
             "重要级别" to info.importance,
             "进程名" to (info.processName ?: "-"),
             "描述" to (info.description ?: "-"),
+            "进程状态" to (processState ?: "-"),
             "Trace摘要" to (tracePreview?.take(1200) ?: "-"),
             "日志文件" to (logFilePath ?: "-"),
         )
@@ -502,6 +556,7 @@ object RuntimeDiagnostics {
                 "exitStatus" to info.status,
                 "exitImportance" to info.importance,
                 "exitDescription" to (info.description ?: ""),
+                "exitProcessState" to (processState ?: ""),
                 "exitTracePreview" to (tracePreview ?: ""),
                 "logDirPath" to buildLogDirPath(context, detectedAt),
                 "logFilePath" to logFilePath,

@@ -2468,53 +2468,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun switchLauncherAliasInternal(lang: String): Boolean {
-        return try {
-            val pm = packageManager
-            val aliases = mapOf(
-                "zh" to ComponentName(this, "$packageName.LauncherAliasZh"),
-                "en" to ComponentName(this, "$packageName.LauncherAliasEn"),
-                "ja" to ComponentName(this, "$packageName.LauncherAliasJa"),
-                "ko" to ComponentName(this, "$packageName.LauncherAliasKo")
-            )
-            val manifestDefaults = mapOf(
-                "zh" to true,
-                "en" to false,
-                "ja" to false,
-                "ko" to false
-            )
-            val langLower = lang.lowercase()
-            val target = aliases[langLower] ?: aliases["en"]!!
-            for ((code, component) in aliases) {
-                val shouldEnable = component == target
-                val currentState = pm.getComponentEnabledSetting(component)
-                val currentlyEnabled = when (currentState) {
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED -> false
-                    else -> manifestDefaults[code] == true
-                }
-                if (currentlyEnabled == shouldEnable) {
-                    try { FileLogger.i(TAG, "Launcher 别名状态无需更新：lang=$code 启用=$shouldEnable") } catch (_: Exception) {}
-                    continue
-                }
-
-                val state = if (shouldEnable)
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                else
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                pm.setComponentEnabledSetting(
-                    component,
-                    state,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-                try { FileLogger.i(TAG, "Launcher 别名状态已更新：lang=$code 启用=$shouldEnable") } catch (_: Exception) {}
-            }
-            true
-        } catch (e: Exception) {
-            try { FileLogger.e(TAG, "切换Launcher别名异常", e) } catch (_: Exception) {}
-            false
-        }
+        // 启动入口已固定为 MainActivity。保留该方法作为 Flutter 侧兼容 no-op，
+        // 避免在小米/HyperOS 等桌面上动态启停 launcher alias 触发启动入口异常。
+        try { FileLogger.i(TAG, "Launcher alias switch skipped; stable MainActivity launcher is active, lang=$lang") } catch (_: Exception) {}
+        return true
     }
 
     private fun openDiagnosticFile(path: String, result: MethodChannel.Result) {

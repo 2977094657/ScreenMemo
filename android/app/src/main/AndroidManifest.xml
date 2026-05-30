@@ -67,7 +67,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- 主 Activity，启动入口由 activity-alias 控制图标与名称 -->
+            <!-- 主 Activity 作为稳定启动入口，避免部分 OEM 桌面对 activity-alias 启动入口处理异常。 -->
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
@@ -76,61 +76,44 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
-            <!-- LAUNCHER moved to activity-alias for dynamic label switching -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
         </activity>
 
-        <!-- Launcher aliases for dynamic label switching -->
+        <!-- 历史 launcher aliases：保留启用状态，兼容旧桌面缓存的显式组件启动。 -->
         <activity-alias
             android:name=".LauncherAliasZh"
             android:exported="true"
             android:enabled="true"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".MainActivity" />
 
         <activity-alias
             android:name=".LauncherAliasEn"
             android:exported="true"
-            android:enabled="false"
+            android:enabled="true"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name_en"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".MainActivity" />
 
         <activity-alias
             android:name=".LauncherAliasJa"
             android:exported="true"
-            android:enabled="false"
+            android:enabled="true"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name_ja"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".MainActivity" />
 
         <activity-alias
             android:name=".LauncherAliasKo"
             android:exported="true"
-            android:enabled="false"
+            android:enabled="true"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name_ko"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".MainActivity" />
 
         <!-- 无障碍服务声明 -->
         <service

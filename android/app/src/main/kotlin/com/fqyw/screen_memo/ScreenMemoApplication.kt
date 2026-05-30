@@ -17,6 +17,20 @@ import kotlin.system.exitProcess
 class ScreenMemoApplication : Application() {
     companion object {
         private const val TAG = "ScreenMemoApplication"
+        @Volatile private var uncaughtHandlerInstalled = false
+    }
+
+    override fun attachBaseContext(base: Context) {
+        installUncaughtExceptionLogger(base)
+        try {
+            RuntimeDiagnostics.noteProcessState(base, "application_attachBaseContext")
+            OutputFileLogger.infoForce(
+                base,
+                TAG,
+                "stage=application_attachBaseContext | pid=${android.os.Process.myPid()}"
+            )
+        } catch (_: Exception) {}
+        super.attachBaseContext(base)
     }
 
     override fun onCreate() {
@@ -64,6 +78,10 @@ class ScreenMemoApplication : Application() {
     }
 
     private fun installUncaughtExceptionLogger(context: Context) {
+        synchronized(ScreenMemoApplication::class.java) {
+            if (uncaughtHandlerInstalled) return
+            uncaughtHandlerInstalled = true
+        }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
