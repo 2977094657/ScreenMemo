@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -203,5 +204,55 @@ class PerAppScreenshotSettingsService {
   ) async {
     final clamped = seconds < 1 ? 1 : (seconds > 60 ? 60 : seconds);
     await _setRaw(packageName, 'screenshot_interval_sec', clamped.toString());
+  }
+
+  // ============== Activity 黑名单 ==============
+
+  /// 获取指定应用的 Activity 黑名单列表。
+  /// 每个元素是一个 Activity 的全类名（如 com.example.LoginActivity）。
+  Future<List<String>> getActivityBlacklist(String packageName) async {
+    final raw = await _getRaw(packageName, 'activity_blacklist');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => e.toString()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 保存指定应用的 Activity 黑名单。
+  Future<void> saveActivityBlacklist(
+    String packageName,
+    List<String> blacklist,
+  ) async {
+    final raw = jsonEncode(blacklist);
+    await _setRaw(packageName, 'activity_blacklist', raw);
+  }
+
+  /// 添加一个 Activity 到黑名单。
+  Future<void> addActivityToBlacklist(
+    String packageName,
+    String activityClass,
+  ) async {
+    final list = await getActivityBlacklist(packageName);
+    if (list.contains(activityClass)) return;
+    list.add(activityClass);
+    await saveActivityBlacklist(packageName, list);
+  }
+
+  /// 从黑名单中移除一个 Activity。
+  Future<void> removeActivityFromBlacklist(
+    String packageName,
+    String activityClass,
+  ) async {
+    final list = await getActivityBlacklist(packageName);
+    list.remove(activityClass);
+    await saveActivityBlacklist(packageName, list);
+  }
+
+  /// 清空指定应用的黑名单。
+  Future<void> clearActivityBlacklist(String packageName) async {
+    await _setRaw(packageName, 'activity_blacklist', null);
   }
 }
