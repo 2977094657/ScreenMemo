@@ -43,7 +43,6 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.system.Os
- 
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -71,40 +70,3 @@ import com.fqyw.screen_memo.settings.UserSettingsKeysNative
 import com.fqyw.screen_memo.settings.UserSettingsStorage
 import org.json.JSONArray
 import org.json.JSONObject
-
-class ScreenCaptureAccessibilityService : AccessibilityService() {
-    
-    companion object {
-        private const val TAG = "ScreenCaptureService"
-        private const val PERF_TAG = "ScreenshotPerf"
-        private const val NOTIFICATION_ID = 1001
-        private const val CHANNEL_ID = "screen_capture_channel"
-        private const val REQUEST_CODE = 1000
-        private const val RESTART_REQUEST_CODE = 2000
-
-        var instance: ScreenCaptureAccessibilityService? = null
-        var isServiceRunning = false
-    }
-
-    // ... [existing fields remain unchanged up to line ~280 - keeping all existing code]
-
-    // ===================== Activity 黑名单相关 =====================
-    @Volatile private var currentActivityClassName: String? = null
-
-    /**
-     * 检查指定应用的当前 Activity 是否在黑名单中。
-     * 黑名单存储在每应用设置数据库 settings.db 的 activity_blacklist 键中，
-     * 值为 JSONArray of fully-qualified class names。
-     */
-    private fun isCurrentActivityBlacklisted(packageName: String): Boolean {
-        val className = currentActivityClassName ?: return false
-        if (className.isBlank()) return false
-        val blacklist = PerAppSettingsBridge.readActivityBlacklist(this, packageName)
-        if (blacklist.isEmpty()) return false
-        val matched = blacklist.any { it == className }
-        if (matched) {
-            FileLogger.i(TAG, "Activity 黑名单命中: $packageName/$className，跳过截屏")
-        }
-        return matched
-    }
-}
