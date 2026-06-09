@@ -1,0 +1,165 @@
+name: Build APK (Debug Signing)
+
+on:
+  push:
+    branches:
+      - feature/activity-blacklist
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.35.7"
+  JAVA_VERSION: "17"
+  NDK_VERSION: "27.0.12077973"
+  BUILD_TOOLS_VERSION: "36.0.0"
+  ANDROID_PLATFORM: "android-36"
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          sdkmanager \
+            "platform-tools" \
+            "platforms;${{ env.ANDROID_PLATFORM }}" \
+            "build-tools;${{ env.BUILD_TOOLS_VERSION }}" \
+            "ndk;${{ env.NDK_VERSION }}"
+
+      - name: Generate debug keystore for signing
+        shell: bash
+        run: |
+          mkdir -p android/app
+          keytool -genkeypair -v \
+            -keystore android/app/upload-keystore.jks \
+            -storetype PKCS12 \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -alias upload \
+            -storepass android \
+            -keypass android \
+            -dname "CN=CI Builder, OU=Development, O=ScreenMemo, L=Unknown, ST=Unknown, C=US" \
+            2>&1
+
+          CERT_SHA256="$(keytool -list -v -keystore android/app/upload-keystore.jks \
+            -alias upload -storepass android -keypass android \
+            | awk -F': ' '/SHA256/ { print tolower($2); exit }' \
+            | sed 's/[^0-9a-f]//g')"
+
+          {
+            echo "storePassword=android"
+            echo "keyPassword=android"
+            echo "keyAlias=upload"
+            echo "storeFile=upload-keystore.jks"
+            echo "storeType=PKCS12"
+            echo "certSha256=$CERT_SHA256"
+          } > android/key.properties
+
+          chmod 600 android/app/upload-keystore.jks android/key.properties
+
+      - name: Verify signing config
+        shell: bash
+        working-directory: android
+        run: |
+          ./gradlew :app:validateReleaseSigning :app:validateSigningRelease
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Generate l10n
+        run: flutter gen-l10n
+
+      - name: Build APKs (split per ABI)
+        id: build
+        shell: bash
+        run: |
+          BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+          BUILD_NAME="0.0.1-dev+$BUILD_NUMBER"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "build_name=$BUILD_NAME" >> "$GITHUB_OUTPUT"
+
+          flutter build apk --release --split-per-abi \
+            --tree-shake-icons \
+            --obfuscate \
+            --split-debug-info=build/symbols \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER"
+
+      - name: Verify APK signing
+        shell: bash
+        run: |
+          apksigner="$ANDROID_HOME/build-tools/${{ env.BUILD_TOOLS_VERSION }}/apksigner"
+          shopt -s nullglob
+          apks=(build/app/outputs/flutter-apk/*-release.apk)
+          if (( ${#apks[@]} == 0 )); then
+            echo "::error::No release APKs found."
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            "$apksigner" verify --verbose "$apk" | head -5
+            echo "---"
+          done
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          for apk in build/app/outputs/flutter-apk/*.apk; do
+            base="$(basename "$apk")"
+            cp "$apk" "dist/activity-blacklist-${base}"
+          done
+          if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
+            cp build/app/outputs/mapping/release/mapping.txt dist/proguard-mapping.txt
+          fi
+          (cd build && zip -r "../dist/debug-symbols-$(date +%Y%m%d).zip" symbols 2>/dev/null || true)
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: activity-blacklist-apks
+          path: dist/*.apk
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols
+          path: dist/debug-symbols-*.zip
+          compression-level: 9
+          if-no-files-found: ignore
+
+      - name: Upload ProGuard mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: proguard-mapping
+          path: dist/proguard-mapping.txt
+          compression-level: 9
+          if-no-files-found: ignore
