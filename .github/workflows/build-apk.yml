@@ -94,7 +94,7 @@ jobs:
             BUILD_NUMBER=$((10#$MAJOR * 1000000 + 10#$MINOR * 1000 + 10#$PATCH))
           else
             VERSION="0.0.1-dev"
-            BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+            BUILD_NUMBER="$(date +%s)"
           fi
 
           echo "tag=ci-build" >> "$GITHUB_OUTPUT"
