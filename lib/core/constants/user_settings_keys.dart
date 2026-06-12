@@ -13,6 +13,8 @@ class UserSettingKeys {
   static const String screenshotEnabled = 'screenshot_enabled';
   static const String autoAddNewAppsToCapture =
       'auto_add_new_apps_to_capture';
+  static const String windowScreenshotApiEnabled =
+      'window_screenshot_api_enabled';
   static const String screenshotDedupeMode = 'screenshot_dedupe_mode';
   static const String imageFormat = 'image_format';
   static const String imageQuality = 'image_quality';

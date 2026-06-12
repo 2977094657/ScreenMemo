@@ -129,6 +129,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isLoadingKeepAlive = true;
   int _screenshotInterval = 5;
   bool _autoAddNewAppsToCapture = false;
+  bool _windowScreenshotApiEnabled = false;
   bool _privacyMode = true; // 隐私模式，默认开启
   // 段落采样设置
   int _segmentSampleIntervalSec = 20; // 最小5秒
@@ -154,7 +155,6 @@ class _SettingsPageState extends State<SettingsPage>
   String _screenshotDedupeMode =
       'balanced'; // exact | conservative | balanced | aggressive
   String _aiImageSendFormat = 'original'; // original | jpeg | png
-  bool _grayscale = false; // 已移除，保持为 false
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
@@ -196,9 +196,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _logManagementDeleting = false;
   McpServerStatus? _mcpStatus;
   bool _mcpLoading = false;
-  late final Future<PackageInfo> _packageInfoFuture =
-      PackageInfo.fromPlatform();
-  int _aboutVersionTapCount = 0;
   bool _externalMcpLoading = false;
   List<McpClientServer> _externalMcpServers = <McpClientServer>[];
   final Set<String> _externalMcpSyncingIds = <String>{};
@@ -206,6 +203,9 @@ class _SettingsPageState extends State<SettingsPage>
   final Set<String> _externalMcpToolBusyNames = <String>{};
   bool _skillsLoading = false;
   List<SkillMetadata> _skills = <SkillMetadata>[];
+  late final Future<PackageInfo> _packageInfoFuture =
+      PackageInfo.fromPlatform();
+  int _aboutVersionTapCount = 0;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -294,6 +294,7 @@ class _SettingsPageState extends State<SettingsPage>
       case _SettingsSubPage.screenshot:
         unawaited(_loadScreenshotInterval());
         unawaited(_loadAutoAddNewAppsToCapture());
+        unawaited(_loadWindowScreenshotApiEnabled());
         unawaited(_loadScreenshotDedupeMode());
         unawaited(_loadScreenshotQualitySettings());
         unawaited(_loadScreenshotExpireSettings());

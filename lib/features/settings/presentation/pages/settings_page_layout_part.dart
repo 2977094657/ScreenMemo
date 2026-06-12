@@ -284,6 +284,7 @@ extension _SettingsLayoutPart on _SettingsPageState {
               children: [
                 _buildScreenshotIntervalItem(context),
                 _buildAutoAddNewAppsToCaptureItem(context),
+                _buildWindowScreenshotApiItem(context),
                 _buildScreenshotDedupeItem(context),
                 _buildScreenshotQualityItem(context),
                 _buildGlobalHistoryCompressionItem(context),
@@ -476,42 +477,6 @@ extension _SettingsLayoutPart on _SettingsPageState {
           colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
         ),
       ),
-    );
-  }
-
-  Widget _buildSection({
-    required BuildContext context,
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(
-            left: AppTheme.spacing1,
-            bottom: AppTheme.spacing3,
-          ),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.8),
-              width: 1,
-            ),
-          ),
-          child: Column(children: children),
-        ),
-      ],
     );
   }
 }
