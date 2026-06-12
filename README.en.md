@@ -184,15 +184,52 @@ cd android
 ./gradlew test
 ```
 
-## MCP Service
+## MCP Service and Client
 
-ScreenMemo can manually start a read-only LAN MCP service on the phone, allowing AI clients on the same local network to read activity summaries, search results, context snippets, and a small number of explicitly requested evidence images.
+ScreenMemo supports MCP in both directions: it can manually start a read-only LAN MCP service on the phone, and it can also act as an MCP client that connects the in-app AI chat to external MCP servers.
+
+### LAN MCP Server
+
+The LAN MCP service allows AI clients on the same local network to read activity summaries, search results, context snippets, and a small number of explicitly requested evidence images.
 
 - Enable the LAN MCP service manually in the Android app under "Settings -> MCP Service".
 - The endpoint is fixed at `http://<phone-lan-ip>:37621/mcp`, and requests must include `Authorization: Bearer <token>`.
 - Standard MCP clients should use `tools/list` to discover tools and `tools/call` to invoke them. For compatibility with some clients, declared tool names can also be called directly as JSON-RPC `method` values.
 - OCR text and image base64 are not returned by default. Sensitive content is only returned when tool parameters explicitly enable `include_ocr`, or when calling `get_evidence_images`, with quantity and length limits.
 - If port `37621` is occupied, the settings page shows a startup error and does not automatically switch to a random port.
+
+### External MCP Client
+
+- In "Settings -> MCP Service -> External MCP servers", you can add or edit external MCP servers with JSON, then sync, enable/disable, and delete them.
+- The add/edit dialog supports Claude / RikkaHub style `mcpServers` JSON:
+  ```json
+  {
+    "mcpServers": {
+      "demo": {
+        "type": "streamable_http",
+        "url": "https://example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer YOUR_TOKEN"
+        }
+      }
+    }
+  }
+  ```
+- The external MCP client supports `streamable_http` and legacy HTTP+SSE (`sse`) transports; unsupported transports fail explicitly during save or sync instead of being silently downgraded.
+- Sync calls MCP `initialize`, `notifications/initialized`, and `tools/list`, then caches tool names, descriptions, and input schemas. Re-sync keeps the user's existing per-tool enabled settings.
+- Tools exposed to AI are namespaced as `mcp__<server>__<tool>__<hash>` to avoid collisions across MCP servers.
+- Newly synced external tools are disabled by default. Users can enable them in Settings, or ask the AI in chat to configure and sync MCP. AI-initiated MCP configuration, sync, and enabled external tool calls run directly and refresh available tools within the current chat turn.
+- Sensitive header values are redacted in UI, logs, and chat tool results. External MCP tool output should still be treated as untrusted data.
+
+## Skills
+
+ScreenMemo supports RikkaHub-style local Skills: users can install a directory containing `SKILL.md`, then the in-app AI can load specialized instructions and companion files during chat.
+
+- In "Settings -> Skills", you can paste a single `SKILL.md` to create a skill.
+- Each installed skill can be enabled or disabled from the Skills list. Only enabled skills are exposed to AI chat.
+- Opening a skill shows its full file list. You can copy file contents, edit `SKILL.md` or companion text files, add companion files, and delete files other than `SKILL.md`.
+- In chat, AI loads skills through the `use_skill` tool. Without `path`, it returns the `SKILL.md` body and available file list; with a safe relative path, it reads that companion file. Reads are always confined to the selected skill directory.
+- Skill content is locally installed by the user and should still be treated as external instructions. Do not place tokens, secrets, or private data in skill folders.
 
 ## Support the Project
 

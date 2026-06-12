@@ -183,15 +183,52 @@ cd android
 ./gradlew test
 ```
 
-## MCP 服务
+## MCP 服务与客户端
 
-ScreenMemo 可以在手机上手动开启只读的局域网 MCP 服务，让同一局域网内的 AI 客户端读取动态摘要、搜索结果、上下文片段和少量显式请求的证据图片。
+ScreenMemo 支持双向 MCP：既可以在手机上手动开启只读的局域网 MCP 服务，也可以作为 MCP 客户端连接其他外部 MCP 服务，让应用内 AI 在聊天中调用这些外部工具。
+
+### 局域网 MCP 服务端
+
+局域网 MCP 服务让同一局域网内的 AI 客户端读取动态摘要、搜索结果、上下文片段和少量显式请求的证据图片。
 
 - 在 Android App 的“设置 → MCP 服务”中手动开启局域网 MCP 服务。
 - Endpoint 固定为 `http://<手机局域网IP>:37621/mcp`，请求必须带 `Authorization: Bearer <token>`。
 - 标准 MCP 客户端应通过 `tools/list` 获取工具，并通过 `tools/call` 调用工具；为兼容部分客户端，也支持把已声明工具名直接作为 JSON-RPC `method` 调用。
 - 默认不会返回 OCR 原文或图片 base64。只有工具参数显式开启 `include_ocr`，或调用 `get_evidence_images` 时才会返回敏感内容，并带有数量/长度限制。
 - 若端口 `37621` 被占用，设置页会显示启动错误，不会自动切换随机端口。
+
+### 外部 MCP 客户端
+
+- 在“设置 → MCP 服务 → External MCP servers”中可以用 JSON 添加或编辑、同步、启停和删除外部 MCP 服务。
+- 添加/编辑时支持 Claude / RikkaHub 风格的 `mcpServers` JSON：
+  ```json
+  {
+    "mcpServers": {
+      "demo": {
+        "type": "streamable_http",
+        "url": "https://example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer YOUR_TOKEN"
+        }
+      }
+    }
+  }
+  ```
+- 外部 MCP 客户端支持 `streamable_http` 与旧版 HTTP+SSE（`sse`）transport；不支持的 transport 会在保存或同步时明确报错，不会静默降级。
+- 同步时会调用 MCP `initialize`、`notifications/initialized`、`tools/list`，并缓存工具名、描述和输入 schema；再次同步会保留用户已有的工具启用状态。
+- 外部工具暴露给 AI 时会自动命名为 `mcp__<server>__<tool>__<hash>`，避免多个 MCP 服务之间的同名工具冲突。
+- 新同步的外部工具默认不启用；用户可在设置页打开工具，也可以在聊天中要求 AI 配置并同步 MCP。AI 发起的 MCP 配置、同步和已启用外部工具调用都会直接执行，并在当前这轮聊天里刷新可用工具。
+- 请求头中的敏感值会在 UI、日志和聊天工具结果中脱敏；外部 MCP 工具输出仍应视为不可信数据。
+
+## Skills
+
+ScreenMemo 支持 RikkaHub 风格的本地 Skill 扩展：用户可以安装包含 `SKILL.md` 的技能目录，让应用内 AI 在聊天中按需加载专门指令和附属文件。
+
+- 在“设置 → Skills”中可以粘贴单个 `SKILL.md` 创建技能。
+- Skills 列表中可以启用/禁用单个技能。只有已启用的技能会暴露给 AI 聊天。
+- 点进技能详情可以查看完整文件列表、复制文件内容、编辑 `SKILL.md` 或附属文本文件、新增附属文件，并删除非 `SKILL.md` 文件。
+- 聊天时 AI 会通过 `use_skill` 工具加载技能：不传 `path` 时返回 `SKILL.md` 正文和可用文件列表；传入安全的相对路径时读取对应附属文件。读取路径始终限制在该技能目录内。
+- Skill 内容来自本地用户安装的扩展，仍应视为外部指令来源；不要把令牌、密钥或隐私数据放进技能目录。
 
 ## 支持项目
 
