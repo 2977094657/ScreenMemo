@@ -1039,12 +1039,14 @@ class UILoadingState extends StatelessWidget {
   final String? label;
   final EdgeInsetsGeometry padding;
   final bool compact;
+  final bool showIndicatorBackground;
 
   const UILoadingState({
     super.key,
     this.label,
     this.padding = const EdgeInsets.all(AppTheme.spacing6),
     this.compact = false,
+    this.showIndicatorBackground = true,
   });
 
   @override
@@ -1053,20 +1055,10 @@ class UILoadingState extends StatelessWidget {
     final double iconBoxSize = compact ? 44 : 52;
     final double indicatorSize = compact ? 18 : 22;
 
-    return _UIStateLayout(
-      padding: padding,
-      icon: Container(
-        width: iconBoxSize,
-        height: iconBoxSize,
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          border: Border.all(
-            color: cs.outline.withValues(alpha: 0.75),
-            width: 1,
-          ),
-        ),
-        alignment: Alignment.center,
+    final Widget indicator = SizedBox(
+      width: iconBoxSize,
+      height: iconBoxSize,
+      child: Center(
         child: SizedBox(
           width: indicatorSize,
           height: indicatorSize,
@@ -1076,6 +1068,26 @@ class UILoadingState extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    return _UIStateLayout(
+      padding: padding,
+      icon: showIndicatorBackground
+          ? Container(
+              width: iconBoxSize,
+              height: iconBoxSize,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                border: Border.all(
+                  color: cs.outline.withValues(alpha: 0.75),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: indicator,
+            )
+          : indicator,
       title: label,
     );
   }

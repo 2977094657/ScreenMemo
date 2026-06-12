@@ -187,7 +187,10 @@ extension _HomePageContentPart on _HomePageState {
         else if (showInitialLoading)
           const SliverFillRemaining(
             hasScrollBody: false,
-            child: UILoadingState(compact: true),
+            child: UILoadingState(
+              compact: true,
+              showIndicatorBackground: false,
+            ),
           )
         else
           SliverFillRemaining(hasScrollBody: false, child: _buildEmptyState()),
