@@ -7,8 +7,11 @@ import com.elvishew.xlog.printer.file.FilePrinter
 import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy
 import com.elvishew.xlog.printer.file.naming.FileNameGenerator
 import com.elvishew.xlog.flattener.PatternFlattener
+import com.fqyw.screen_memo.settings.UserSettingsKeysNative
+import com.fqyw.screen_memo.settings.UserSettingsStorage
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.LinkedBlockingQueue
@@ -27,8 +30,12 @@ object OutputFileLogger {
     private val dateDirFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     private val dayFmt = SimpleDateFormat("dd", Locale.getDefault())
     private val tsFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+    private val yearDirRegex = Regex("^\\d{4}$")
+    private val monthDayDirRegex = Regex("^\\d{2}$")
 
     private const val MAX_QUEUE_CAPACITY = 4096
+    private const val DEFAULT_RETENTION_DAYS = 30
+    private const val CLEANUP_INTERVAL_MS = 12L * 60L * 60L * 1000L
     private val queue = LinkedBlockingQueue<LogItem>(MAX_QUEUE_CAPACITY)
 
     @Volatile
@@ -39,6 +46,9 @@ object OutputFileLogger {
 
     @Volatile
     private var enabled = true
+
+    @Volatile
+    private var lastCleanupAt = 0L
 
     private val directWriteLock = Any()
 
@@ -77,6 +87,7 @@ object OutputFileLogger {
     }
 
     private fun writeDirect(context: Context, isError: Boolean, tag: String, message: String) {
+        cleanupExpiredLogsIfNeeded(context)
         val ts = System.currentTimeMillis()
         val base = context.getExternalFilesDir(null) ?: return
         val dayKey = dateDirFmt.format(Date(ts))
@@ -102,6 +113,7 @@ object OutputFileLogger {
      */
     fun getTodayDir(context: Context): File? {
         return try {
+            cleanupExpiredLogsIfNeeded(context)
             val base = context.getExternalFilesDir(null) ?: return null
             val dir = File(base, "output/logs/" + dateDirFmt.format(Date()))
             if (!dir.exists()) dir.mkdirs()
@@ -109,11 +121,40 @@ object OutputFileLogger {
         } catch (_: Exception) { null }
     }
 
+    fun cleanupExpiredLogsIfNeeded(
+        context: Context,
+        retentionDays: Int? = null,
+        force: Boolean = false
+    ) {
+        try {
+            val appCtx = safeAppContext(context)
+            val now = System.currentTimeMillis()
+            if (!force && now - lastCleanupAt < CLEANUP_INTERVAL_MS) return
+            lastCleanupAt = now
+            Thread(
+                {
+                    try {
+                        cleanupExpiredLogs(appCtx, retentionDays)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "日志清理线程异常", t)
+                    }
+                },
+                "OutputFileLogger-Cleanup"
+            ).apply {
+                isDaemon = true
+                start()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "日志清理启动失败", e)
+        }
+    }
+
     /**
      * 入队一条日志，主线程快速返回；若队列已满，将节流输出一次丢弃告警。
      */
     private fun enqueue(context: Context, isError: Boolean, tag: String, message: String) {
         try {
+            cleanupExpiredLogsIfNeeded(context)
             if (!enabled) return
             // 分类/级别门控：未放行则不入队
             try {
@@ -121,7 +162,7 @@ object OutputFileLogger {
                 if (!allowed) return
             } catch (_: Exception) {}
             ensureWorker()
-            val appCtx = context.applicationContext
+            val appCtx = safeAppContext(context)
             val offered = queue.offer(LogItem(appCtx, isError, tag, message))
             if (!offered) {
                 val now = System.currentTimeMillis()
@@ -138,7 +179,7 @@ object OutputFileLogger {
     private fun enqueueForce(context: Context, isError: Boolean, tag: String, message: String) {
         try {
             ensureWorker()
-            val appCtx = context.applicationContext
+            val appCtx = safeAppContext(context)
             val offered = queue.offer(LogItem(appCtx, isError, tag, message))
             if (!offered) {
                 val now = System.currentTimeMillis()
@@ -207,6 +248,7 @@ object OutputFileLogger {
     private var currentPrinter: FilePrinter? = null
 
     private fun ensureFilePrinter(context: Context, timestamp: Long): FilePrinter {
+        cleanupExpiredLogsIfNeeded(context)
         val dayKey = dateDirFmt.format(Date(timestamp)) // yyyy/MM/dd
         val existing = currentPrinter
         if (existing != null && currentDayKey == dayKey) return existing
@@ -235,5 +277,90 @@ object OutputFileLogger {
         currentDayKey = dayKey
         currentPrinter = printer
         return printer
+    }
+
+    private fun cleanupExpiredLogs(context: Context, retentionDays: Int?) {
+        try {
+            val days = (retentionDays ?: UserSettingsStorage.getInt(
+                context,
+                UserSettingsKeysNative.LOG_RETENTION_DAYS,
+                DEFAULT_RETENTION_DAYS
+            )).coerceAtLeast(1)
+            val base = context.getExternalFilesDir(null) ?: return
+            val logsRoot = File(base, "output/logs")
+            if (!logsRoot.exists() || !logsRoot.isDirectory) return
+            val cutoff = startOfTodayMillis() - (days.toLong() * 24L * 60L * 60L * 1000L)
+
+            logsRoot.listFiles()
+                ?.filter { it.isDirectory && yearDirRegex.matches(it.name) }
+                ?.forEach { yearDir ->
+                    yearDir.listFiles()
+                        ?.filter { it.isDirectory && monthDayDirRegex.matches(it.name) }
+                        ?.forEach { monthDir ->
+                            monthDir.listFiles()
+                                ?.filter { it.isDirectory && monthDayDirRegex.matches(it.name) }
+                                ?.forEach { dayDir ->
+                                    val dayStart = parseDayStartMillis(
+                                        yearDir.name,
+                                        monthDir.name,
+                                        dayDir.name
+                                    ) ?: return@forEach
+                                    if (dayStart < cutoff) {
+                                        try {
+                                            dayDir.deleteRecursively()
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "删除过期日志目录失败: ${dayDir.absolutePath}", e)
+                                        }
+                                    }
+                                }
+                            deleteIfEmpty(monthDir)
+                        }
+                    deleteIfEmpty(yearDir)
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "日志清理失败", e)
+        }
+    }
+
+    private fun startOfTodayMillis(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    private fun parseDayStartMillis(year: String, month: String, day: String): Long? {
+        val y = year.toIntOrNull() ?: return null
+        val m = month.toIntOrNull() ?: return null
+        val d = day.toIntOrNull() ?: return null
+        return try {
+            Calendar.getInstance().apply {
+                isLenient = false
+                clear()
+                set(Calendar.YEAR, y)
+                set(Calendar.MONTH, m - 1)
+                set(Calendar.DAY_OF_MONTH, d)
+            }.timeInMillis
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun deleteIfEmpty(dir: File) {
+        try {
+            if (dir.isDirectory && dir.listFiles()?.isEmpty() == true) {
+                dir.delete()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun safeAppContext(context: Context): Context {
+        return try {
+            context.applicationContext ?: context
+        } catch (_: Exception) {
+            context
+        }
     }
 }

@@ -2755,6 +2755,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get loggingScreenshotDesc => '스크린샷 캡처 및 정리를 기록합니다';
 
   @override
+  String get logRetentionDaysTitle => '로그 보관 일수';
+
+  @override
+  String logRetentionDaysDesc(Object days) {
+    return '$days일보다 오래된 로컬 로그는 자동으로 삭제됩니다';
+  }
+
+  @override
+  String logRetentionDaysValue(Object days) {
+    return '$days일';
+  }
+
+  @override
+  String get logRetentionDaysDialogMessage =>
+      '이 값보다 오래된 로컬 로그는 자동으로 삭제됩니다. 최소값은 1일이며 상한은 없습니다.';
+
+  @override
+  String get logRetentionDaysLabel => '일수';
+
+  @override
+  String get logRetentionDaysInvalid => '유효한 일수를 입력하세요.';
+
+  @override
+  String get logRetentionDaysSaved => '로그 보관 설정을 저장했습니다.';
+
+  @override
   String get themeModeAuto => '자동';
 
   @override

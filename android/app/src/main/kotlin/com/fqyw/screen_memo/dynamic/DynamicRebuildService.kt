@@ -10,7 +10,6 @@ import com.fqyw.screen_memo.segment.SegmentSummaryManager
 import com.fqyw.screen_memo.settings.AISettingsNative
 import com.fqyw.screen_memo.settings.UserSettingsKeysNative
 import com.fqyw.screen_memo.settings.UserSettingsStorage
-import com.fqyw.screen_memo.logging.OutputFileLogger
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -365,7 +364,7 @@ class DynamicRebuildService : Service() {
             if (normalized.isEmpty()) return
             val appCtx = try { context.applicationContext } catch (_: Exception) { context }
             try {
-                OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+                FileLogger.i(TAG, "BACKFILL_DIAG $normalized")
             } catch (_: Exception) {}
         }
 

@@ -2726,6 +2726,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loggingScreenshotDesc => '记录截图采集与清理过程日志';
 
   @override
+  String get logRetentionDaysTitle => '日志保留天数';
+
+  @override
+  String logRetentionDaysDesc(Object days) {
+    return '超过 $days 天的本地日志会自动删除';
+  }
+
+  @override
+  String logRetentionDaysValue(Object days) {
+    return '$days 天';
+  }
+
+  @override
+  String get logRetentionDaysDialogMessage => '超过该天数的本地日志会自动删除。最小值为 1 天，不设置上限。';
+
+  @override
+  String get logRetentionDaysLabel => '天数';
+
+  @override
+  String get logRetentionDaysInvalid => '请输入有效的天数。';
+
+  @override
+  String get logRetentionDaysSaved => '日志保留设置已保存。';
+
+  @override
   String get themeModeAuto => '自动';
 
   @override

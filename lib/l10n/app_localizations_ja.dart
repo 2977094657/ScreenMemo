@@ -2757,6 +2757,32 @@ class AppLocalizationsJa extends AppLocalizations {
   String get loggingScreenshotDesc => 'スクリーンショットの取得とクリーンアップを記録';
 
   @override
+  String get logRetentionDaysTitle => 'ログ保持日数';
+
+  @override
+  String logRetentionDaysDesc(Object days) {
+    return '$days 日より古いローカルログは自動的に削除されます';
+  }
+
+  @override
+  String logRetentionDaysValue(Object days) {
+    return '$days 日';
+  }
+
+  @override
+  String get logRetentionDaysDialogMessage =>
+      'この日数より古いローカルログは自動的に削除されます。最小は 1 日で、上限はありません。';
+
+  @override
+  String get logRetentionDaysLabel => '日数';
+
+  @override
+  String get logRetentionDaysInvalid => '有効な日数を入力してください。';
+
+  @override
+  String get logRetentionDaysSaved => 'ログ保持設定を保存しました。';
+
+  @override
   String get themeModeAuto => '自動';
 
   @override

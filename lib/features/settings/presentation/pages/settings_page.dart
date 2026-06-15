@@ -171,6 +171,8 @@ class _SettingsPageState extends State<SettingsPage>
   int _dailyNotifyMinute = 0;
   // 日志开关（默认开启）
   bool _loggingEnabled = true;
+  int _logRetentionDays = FlutterLogger.defaultLogRetentionDays;
+  bool _savingLogRetentionDays = false;
   // 分类日志开关：AI 与 截图
   bool _aiLoggingEnabled = false;
   bool _screenshotLoggingEnabled = false;
@@ -327,6 +329,7 @@ class _SettingsPageState extends State<SettingsPage>
         break;
       case _SettingsSubPage.advanced:
         unawaited(_loadLoggingEnabled());
+        unawaited(_loadLogRetentionDays());
         unawaited(_loadRenderImagesDuringStreaming());
         unawaited(_loadAiChatPerfOverlayEnabled());
         unawaited(_loadDynamicEntryLogIconEnabled());

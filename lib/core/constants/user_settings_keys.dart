@@ -49,6 +49,8 @@ class UserSettingKeys {
       'dynamic_entry_log_icon_enabled';
 
   // 日志管理
+  static const String logRetentionDays = 'log_retention_days';
+
   // 百度网盘自动云备份
   static const String cloudBackupEnabled = 'cloud_backup_enabled';
   static const String cloudBackupFrequencyDays = 'cloud_backup_frequency_days';

@@ -34,6 +34,37 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
     } catch (_) {}
   }
 
+  Future<void> _loadLogRetentionDays() async {
+    try {
+      final int days = await UserSettingsService.instance.getInt(
+        UserSettingKeys.logRetentionDays,
+        defaultValue: FlutterLogger.defaultLogRetentionDays,
+      );
+      if (mounted) {
+        _settingsSetState(() => _logRetentionDays = math.max(1, days));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateLogRetentionDays(int days) async {
+    final int value = math.max(1, days);
+    _settingsSetState(() => _savingLogRetentionDays = true);
+    try {
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.logRetentionDays,
+        value,
+      );
+      await FlutterLogger.syncLogRetentionDaysToNative(value);
+      if (mounted) {
+        _settingsSetState(() => _logRetentionDays = value);
+      }
+    } finally {
+      if (mounted) {
+        _settingsSetState(() => _savingLogRetentionDays = false);
+      }
+    }
+  }
+
   Future<void> _loadRenderImagesDuringStreaming() async {
     try {
       final v = await AISettingsService.instance
@@ -45,8 +76,9 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
   Future<void> _updateRenderImagesDuringStreaming(bool enabled) async {
     try {
       await AISettingsService.instance.setRenderImagesDuringStreaming(enabled);
-      if (mounted)
+      if (mounted) {
         _settingsSetState(() => _renderImagesDuringStreaming = enabled);
+      }
     } catch (_) {}
   }
 
@@ -179,7 +211,7 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
           return InkWell(
             onTap: () async {
               await widget.themeService.setThemeMode(mode);
-              if (mounted) {
+              if (mounted && sheetContext.mounted) {
                 Navigator.of(sheetContext).pop();
                 _settingsSetState(() {});
               }
@@ -377,6 +409,13 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
   }
 
   Widget _buildLoggingToggleItem(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final String retentionTitle = l10n.logRetentionDaysTitle;
+    final String retentionDesc = l10n.logRetentionDaysDesc(_logRetentionDays);
+    final String retentionValueLabel = l10n.logRetentionDaysValue(
+      _logRetentionDays,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing4,
@@ -398,13 +437,13 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            AppLocalizations.of(context).loggingTitle,
+                            l10n.loggingTitle,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            AppLocalizations.of(context).loggingDesc,
+                            l10n.loggingDesc,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
@@ -469,18 +508,14 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      ).loggingAiTitle,
+                                      l10n.loggingAiTitle,
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium,
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      ).loggingAiDesc,
+                                      l10n.loggingAiDesc,
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -539,18 +574,14 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      ).loggingScreenshotTitle,
+                                      l10n.loggingScreenshotTitle,
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium,
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      ).loggingScreenshotDesc,
+                                      l10n.loggingScreenshotDesc,
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -587,8 +618,142 @@ extension _SettingsDisplayAdvancedPart on _SettingsPageState {
               ),
             ),
           ),
+          _buildLogRetentionDaysItem(
+            context,
+            title: retentionTitle,
+            desc: retentionDesc,
+            valueLabel: retentionValueLabel,
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLogRetentionDaysItem(
+    BuildContext context, {
+    required String title,
+    required String desc,
+    required String valueLabel,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(
+        left: AppTheme.spacing3,
+        top: AppTheme.spacing3,
+        bottom: AppTheme.spacing3,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildSettingsLeadingIcon(context, Icons.auto_delete_outlined),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    desc,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _savingLogRetentionDays
+                ? null
+                : _showLogRetentionDaysDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1 - 1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(valueLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLogRetentionDaysDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _logRetentionDays.toString(),
+    );
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    showUIDialog<void>(
+      context: context,
+      title: l10n.logRetentionDaysTitle,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.logRetentionDaysDialogMessage,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: l10n.logRetentionDaysLabel,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: l10n.dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final int? parsed = int.tryParse(controller.text.trim());
+            if (parsed == null || parsed < 1) {
+              UINotifier.error(ctx, l10n.logRetentionDaysInvalid);
+              return;
+            }
+            try {
+              await _updateLogRetentionDays(parsed);
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop();
+                UINotifier.success(ctx, l10n.logRetentionDaysSaved);
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                UINotifier.error(ctx, e.toString());
+              }
+            }
+          },
+        ),
+      ],
     );
   }
 

@@ -4,7 +4,6 @@ import com.fqyw.screen_memo.R
 
 import com.fqyw.screen_memo.database.SegmentDatabaseHelper
 import com.fqyw.screen_memo.dynamic.DynamicRebuildService
-import com.fqyw.screen_memo.logging.OutputFileLogger
 import com.fqyw.screen_memo.network.OkHttpClientFactory
 import com.fqyw.screen_memo.settings.AISettingsNative
 import com.fqyw.screen_memo.settings.UserSettingsKeysNative
@@ -91,7 +90,7 @@ object SegmentSummaryManager {
         if (normalized.isEmpty()) return
         val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
         try {
-            OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+            FileLogger.i(TAG, "BACKFILL_DIAG $normalized")
         } catch (_: Exception) {}
     }
 

@@ -5027,6 +5027,48 @@ abstract class AppLocalizations {
   /// **'Record screenshot capture and cleanup logs'**
   String get loggingScreenshotDesc;
 
+  /// No description provided for @logRetentionDaysTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Log retention days'**
+  String get logRetentionDaysTitle;
+
+  /// No description provided for @logRetentionDaysDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Local logs older than {days} days are deleted automatically'**
+  String logRetentionDaysDesc(Object days);
+
+  /// No description provided for @logRetentionDaysValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} d'**
+  String logRetentionDaysValue(Object days);
+
+  /// No description provided for @logRetentionDaysDialogMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Local logs older than this value are deleted automatically. Minimum is 1 day with no upper limit.'**
+  String get logRetentionDaysDialogMessage;
+
+  /// No description provided for @logRetentionDaysLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Days'**
+  String get logRetentionDaysLabel;
+
+  /// No description provided for @logRetentionDaysInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid number of days.'**
+  String get logRetentionDaysInvalid;
+
+  /// No description provided for @logRetentionDaysSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Log retention setting saved.'**
+  String get logRetentionDaysSaved;
+
   /// No description provided for @themeModeAuto.
   ///
   /// In en, this message translates to:

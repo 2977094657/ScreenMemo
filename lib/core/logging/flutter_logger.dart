@@ -25,6 +25,7 @@ class FlutterLogger {
 
   // 全局开关（默认开启）+ 持久化键
   static const String _enabledKey = 'logging_enabled';
+  static const int defaultLogRetentionDays = 30;
   static bool _enabled = true;
 
   static bool get enabled => _enabled;
@@ -248,6 +249,14 @@ class FlutterLogger {
     } catch (_) {
       return false;
     }
+  }
+
+  /// 通知原生端更新日志保留天数并立即清理超期日志。
+  static Future<void> syncLogRetentionDaysToNative(int days) async {
+    final int value = days < 1 ? 1 : days;
+    try {
+      await _channel.invokeMethod('setLogRetentionDays', {'days': value});
+    } catch (_) {}
   }
 
   static void _logToTalkerString(String level, String tag, String message) {

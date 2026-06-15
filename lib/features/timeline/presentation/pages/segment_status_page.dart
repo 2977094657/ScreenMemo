@@ -208,6 +208,28 @@ bool _sameDynamicRebuildRequestLogsState(
   return a.loading == b.loading && a.error == b.error && a.rawText == b.rawText;
 }
 
+class _DynamicRebuildRequestLogParseInput {
+  const _DynamicRebuildRequestLogParseInput({
+    required this.rawText,
+    required this.sinceMillis,
+    required this.untilMillis,
+  });
+
+  final String rawText;
+  final int sinceMillis;
+  final int untilMillis;
+}
+
+List<AIRequestTrace> _parseDynamicRebuildRequestLogsInBackground(
+  _DynamicRebuildRequestLogParseInput input,
+) {
+  return parseNativeAiRequestLogText(
+    input.rawText,
+    since: DateTime.fromMillisecondsSinceEpoch(input.sinceMillis),
+    until: DateTime.fromMillisecondsSinceEpoch(input.untilMillis),
+  );
+}
+
 class _SegmentStatusPageState extends State<SegmentStatusPage>
     with SingleTickerProviderStateMixin {
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;

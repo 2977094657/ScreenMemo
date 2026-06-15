@@ -197,7 +197,7 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     } catch (_) {}
     _dynamicRebuildTaskSheetOpen = true;
     if (_SegmentStatusPageState._dynamicRebuildRequestLogsEnabled) {
-      await _refreshDynamicRebuildRequestLogs(force: true);
+      unawaited(_refreshDynamicRebuildRequestLogs(force: true));
     }
     if (!mounted) return;
     try {
@@ -361,7 +361,7 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     final StringBuffer sb = StringBuffer();
     for (final File file in files) {
       try {
-        final String text = await file.readAsString();
+        final String text = await _readDynamicRebuildRequestLogTail(file);
         final String content = text.trimRight();
         if (content.isEmpty) continue;
         if (sb.isNotEmpty) sb.writeln();
@@ -372,11 +372,19 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     if (rawText.trim().isEmpty) {
       return const _DynamicRebuildRequestLogsState();
     }
-    final List<AIRequestTrace> traces = parseNativeAiRequestLogText(
-      rawText,
-      since: startedAt.subtract(const Duration(seconds: 5)),
-      until: endedAt.add(const Duration(seconds: 5)),
-    );
+    final List<AIRequestTrace> traces =
+        await compute<_DynamicRebuildRequestLogParseInput, List<AIRequestTrace>>(
+          _parseDynamicRebuildRequestLogsInBackground,
+          _DynamicRebuildRequestLogParseInput(
+            rawText: rawText,
+            sinceMillis: startedAt
+                .subtract(const Duration(seconds: 5))
+                .millisecondsSinceEpoch,
+            untilMillis: endedAt
+                .add(const Duration(seconds: 5))
+                .millisecondsSinceEpoch,
+          ),
+        );
     if (traces.isEmpty) {
       return const _DynamicRebuildRequestLogsState();
     }
@@ -393,6 +401,27 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       traces: visibleTraces,
       rawText: visibleRawText,
     );
+  }
+
+  Future<String> _readDynamicRebuildRequestLogTail(File file) async {
+    const int maxBytes = 2 * 1024 * 1024;
+    final RandomAccessFile raf = await file.open(mode: FileMode.read);
+    try {
+      final int length = await raf.length();
+      final int readBytes = math.min(length, maxBytes);
+      await raf.setPosition(length - readBytes);
+      final List<int> bytes = await raf.read(readBytes);
+      String text = utf8.decode(bytes, allowMalformed: true);
+      if (length > readBytes) {
+        final int firstNewline = text.indexOf('\n');
+        if (firstNewline >= 0 && firstNewline + 1 < text.length) {
+          text = text.substring(firstNewline + 1);
+        }
+      }
+      return text;
+    } finally {
+      await raf.close();
+    }
   }
 
   Directory? _resolveOutputLogsRoot(Directory todayDir) {

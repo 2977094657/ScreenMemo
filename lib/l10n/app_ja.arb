@@ -1437,6 +1437,23 @@
   "loggingScreenshotTitle": "スクリーンショットログ",
   "loggingAiDesc": "AI のリクエストとレスポンスを記録",
   "loggingScreenshotDesc": "スクリーンショットの取得とクリーンアップを記録",
+  "logRetentionDaysTitle": "ログ保持日数",
+  "logRetentionDaysDesc": "{days} 日より古いローカルログは自動的に削除されます",
+  "@logRetentionDaysDesc": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "logRetentionDaysValue": "{days} 日",
+  "@logRetentionDaysValue": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "logRetentionDaysDialogMessage": "この日数より古いローカルログは自動的に削除されます。最小は 1 日で、上限はありません。",
+  "logRetentionDaysLabel": "日数",
+  "logRetentionDaysInvalid": "有効な日数を入力してください。",
+  "logRetentionDaysSaved": "ログ保持設定を保存しました。",
   "themeModeAuto": "自動",
   "themeModeLight": "ライト",
   "themeModeDark": "ダーク",

@@ -2825,6 +2825,32 @@ class AppLocalizationsEn extends AppLocalizations {
       'Record screenshot capture and cleanup logs';
 
   @override
+  String get logRetentionDaysTitle => 'Log retention days';
+
+  @override
+  String logRetentionDaysDesc(Object days) {
+    return 'Local logs older than $days days are deleted automatically';
+  }
+
+  @override
+  String logRetentionDaysValue(Object days) {
+    return '$days d';
+  }
+
+  @override
+  String get logRetentionDaysDialogMessage =>
+      'Local logs older than this value are deleted automatically. Minimum is 1 day with no upper limit.';
+
+  @override
+  String get logRetentionDaysLabel => 'Days';
+
+  @override
+  String get logRetentionDaysInvalid => 'Please enter a valid number of days.';
+
+  @override
+  String get logRetentionDaysSaved => 'Log retention setting saved.';
+
+  @override
   String get themeModeAuto => 'Auto';
 
   @override

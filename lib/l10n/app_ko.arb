@@ -1437,6 +1437,23 @@
   "loggingScreenshotTitle": "스크린샷 로그",
   "loggingAiDesc": "AI 요청과 응답을 기록합니다",
   "loggingScreenshotDesc": "스크린샷 캡처 및 정리를 기록합니다",
+  "logRetentionDaysTitle": "로그 보관 일수",
+  "logRetentionDaysDesc": "{days}일보다 오래된 로컬 로그는 자동으로 삭제됩니다",
+  "@logRetentionDaysDesc": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "logRetentionDaysValue": "{days}일",
+  "@logRetentionDaysValue": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "logRetentionDaysDialogMessage": "이 값보다 오래된 로컬 로그는 자동으로 삭제됩니다. 최소값은 1일이며 상한은 없습니다.",
+  "logRetentionDaysLabel": "일수",
+  "logRetentionDaysInvalid": "유효한 일수를 입력하세요.",
+  "logRetentionDaysSaved": "로그 보관 설정을 저장했습니다.",
   "themeModeAuto": "자동",
   "themeModeLight": "라이트",
   "themeModeDark": "다크",

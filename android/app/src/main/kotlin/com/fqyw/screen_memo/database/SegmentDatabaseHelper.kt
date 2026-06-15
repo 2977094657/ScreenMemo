@@ -3,7 +3,6 @@ package com.fqyw.screen_memo.database
 import com.fqyw.screen_memo.R
 
 import com.fqyw.screen_memo.logging.FileLogger
-import com.fqyw.screen_memo.logging.OutputFileLogger
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
@@ -215,9 +214,8 @@ object SegmentDatabaseHelper {
             .replace("\n", " ")
             .trim()
         if (normalized.isEmpty()) return
-        val appCtx = try { context.applicationContext } catch (_: Exception) { context }
         try {
-            OutputFileLogger.infoDiagnostic(appCtx, TAG, "BACKFILL_DIAG $normalized")
+            FileLogger.i(TAG, "BACKFILL_DIAG $normalized")
         } catch (_: Exception) {}
     }
 

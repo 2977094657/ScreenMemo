@@ -47,6 +47,8 @@ class ExtractedMainMethodHandler(
             "setFileLoggingEnabled" -> setFileLoggingEnabled(call, result)
             "setNativeLogLevel" -> setNativeLogLevel(call, result)
             "setCategoryLoggingEnabled" -> setCategoryLoggingEnabled(call, result)
+            "setLogRetentionDays" -> setLogRetentionDays(call, result)
+            "getLogRetentionDays" -> getLogRetentionDays(result)
             "getOutputLogsDirToday" -> result.success(OutputFileLogger.getTodayDir(activity)?.absolutePath)
             "getPendingRuntimeDiagnostic" -> result.success(RuntimeDiagnostics.getPendingIssueSummary(activity))
             "markRuntimeDiagnosticHandled" -> {
@@ -175,6 +177,38 @@ class ExtractedMainMethodHandler(
             result.success(true)
         } catch (e: Exception) {
             result.error("log_category_error", e.message, null)
+        }
+    }
+
+    private fun setLogRetentionDays(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val days = (call.argument<Int>("days") ?: 30).coerceAtLeast(1)
+            UserSettingsStorage.putInt(
+                activity,
+                UserSettingsKeysNative.LOG_RETENTION_DAYS,
+                days,
+            )
+            OutputFileLogger.cleanupExpiredLogsIfNeeded(
+                activity,
+                retentionDays = days,
+                force = true,
+            )
+            result.success(days)
+        } catch (e: Exception) {
+            result.error("log_retention_error", e.message, null)
+        }
+    }
+
+    private fun getLogRetentionDays(result: MethodChannel.Result) {
+        try {
+            val days = UserSettingsStorage.getInt(
+                activity,
+                UserSettingsKeysNative.LOG_RETENTION_DAYS,
+                30,
+            ).coerceAtLeast(1)
+            result.success(days)
+        } catch (e: Exception) {
+            result.error("log_retention_read_error", e.message, null)
         }
     }
 
