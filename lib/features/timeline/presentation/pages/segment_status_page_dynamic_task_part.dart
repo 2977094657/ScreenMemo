@@ -195,313 +195,53 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
         _refreshDynamicAutoRepairEnabled(showLoading: true),
       ]);
     } catch (_) {}
-    _dynamicRebuildTaskSheetOpen = true;
-    if (_SegmentStatusPageState._dynamicRebuildRequestLogsEnabled) {
-      unawaited(_refreshDynamicRebuildRequestLogs(force: true));
-    }
     if (!mounted) return;
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (ctx) {
-          return ValueListenableBuilder<_DynamicRebuildUiSnapshot>(
-            valueListenable: _dynamicRebuildUiSnapshotNotifier,
-            builder: (sheetCtx, snapshot, _) {
-              final cs = Theme.of(sheetCtx).colorScheme;
-              return DraggableScrollableSheet(
-                initialChildSize: 0.62,
-                minChildSize: 0.32,
-                maxChildSize: 0.90,
-                expand: false,
-                builder: (_, scrollCtrl) {
-                  return ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(AppTheme.radiusLg),
-                      topRight: Radius.circular(AppTheme.radiusLg),
-                    ),
-                    child: ColoredBox(
-                      color: cs.surface,
-                      child: SafeArea(
-                        top: false,
-                        child: SingleChildScrollView(
-                          controller: scrollCtrl,
-                          padding: const EdgeInsets.fromLTRB(
-                            AppTheme.spacing4,
-                            AppTheme.spacing3,
-                            AppTheme.spacing4,
-                            AppTheme.spacing4,
-                          ),
-                          child: _buildDynamicRebuildTaskSheetBody(
-                            sheetCtx,
-                            snapshot,
-                          ),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return ValueListenableBuilder<_DynamicRebuildUiSnapshot>(
+          valueListenable: _dynamicRebuildUiSnapshotNotifier,
+          builder: (sheetCtx, snapshot, _) {
+            final cs = Theme.of(sheetCtx).colorScheme;
+            return DraggableScrollableSheet(
+              initialChildSize: 0.62,
+              minChildSize: 0.32,
+              maxChildSize: 0.90,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(AppTheme.radiusLg),
+                    topRight: Radius.circular(AppTheme.radiusLg),
+                  ),
+                  child: ColoredBox(
+                    color: cs.surface,
+                    child: SafeArea(
+                      top: false,
+                      child: SingleChildScrollView(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.spacing4,
+                          AppTheme.spacing3,
+                          AppTheme.spacing4,
+                          AppTheme.spacing4,
+                        ),
+                        child: _buildDynamicRebuildTaskSheetBody(
+                          sheetCtx,
+                          snapshot,
                         ),
                       ),
                     ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      _dynamicRebuildTaskSheetOpen = false;
-    }
-  }
-
-  Future<void> _refreshDynamicRebuildRequestLogs({
-    DynamicRebuildTaskStatus? status,
-    bool force = false,
-  }) async {
-    final DynamicRebuildTaskStatus current =
-        status ?? _dynamicRebuildTaskStatus;
-    if (current.taskId.isEmpty || current.startedAt <= 0) {
-      if (_dynamicRebuildRequestLogsState.hasAny ||
-          _dynamicRebuildRequestLogsState.error != null ||
-          _dynamicRebuildRequestLogsState.loading) {
-        _dynamicRebuildRequestLogsState =
-            const _DynamicRebuildRequestLogsState();
-        _publishDynamicRebuildUiSnapshot();
-      }
-      return;
-    }
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    if (!force && _dynamicRebuildRequestLogsState.loading) return;
-    if (!force && now - _lastDynamicRebuildRequestLogsRefreshAt < 1200) return;
-    _lastDynamicRebuildRequestLogsRefreshAt = now;
-    final int ticket = ++_dynamicRebuildRequestLogsLoadTicket;
-    final bool showForegroundLoading =
-        !_dynamicRebuildRequestLogsState.hasAny &&
-        (_dynamicRebuildRequestLogsState.error?.trim().isNotEmpty != true);
-    if (showForegroundLoading) {
-      final _DynamicRebuildRequestLogsState next =
-          _dynamicRebuildRequestLogsState.copyWith(loading: true, error: null);
-      if (!_sameDynamicRebuildRequestLogsState(
-        _dynamicRebuildRequestLogsState,
-        next,
-      )) {
-        _dynamicRebuildRequestLogsState = next;
-        _publishDynamicRebuildUiSnapshot();
-      }
-    }
-    try {
-      final _DynamicRebuildRequestLogsState loaded =
-          await _loadDynamicRebuildRequestLogs(current);
-      if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
-      final _DynamicRebuildRequestLogsState next = loaded.copyWith(
-        loading: false,
-      );
-      if (!_sameDynamicRebuildRequestLogsState(
-        _dynamicRebuildRequestLogsState,
-        next,
-      )) {
-        _dynamicRebuildRequestLogsState = next;
-        _publishDynamicRebuildUiSnapshot();
-      }
-    } catch (e) {
-      if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
-      final _DynamicRebuildRequestLogsState next = showForegroundLoading
-          ? _dynamicRebuildRequestLogsState.copyWith(
-              loading: false,
-              error: e.toString(),
-            )
-          : _dynamicRebuildRequestLogsState.copyWith(loading: false);
-      if (!_sameDynamicRebuildRequestLogsState(
-        _dynamicRebuildRequestLogsState,
-        next,
-      )) {
-        _dynamicRebuildRequestLogsState = next;
-        _publishDynamicRebuildUiSnapshot();
-      }
-    }
-  }
-
-  Future<_DynamicRebuildRequestLogsState> _loadDynamicRebuildRequestLogs(
-    DynamicRebuildTaskStatus status,
-  ) async {
-    String? todayDirPath;
-    try {
-      todayDirPath = await FlutterLogger.getTodayLogsDir();
-    } catch (_) {
-      todayDirPath = null;
-    }
-    final String trimmed = (todayDirPath ?? '').trim();
-    if (trimmed.isEmpty) {
-      return const _DynamicRebuildRequestLogsState();
-    }
-    final Directory? logsRoot = _resolveOutputLogsRoot(Directory(trimmed));
-    if (logsRoot == null || !await logsRoot.exists()) {
-      return const _DynamicRebuildRequestLogsState();
-    }
-
-    final DateTime startedAt = DateTime.fromMillisecondsSinceEpoch(
-      status.startedAt,
-    );
-    final int endedAtMillis = status.completedAt > 0
-        ? status.completedAt
-        : (status.updatedAt > 0
-              ? status.updatedAt
-              : DateTime.now().millisecondsSinceEpoch);
-    DateTime endedAt = DateTime.fromMillisecondsSinceEpoch(endedAtMillis);
-    if (endedAt.isBefore(startedAt)) {
-      endedAt = startedAt;
-    }
-    final List<File> files = await _listDynamicRebuildRequestLogFiles(
-      logsRoot,
-      startedAt: startedAt,
-      endedAt: endedAt,
-    );
-    if (files.isEmpty) {
-      return const _DynamicRebuildRequestLogsState();
-    }
-
-    final StringBuffer sb = StringBuffer();
-    for (final File file in files) {
-      try {
-        final String text = await _readDynamicRebuildRequestLogTail(file);
-        final String content = text.trimRight();
-        if (content.isEmpty) continue;
-        if (sb.isNotEmpty) sb.writeln();
-        sb.writeln(content);
-      } catch (_) {}
-    }
-    final String rawText = sb.toString().trimRight();
-    if (rawText.trim().isEmpty) {
-      return const _DynamicRebuildRequestLogsState();
-    }
-    final List<AIRequestTrace> traces =
-        await compute<_DynamicRebuildRequestLogParseInput, List<AIRequestTrace>>(
-          _parseDynamicRebuildRequestLogsInBackground,
-          _DynamicRebuildRequestLogParseInput(
-            rawText: rawText,
-            sinceMillis: startedAt
-                .subtract(const Duration(seconds: 5))
-                .millisecondsSinceEpoch,
-            untilMillis: endedAt
-                .add(const Duration(seconds: 5))
-                .millisecondsSinceEpoch,
-          ),
+                  ),
+                );
+              },
+            );
+          },
         );
-    if (traces.isEmpty) {
-      return const _DynamicRebuildRequestLogsState();
-    }
-    final List<AIRequestTrace> visibleTraces = traces
-        .take(_SegmentStatusPageState._dynamicRebuildRequestLogsDisplayLimit)
-        .toList(growable: false);
-    final String visibleRawText = visibleTraces
-        .expand((AIRequestTrace trace) => trace.rawBlocks)
-        .map((String line) => line.trimRight())
-        .where((String line) => line.trim().isNotEmpty)
-        .join('\n')
-        .trimRight();
-    return _DynamicRebuildRequestLogsState(
-      traces: visibleTraces,
-      rawText: visibleRawText,
+      },
     );
-  }
-
-  Future<String> _readDynamicRebuildRequestLogTail(File file) async {
-    const int maxBytes = 2 * 1024 * 1024;
-    final RandomAccessFile raf = await file.open(mode: FileMode.read);
-    try {
-      final int length = await raf.length();
-      final int readBytes = math.min(length, maxBytes);
-      await raf.setPosition(length - readBytes);
-      final List<int> bytes = await raf.read(readBytes);
-      String text = utf8.decode(bytes, allowMalformed: true);
-      if (length > readBytes) {
-        final int firstNewline = text.indexOf('\n');
-        if (firstNewline >= 0 && firstNewline + 1 < text.length) {
-          text = text.substring(firstNewline + 1);
-        }
-      }
-      return text;
-    } finally {
-      await raf.close();
-    }
-  }
-
-  Directory? _resolveOutputLogsRoot(Directory todayDir) {
-    Directory current = todayDir;
-    for (int i = 0; i < 3; i += 1) {
-      final Directory parent = current.parent;
-      if (parent.path == current.path) return null;
-      current = parent;
-    }
-    return current;
-  }
-
-  Future<List<File>> _listDynamicRebuildRequestLogFiles(
-    Directory logsRoot, {
-    required DateTime startedAt,
-    required DateTime endedAt,
-  }) async {
-    final List<File> files = <File>[];
-    DateTime day = DateTime(startedAt.year, startedAt.month, startedAt.day);
-    final DateTime lastDay = DateTime(endedAt.year, endedAt.month, endedAt.day);
-    while (!day.isAfter(lastDay)) {
-      final String yyyy = day.year.toString().padLeft(4, '0');
-      final String mm = day.month.toString().padLeft(2, '0');
-      final String dd = day.day.toString().padLeft(2, '0');
-      final Directory dir = Directory(
-        '${logsRoot.path}${Platform.pathSeparator}$yyyy${Platform.pathSeparator}$mm${Platform.pathSeparator}$dd',
-      );
-      final File infoFile = File(
-        '${dir.path}${Platform.pathSeparator}${dd}_info.log',
-      );
-      final File errorFile = File(
-        '${dir.path}${Platform.pathSeparator}${dd}_error.log',
-      );
-      if (await infoFile.exists()) files.add(infoFile);
-      if (await errorFile.exists()) files.add(errorFile);
-      day = day.add(const Duration(days: 1));
-    }
-    files.sort((a, b) => a.path.compareTo(b.path));
-    return files;
-  }
-
-  Future<void> _saveDynamicRebuildRequestLogsToFile(String text) async {
-    final String content = text.trimRight();
-    if (content.trim().isEmpty) return;
-    try {
-      final DateTime now = DateTime.now();
-      String? baseDirPath;
-      try {
-        baseDirPath = await FlutterLogger.getTodayLogsDir();
-      } catch (_) {
-        baseDirPath = null;
-      }
-      Directory baseDir = Directory.systemTemp;
-      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
-        baseDir = Directory(baseDirPath.trim());
-      }
-      final String sep = Platform.pathSeparator;
-      final Directory outDir = Directory(
-        '${baseDir.path}${sep}dynamic_rebuild_ai_logs',
-      );
-      await outDir.create(recursive: true);
-      final File f = File(
-        '${outDir.path}${sep}dynamic_rebuild_ai_${now.millisecondsSinceEpoch}.log',
-      );
-      await f.writeAsString('$content\n', flush: true);
-      try {
-        await Clipboard.setData(ClipboardData(text: f.path));
-      } catch (_) {}
-      if (!mounted) return;
-      UINotifier.success(
-        context,
-        AppLocalizations.of(context).savedToPath(f.path),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      UINotifier.error(
-        context,
-        AppLocalizations.of(context).saveFailedError(e.toString()),
-      );
-    }
   }
 
   int _dynamicRebuildCurrentOrdinal(DynamicRebuildTaskStatus status) {
@@ -771,22 +511,14 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     _pollingDynamicRebuildTask = true;
     try {
       final previous = _dynamicRebuildTaskStatus;
-      final status = await _db.getDynamicRebuildTaskStatus();
+      final status = await _visibleDynamicRebuildTaskStatus(
+        await _db.getDynamicRebuildTaskStatus(),
+      );
       if (!mounted) return;
       _segmentStatusSetState(() {
         _dynamicRebuildTaskStatus = status;
       });
       _publishDynamicRebuildUiSnapshot();
-      if (_SegmentStatusPageState._dynamicRebuildRequestLogsEnabled &&
-          _dynamicRebuildTaskSheetOpen) {
-        unawaited(_refreshDynamicRebuildRequestLogs(status: status));
-      } else if (_dynamicRebuildRequestLogsState.hasAny ||
-          _dynamicRebuildRequestLogsState.error != null ||
-          _dynamicRebuildRequestLogsState.loading) {
-        _dynamicRebuildRequestLogsState =
-            const _DynamicRebuildRequestLogsState();
-        _publishDynamicRebuildUiSnapshot();
-      }
       if (refreshSegmentsOnChange) {
         await _handleDynamicRebuildTaskStatusChange(previous, status);
       }
@@ -803,6 +535,17 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
       );
     } finally {
       _pollingDynamicRebuildTask = false;
+    }
+  }
+
+  Future<DynamicRebuildTaskStatus> _visibleDynamicRebuildTaskStatus(
+    DynamicRebuildTaskStatus status,
+  ) async {
+    if (!status.isCompleted || status.canContinue) return status;
+    try {
+      return await _db.clearDynamicRebuildTask();
+    } catch (_) {
+      return status;
     }
   }
 
@@ -932,7 +675,7 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final bool selected = scope == selectedScope;
-    final Color accent = _dynamicBackfillColor();
+    final Color accent = _dynamicBackfillColor(context);
     return Expanded(
       child: Opacity(
         opacity: enabled ? 1 : 0.5,
@@ -1186,7 +929,7 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
                                           },
                                           style: TextButton.styleFrom(
                                             foregroundColor:
-                                                _dynamicBackfillColor(),
+                                                _dynamicBackfillColor(context),
                                             shape: const RoundedRectangleBorder(
                                               borderRadius: BorderRadius.zero,
                                             ),
@@ -1283,8 +1026,11 @@ extension _SegmentStatusDynamicTaskPart on _SegmentStatusPageState {
         targetDayKey: resumeExisting ? null : targetDayKey,
       );
       if (!mounted) return;
+      final DynamicRebuildTaskStatus visibleStatus =
+          await _visibleDynamicRebuildTaskStatus(status);
+      if (!mounted) return;
       _segmentStatusSetState(() {
-        _dynamicRebuildTaskStatus = status;
+        _dynamicRebuildTaskStatus = visibleStatus;
         if (status.dayConcurrency > 0) {
           _selectedDynamicRebuildDayConcurrency = math.max(
             1,

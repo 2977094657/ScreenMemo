@@ -16,6 +16,7 @@ import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/utils/merged_event_summary.dart';
 import 'package:screen_memo/features/gallery/presentation/widgets/screenshot_image_widget.dart';
+import 'package:screen_memo/features/timeline/presentation/widgets/segment_tag_chip_colors.dart';
 import 'package:screen_memo/core/widgets/screenshot_style_tab_bar.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
@@ -137,7 +138,7 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                     const SizedBox(height: AppTheme.spacing4),
                     Text(
                       AppLocalizations.of(context).noEvents,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
                         color: AppTheme.mutedForeground,
@@ -149,7 +150,7 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: Text(
                         AppLocalizations.of(context).noEventsSubtitle,
-                        style: const TextStyle(color: AppTheme.mutedForeground),
+                        style: TextStyle(color: AppTheme.mutedForeground),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -1005,7 +1006,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     String? aiRetryMessage,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final Color actionColor = AppTheme.mergedEventAccent;
+    final Color actionColor = segmentMergedTagChipColors(context).foreground;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1093,8 +1094,10 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   }
 
   Widget _buildChip(BuildContext context, String text) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
+    final SegmentTagChipColors colors = segmentCategoryTagChipColors(
+      context,
+      text,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -1102,9 +1105,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: fg.withValues(alpha: 0.10),
+        color: colors.background,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: fg.withValues(alpha: 0.35), width: 1),
+        border: Border.all(color: colors.border, width: 1),
       ),
       child: Text(
         text,
@@ -1112,7 +1115,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 12,
-          color: fg,
+          color: colors.foreground,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),
@@ -1253,6 +1256,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   }
 
   Widget _buildMergedTagChip(BuildContext context) {
+    final SegmentTagChipColors colors = segmentMergedTagChipColors(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -1260,12 +1264,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: AppTheme.mergedEventAccent.withValues(alpha: 0.12),
+        color: colors.background,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(
-          color: AppTheme.mergedEventAccent.withValues(alpha: 0.45),
-          width: 1,
-        ),
+        border: Border.all(color: colors.border, width: 1),
       ),
       child: Text(
         AppLocalizations.of(context).mergedEventTag,
@@ -1273,7 +1274,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 12,
-          color: AppTheme.mergedEventAccent,
+          color: colors.foreground,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),

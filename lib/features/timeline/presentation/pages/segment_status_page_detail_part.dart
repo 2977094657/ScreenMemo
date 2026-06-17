@@ -286,25 +286,36 @@ extension _SegmentStatusDetailPart on _SegmentStatusPageState {
                                 ),
                                 const SizedBox(width: 8),
                                 if ((seg['merged_flag'] as int?) == 1)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.mergedEventAccent
-                                          .withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      ).mergedEventTag,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppTheme.mergedEventAccent,
-                                      ),
-                                    ),
+                                  Builder(
+                                    builder: (context) {
+                                      final SegmentTagChipColors colors =
+                                          segmentMergedTagChipColors(context);
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colors.background,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: colors.border,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).mergedEventTag,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: colors.foreground,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                               ],
                             ),

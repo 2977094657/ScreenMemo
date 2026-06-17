@@ -12,7 +12,7 @@ extension _SegmentEntryCardUiPart on _SegmentEntryCardState {
     String? aiRetryMessage,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final Color actionColor = AppTheme.mergedEventAccent;
+    final Color actionColor = segmentMergedTagChipColors(context).foreground;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -190,8 +190,10 @@ extension _SegmentEntryCardUiPart on _SegmentEntryCardState {
   }
 
   Widget _buildChip(BuildContext context, String text) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
+    final SegmentTagChipColors colors = segmentCategoryTagChipColors(
+      context,
+      text,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -199,18 +201,15 @@ extension _SegmentEntryCardUiPart on _SegmentEntryCardState {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: fg.withValues(alpha: dark ? 0.24 : 0.18),
+        color: colors.background,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(
-          color: fg.withValues(alpha: dark ? 0.56 : 0.46),
-          width: 1,
-        ),
+        border: Border.all(color: colors.border, width: 1),
       ),
       child: _buildTagChipLabel(
         text: text,
         style: TextStyle(
           fontSize: 12,
-          color: fg,
+          color: colors.foreground,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),
@@ -512,6 +511,7 @@ extension _SegmentEntryCardUiPart on _SegmentEntryCardState {
   }
 
   Widget _buildMergedTagChip(BuildContext context) {
+    final SegmentTagChipColors colors = segmentMergedTagChipColors(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -519,18 +519,15 @@ extension _SegmentEntryCardUiPart on _SegmentEntryCardState {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: AppTheme.mergedEventAccent.withValues(alpha: 0.20),
+        color: colors.background,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(
-          color: AppTheme.mergedEventAccent.withValues(alpha: 0.58),
-          width: 1,
-        ),
+        border: Border.all(color: colors.border, width: 1),
       ),
       child: _buildTagChipLabel(
         text: AppLocalizations.of(context).mergedEventTag,
         style: TextStyle(
           fontSize: 12,
-          color: AppTheme.mergedEventAccent,
+          color: colors.foreground,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),

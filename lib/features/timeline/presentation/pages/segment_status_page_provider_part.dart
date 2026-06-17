@@ -100,131 +100,29 @@ extension _SegmentStatusProviderPart on _SegmentStatusPageState {
     final svc = AIProvidersService.instance;
     final list = await svc.listProviders();
     if (!mounted) return;
-    await showModalBottomSheet<void>(
+    await showAIProviderPickerSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final currentId = _ctxSegProvider?.id ?? -1;
-        // 使用持久化查询文本，避免键盘开合/重建导致输入被清空
-        final TextEditingController queryCtrl = TextEditingController(
-          text: _segProviderQueryText,
+      providers: list,
+      currentProviderId: _ctxSegProvider?.id ?? -1,
+      queryText: _segProviderQueryText,
+      onQueryChanged: (value) => _segProviderQueryText = value,
+      initialChildSize: 0.8,
+      onSelected: (sheetContext, p) async {
+        final String model = resolveModelForProvider(p, _ctxSegModel);
+        await AISettingsService.instance.setAIContextSelection(
+          context: 'segments',
+          providerId: p.id!,
+          model: model,
         );
-        return StatefulBuilder(
-          builder: (c, setModalState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.8,
-              minChildSize: 0.5,
-              maxChildSize: 0.95,
-              expand: false,
-              builder: (_, scrollCtrl) {
-                final q = queryCtrl.text.trim().toLowerCase();
-                final filtered = list.where((p) {
-                  if (q.isEmpty) return true;
-                  final name = p.name.toLowerCase();
-                  final type = p.type.toLowerCase();
-                  final base = (p.baseUrl ?? '').toString().toLowerCase();
-                  return name.contains(q) ||
-                      type.contains(q) ||
-                      base.contains(q);
-                }).toList();
-                // 将当前选中的提供商置顶，便于观察
-                final selIdx = filtered.indexWhere((e) => e.id == currentId);
-                if (selIdx > 0) {
-                  final sel = filtered.removeAt(selIdx);
-                  filtered.insert(0, sel);
-                }
-                return UISheetSurface(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: AppTheme.spacing3),
-                      const UISheetHandle(),
-                      const SizedBox(height: AppTheme.spacing3),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: SearchTextField(
-                          controller: queryCtrl,
-                          hintText: AppLocalizations.of(
-                            context,
-                          ).searchProviderPlaceholder,
-                          autofocus: true,
-                          onChanged: (_) {
-                            _segProviderQueryText = queryCtrl.text;
-                            setModalState(() {});
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.separated(
-                          controller: scrollCtrl,
-                          itemCount: filtered.length,
-                          separatorBuilder: (c, i) => Container(
-                            height: 1,
-                            color: Theme.of(
-                              c,
-                            ).colorScheme.outline.withOpacity(0.6),
-                          ),
-                          itemBuilder: (c, i) {
-                            final p = filtered[i];
-                            final selected = p.id == currentId;
-                            return ListTile(
-                              leading: ProviderLogo(
-                                providerType: p.type,
-                                providerName: p.name,
-                                baseUrl: p.baseUrl,
-                                size: 20,
-                              ),
-                              title: Text(
-                                p.name,
-                                style: Theme.of(c).textTheme.bodyMedium,
-                              ),
-                              trailing: selected
-                                  ? Icon(
-                                      Icons.check_circle,
-                                      color: Theme.of(c).colorScheme.onSurface,
-                                    )
-                                  : null,
-                              onTap: () async {
-                                String model = (_ctxSegModel ?? '').trim();
-                                if (model.isEmpty) {
-                                  model =
-                                      (p.extra['active_model'] as String? ??
-                                              p.defaultModel)
-                                          .toString()
-                                          .trim();
-                                }
-                                if (model.isEmpty && p.models.isNotEmpty)
-                                  model = p.models.first;
-                                await AISettingsService.instance
-                                    .setAIContextSelection(
-                                      context: 'segments',
-                                      providerId: p.id!,
-                                      model: model,
-                                    );
-                                if (mounted) {
-                                  _segmentStatusSetState(() {
-                                    _ctxSegProvider = p;
-                                    _ctxSegModel = model;
-                                  });
-                                  Navigator.of(ctx).pop();
-                                  UINotifier.success(
-                                    context,
-                                    AppLocalizations.of(
-                                      context,
-                                    ).providerSelectedToast(p.name),
-                                  );
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
+        if (!mounted || !sheetContext.mounted) return;
+        _segmentStatusSetState(() {
+          _ctxSegProvider = p;
+          _ctxSegModel = model;
+        });
+        Navigator.of(sheetContext).pop();
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).providerSelectedToast(p.name),
         );
       },
     );
@@ -248,112 +146,25 @@ extension _SegmentStatusProviderPart on _SegmentStatusPageState {
       return;
     }
     if (!mounted) return;
-    await showModalBottomSheet<void>(
+    await showAIModelPickerSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final active = (_ctxSegModel ?? '').trim();
-        // 使用持久化查询文本，避免失焦时文本被清空
-        final TextEditingController queryCtrl = TextEditingController(
-          text: _segModelQueryText,
+      models: models,
+      activeModel: (_ctxSegModel ?? '').trim(),
+      queryText: _segModelQueryText,
+      onQueryChanged: (value) => _segModelQueryText = value,
+      initialChildSize: 0.85,
+      onSelected: (sheetContext, m) async {
+        await AISettingsService.instance.setAIContextSelection(
+          context: 'segments',
+          providerId: p.id!,
+          model: m,
         );
-        return StatefulBuilder(
-          builder: (c, setModalState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.85,
-              minChildSize: 0.5,
-              maxChildSize: 0.95,
-              expand: false,
-              builder: (_, scrollCtrl) {
-                final q = queryCtrl.text.trim().toLowerCase();
-                final filtered = models.where((mm) {
-                  if (q.isEmpty) return true;
-                  return mm.toLowerCase().contains(q);
-                }).toList();
-                // 将当前选中的模型置顶
-                if (active.isNotEmpty && filtered.contains(active)) {
-                  final idx = filtered.indexOf(active);
-                  if (idx > 0) {
-                    final sel = filtered.removeAt(idx);
-                    filtered.insert(0, sel);
-                  }
-                }
-                return UISheetSurface(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: AppTheme.spacing3),
-                      const UISheetHandle(),
-                      const SizedBox(height: AppTheme.spacing3),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: SearchTextField(
-                          controller: queryCtrl,
-                          hintText: AppLocalizations.of(
-                            context,
-                          ).searchModelPlaceholder,
-                          autofocus: true,
-                          onChanged: (_) {
-                            _segModelQueryText = queryCtrl.text;
-                            setModalState(() {});
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.separated(
-                          controller: scrollCtrl,
-                          itemCount: filtered.length,
-                          separatorBuilder: (c, i) => Container(
-                            height: 1,
-                            color: Theme.of(
-                              c,
-                            ).colorScheme.outline.withOpacity(0.6),
-                          ),
-                          itemBuilder: (c, i) {
-                            final m = filtered[i];
-                            final selected = m == active;
-                            return ListTile(
-                              leading: ModelLogo(modelId: m, size: 20),
-                              title: Text(
-                                m,
-                                style: Theme.of(c).textTheme.bodyMedium,
-                              ),
-                              trailing: selected
-                                  ? Icon(
-                                      Icons.check_circle,
-                                      color: Theme.of(c).colorScheme.primary,
-                                    )
-                                  : null,
-                              onTap: () async {
-                                await AISettingsService.instance
-                                    .setAIContextSelection(
-                                      context: 'segments',
-                                      providerId: p.id!,
-                                      model: m,
-                                    );
-                                if (mounted) {
-                                  _segmentStatusSetState(
-                                    () => _ctxSegModel = m,
-                                  );
-                                  Navigator.of(ctx).pop();
-                                  UINotifier.success(
-                                    context,
-                                    AppLocalizations.of(
-                                      context,
-                                    ).modelSwitchedToast(m),
-                                  );
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
+        if (!mounted || !sheetContext.mounted) return;
+        _segmentStatusSetState(() => _ctxSegModel = m);
+        Navigator.of(sheetContext).pop();
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).modelSwitchedToast(m),
         );
       },
     );

@@ -11,7 +11,6 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:talker/talker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:screen_memo/models/ai_request_log.dart';
 import 'package:screen_memo/models/app_info.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
@@ -23,15 +22,15 @@ import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/data/settings/user_settings_service.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/constants/user_settings_keys.dart';
-import 'package:screen_memo/features/ai/application/native_ai_request_log_parser.dart';
 import 'package:screen_memo/core/utils/merged_event_summary.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';
+import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_provider_model_picker.dart';
 import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_request_logs_action.dart';
 import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_request_logs_viewer.dart';
 import 'package:screen_memo/features/ai_chat/presentation/widgets/ai_request_logs_sheet.dart';
 import 'package:screen_memo/features/gallery/presentation/widgets/screenshot_image_widget.dart';
+import 'package:screen_memo/features/timeline/presentation/widgets/segment_tag_chip_colors.dart';
 import 'package:screen_memo/core/widgets/screenshot_style_tab_bar.dart';
-import 'package:screen_memo/core/widgets/search_styles.dart';
 import 'package:screen_memo/core/widgets/ui_components.dart';
 import 'package:screen_memo/core/widgets/ui_action_menu.dart';
 import 'package:screen_memo/core/widgets/ui_dialog.dart';
@@ -153,7 +152,6 @@ class _DynamicRebuildUiSnapshot {
     required this.autoRepairEnabled,
     required this.autoRepairLoading,
     required this.autoRepairToggling,
-    required this.requestLogs,
   });
 
   final DynamicRebuildTaskStatus status;
@@ -164,77 +162,11 @@ class _DynamicRebuildUiSnapshot {
   final bool autoRepairEnabled;
   final bool autoRepairLoading;
   final bool autoRepairToggling;
-  final _DynamicRebuildRequestLogsState requestLogs;
-}
-
-class _DynamicRebuildRequestLogsState {
-  const _DynamicRebuildRequestLogsState({
-    this.loading = false,
-    this.traces = const <AIRequestTrace>[],
-    this.rawText = '',
-    this.error,
-  });
-
-  final bool loading;
-  final List<AIRequestTrace> traces;
-  final String rawText;
-  final String? error;
-
-  bool get hasAny => traces.isNotEmpty || rawText.trim().isNotEmpty;
-
-  _DynamicRebuildRequestLogsState copyWith({
-    bool? loading,
-    List<AIRequestTrace>? traces,
-    String? rawText,
-    Object? error = _dynamicRebuildRequestLogsNoChange,
-  }) {
-    return _DynamicRebuildRequestLogsState(
-      loading: loading ?? this.loading,
-      traces: traces ?? this.traces,
-      rawText: rawText ?? this.rawText,
-      error: identical(error, _dynamicRebuildRequestLogsNoChange)
-          ? this.error
-          : error as String?,
-    );
-  }
-}
-
-const Object _dynamicRebuildRequestLogsNoChange = Object();
-
-bool _sameDynamicRebuildRequestLogsState(
-  _DynamicRebuildRequestLogsState a,
-  _DynamicRebuildRequestLogsState b,
-) {
-  return a.loading == b.loading && a.error == b.error && a.rawText == b.rawText;
-}
-
-class _DynamicRebuildRequestLogParseInput {
-  const _DynamicRebuildRequestLogParseInput({
-    required this.rawText,
-    required this.sinceMillis,
-    required this.untilMillis,
-  });
-
-  final String rawText;
-  final int sinceMillis;
-  final int untilMillis;
-}
-
-List<AIRequestTrace> _parseDynamicRebuildRequestLogsInBackground(
-  _DynamicRebuildRequestLogParseInput input,
-) {
-  return parseNativeAiRequestLogText(
-    input.rawText,
-    since: DateTime.fromMillisecondsSinceEpoch(input.sinceMillis),
-    until: DateTime.fromMillisecondsSinceEpoch(input.untilMillis),
-  );
 }
 
 class _SegmentStatusPageState extends State<SegmentStatusPage>
     with SingleTickerProviderStateMixin {
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
-  static const bool _dynamicRebuildRequestLogsEnabled = true;
-  static const int _dynamicRebuildRequestLogsDisplayLimit = 10;
   Map<String, dynamic>? _active;
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
   Map<String, List<Map<String, dynamic>>> _segmentsByDay =
@@ -283,11 +215,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   late final ValueNotifier<_DynamicRebuildUiSnapshot>
   _dynamicRebuildUiSnapshotNotifier;
   late final AnimationController _dynamicRebuildIconController;
-  _DynamicRebuildRequestLogsState _dynamicRebuildRequestLogsState =
-      const _DynamicRebuildRequestLogsState();
-  bool _dynamicRebuildTaskSheetOpen = false;
-  int _lastDynamicRebuildRequestLogsRefreshAt = 0;
-  int _dynamicRebuildRequestLogsLoadTicket = 0;
   bool _dynamicAutoRepairEnabled = true;
   bool _loadingDynamicAutoRepair = false;
   bool _togglingDynamicAutoRepair = false;

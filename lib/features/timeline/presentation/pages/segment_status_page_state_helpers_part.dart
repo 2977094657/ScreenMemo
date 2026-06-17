@@ -852,7 +852,6 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       autoRepairEnabled: _dynamicAutoRepairEnabled,
       autoRepairLoading: _loadingDynamicAutoRepair,
       autoRepairToggling: _togglingDynamicAutoRepair,
-      requestLogs: _dynamicRebuildRequestLogsState,
     );
   }
 }

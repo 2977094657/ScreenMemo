@@ -10,19 +10,27 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
     final cs = theme.colorScheme;
     final status = snapshot.status;
     final bool hasTask = _hasVisibleDynamicTask(status);
+    final bool showRecentTaskDetails = _shouldShowRecentDynamicTaskDetails(
+      status,
+    );
+    final bool displayAsInitialTask = hasTask && !showRecentTaskDetails;
     final bool showTaskProgress = _shouldShowDynamicTaskProgress(status);
     final bool showWorkerProgress = _shouldShowDynamicWorkerProgress(status);
     final bool actualBackfill = hasTask && status.isBackfillMode;
     final bool actualTargetDayBackfill =
         actualBackfill && status.targetDayKey.trim().isNotEmpty;
-    final String sheetTitle = hasTask
+    final String sheetTitle = showRecentTaskDetails
         ? '${status.isActive ? '当前后台任务' : '最近任务'}：${_dynamicTaskModeName(backfill: actualBackfill, targetDay: actualTargetDayBackfill)}'
         : '动态任务';
-    final String statusBadge = hasTask
+    final String statusBadge = displayAsInitialTask
+        ? '未启动'
+        : showRecentTaskDetails
         ? '${_dynamicTaskModeShortName(backfill: actualBackfill, targetDay: actualTargetDayBackfill)} · ${_dynamicRebuildTaskLabel(status)}'
         : _dynamicRebuildTaskLabel(status);
     final int dayConcurrency = _effectiveDynamicRebuildDayConcurrency(snapshot);
-    final Color statusColor = _dynamicRebuildTaskColor(status);
+    final Color statusColor = displayAsInitialTask
+        ? cs.outline
+        : _dynamicRebuildTaskColor(status);
     final double? progressValue = status.totalSegments > 0
         ? (status.processedSegments / status.totalSegments).clamp(0, 1)
         : (status.isCompleted ? 1 : null);
@@ -95,7 +103,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
           UIProgress(
             value: progressValue,
             height: 6,
-            valueColor: actualBackfill ? _dynamicBackfillColor() : null,
+            valueColor: actualBackfill ? _dynamicBackfillColor(context) : null,
           ),
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing2),
@@ -108,7 +116,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
           ),
         ],
-        if (currentLine.isNotEmpty)
+        if (showRecentTaskDetails && currentLine.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing3),
             child: Text(
@@ -119,7 +127,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               ),
             ),
           ),
-        if (modelLine.isNotEmpty)
+        if (showRecentTaskDetails && modelLine.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing2),
             child: Text(
@@ -130,7 +138,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               ),
             ),
           ),
-        if (stageHeadline.isNotEmpty)
+        if (showRecentTaskDetails && stageHeadline.isNotEmpty)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.only(top: AppTheme.spacing3),
@@ -147,7 +155,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               ),
             ),
           ),
-        if (serialHint.isNotEmpty)
+        if (showRecentTaskDetails && serialHint.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing2),
             child: Text(
@@ -158,12 +166,12 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
           ),
         const SizedBox(height: AppTheme.spacing3),
-        if (status.startedAt > 0)
+        if (showRecentTaskDetails && status.startedAt > 0)
           Text(
             '开始：${_fmtTaskDateTime(status.startedAt)}',
             style: theme.textTheme.bodySmall,
           ),
-        if (status.updatedAt > 0)
+        if (showRecentTaskDetails && status.updatedAt > 0)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
@@ -171,7 +179,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               style: theme.textTheme.bodySmall,
             ),
           ),
-        if (status.completedAt > 0)
+        if (showRecentTaskDetails && status.completedAt > 0)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
@@ -179,7 +187,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               style: theme.textTheme.bodySmall,
             ),
           ),
-        if (status.lastError != null)
+        if (showRecentTaskDetails && status.lastError != null)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.only(top: AppTheme.spacing3),
@@ -205,13 +213,9 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
         ],
         const SizedBox(height: AppTheme.spacing3),
         _buildDynamicAutoRepairSection(context, snapshot),
-        if (status.recentLogs.isNotEmpty) ...[
+        if (showRecentTaskDetails && status.recentLogs.isNotEmpty) ...[
           const SizedBox(height: AppTheme.spacing4),
           _buildDynamicRebuildStageLogsSection(context, status),
-        ],
-        if (_SegmentStatusPageState._dynamicRebuildRequestLogsEnabled) ...[
-          const SizedBox(height: AppTheme.spacing4),
-          _buildDynamicRebuildRequestLogsSection(context, snapshot),
         ],
       ],
     );
@@ -308,9 +312,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
         backfill: backfill,
         targetDay: status.targetDayKey.trim().isNotEmpty,
       );
-      final Color accentColor = backfill ? _dynamicBackfillColor() : cs.error;
+      final Color accentColor = backfill
+          ? _dynamicBackfillColor(context)
+          : cs.error;
       final Color onAccentColor = backfill
-          ? _dynamicBackfillOnColor()
+          ? _dynamicBackfillOnColor(context)
           : cs.onError;
       final VoidCallback continueAction = backfill
           ? _confirmStartDynamicBackfill
@@ -352,8 +358,8 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
         Expanded(
           child: startButton(
             label: '补全',
-            backgroundColor: _dynamicBackfillColor(),
-            foregroundColor: _dynamicBackfillOnColor(),
+            backgroundColor: _dynamicBackfillColor(context),
+            foregroundColor: _dynamicBackfillOnColor(context),
             onPressed: _confirmStartDynamicBackfill,
           ),
         ),
@@ -365,9 +371,13 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
     return !status.isIdle && status.taskId.trim().isNotEmpty;
   }
 
-  bool _shouldShowDynamicTaskProgress(DynamicRebuildTaskStatus status) {
+  bool _shouldShowRecentDynamicTaskDetails(DynamicRebuildTaskStatus status) {
     return _hasVisibleDynamicTask(status) &&
-        (status.isActive || status.isCompleted);
+        (status.isActive || status.canContinue);
+  }
+
+  bool _shouldShowDynamicTaskProgress(DynamicRebuildTaskStatus status) {
+    return _shouldShowRecentDynamicTaskDetails(status);
   }
 
   bool _shouldShowDynamicWorkerProgress(DynamicRebuildTaskStatus status) {
@@ -392,12 +402,12 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
     return backfill ? '补全' : '重建';
   }
 
-  Color _dynamicBackfillColor() {
-    return const Color(0xFF005B43);
+  Color _dynamicBackfillColor(BuildContext context) {
+    return Theme.of(context).colorScheme.primary;
   }
 
-  Color _dynamicBackfillOnColor() {
-    return Colors.white;
+  Color _dynamicBackfillOnColor(BuildContext context) {
+    return Theme.of(context).colorScheme.onPrimary;
   }
 
   Widget _buildDynamicRebuildDayConcurrencySection(
@@ -503,16 +513,20 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
   ) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final int slotCount = math.max(
-      _effectiveDynamicRebuildDayConcurrency(snapshot),
-      snapshot.status.workers.length,
-    );
+    final int activeWorkerCount = snapshot.status.workers
+        .where((DynamicRebuildWorkerState worker) => !worker.isIdle)
+        .length;
+    final int slotCount = math.max(1, activeWorkerCount);
     final Map<int, DynamicRebuildWorkerState> workersBySlot =
         <int, DynamicRebuildWorkerState>{
           for (final DynamicRebuildWorkerState worker
-              in snapshot.status.workers)
+              in snapshot.status.workers.where(
+                (DynamicRebuildWorkerState worker) => !worker.isIdle,
+              ))
             worker.slotId: worker,
         };
+    final List<int> visibleSlotIds = workersBySlot.keys.toList()..sort();
+    if (visibleSlotIds.isEmpty) visibleSlotIds.add(1);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,7 +556,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               spacing: AppTheme.spacing3,
               runSpacing: AppTheme.spacing3,
               children: [
-                for (int slotId = 1; slotId <= slotCount; slotId++)
+                for (final int slotId in visibleSlotIds.take(slotCount))
                   SizedBox(
                     width: cardWidth,
                     child: _buildDynamicRebuildWorkerCard(
@@ -640,7 +654,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
           UIProgress(
             value: progressValue,
             height: 5,
-            valueColor: backfillMode ? _dynamicBackfillColor() : null,
+            valueColor: backfillMode ? _dynamicBackfillColor(context) : null,
           ),
           if (rangeLabel.isNotEmpty) ...[
             const SizedBox(height: AppTheme.spacing2),
@@ -741,7 +755,7 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '自动补建/补洞',
+                  '自动补建',
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -749,27 +763,11 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
                 const SizedBox(height: AppTheme.spacing1),
                 Text(
                   snapshot.autoRepairEnabled
-                      ? '已开启：后台会自动补历史日期、缺失总结和断档动态。'
-                      : '已暂停：后台不会自动补历史日期或缺失总结，可避免请求快速打满 RPM。',
+                      ? '开启后会在后台自动补齐缺失日期、时间窗和总结。'
+                      : '暂停后只停止后台自动补齐，手动重建和补全不受影响。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,
                     height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: AppTheme.spacing1),
-                Text(
-                  '关闭后不影响手动“开始重建”，也不会打断当前正在执行的任务。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.9),
-                    height: 1.3,
-                  ),
-                ),
-                const SizedBox(height: AppTheme.spacing1),
-                Text(
-                  '这个开关控制的是后台自动补建流量；手动重建仍以上面的按钮为准。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.78),
-                    height: 1.3,
                   ),
                 ),
               ],
@@ -799,130 +797,6 @@ extension _SegmentStatusDynamicSheetPart on _SegmentStatusPageState {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDynamicRebuildRequestLogsSection(
-    BuildContext context,
-    _DynamicRebuildUiSnapshot snapshot,
-  ) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final bool isZh = Localizations.localeOf(
-      context,
-    ).languageCode.toLowerCase().startsWith('zh');
-    final _DynamicRebuildRequestLogsState logs = snapshot.requestLogs;
-    final String rawText = logs.rawText.trimRight();
-    final bool hasRaw = rawText.trim().isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(height: 1),
-        const SizedBox(height: AppTheme.spacing4),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                isZh ? '重建请求' : 'Rebuild Requests',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: logs.loading && !logs.hasAny
-                  ? const CircularProgressIndicator(strokeWidth: 2)
-                  : null,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.spacing2),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppTheme.spacing3),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
-          ),
-          child: Text(
-            isZh
-                ? '这里展示的是动态重建期间由原生 SegmentSummaryManager 直连发出的 AI 请求，不经过 Flutter 的 AIRequestGateway。日期 tab 只是根据数据库里已经生成出的 segments 刷新显示，切 tab 只会读取本地结果，不会额外触发这些 AI 请求。默认仅展示最近 $_SegmentStatusPageState._dynamicRebuildRequestLogsDisplayLimit 个请求，避免面板卡顿。'
-                : 'These are native SegmentSummaryManager AI requests emitted during dynamic rebuild. They bypass Flutter AIRequestGateway. Day tabs only reflect segments already written into the local database and do not trigger these AI calls. Only the most recent $_SegmentStatusPageState._dynamicRebuildRequestLogsDisplayLimit requests are shown by default to keep the panel responsive.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              height: 1.35,
-            ),
-          ),
-        ),
-        const SizedBox(height: AppTheme.spacing3),
-        if (logs.error != null && logs.error!.trim().isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: cs.errorContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Text(
-              logs.error!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onErrorContainer,
-              ),
-            ),
-          )
-        else if (!logs.loading && logs.traces.isEmpty && !hasRaw)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(color: cs.outline.withValues(alpha: 0.16)),
-            ),
-            child: Text(
-              isZh
-                  ? '当前任务还没有匹配到请求日志。若 AI 分类日志未开启，这里也会为空。'
-                  : 'No request logs matched the current task yet. This also stays empty when AI category logging is disabled.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-          )
-        else
-          AIRequestLogsViewer.traces(
-            traces: logs.traces,
-            rawFallbackText: hasRaw ? rawText : null,
-            scrollable: false,
-            emptyText: isZh ? '（暂无请求日志）' : '(No request logs yet)',
-            actions: <AIRequestLogsAction>[
-              AIRequestLogsAction(
-                label: AppLocalizations.of(context).actionCopy,
-                enabled: hasRaw,
-                onPressed: () async {
-                  if (!hasRaw) return;
-                  final AppLocalizations l10n = AppLocalizations.of(context);
-                  try {
-                    await Clipboard.setData(ClipboardData(text: rawText));
-                    if (!mounted || !context.mounted) return;
-                    UINotifier.success(context, l10n.copySuccess);
-                  } catch (_) {}
-                },
-              ),
-              AIRequestLogsAction(
-                label: isZh ? '保存到文件' : 'Save to file',
-                enabled: hasRaw,
-                onPressed: () async {
-                  if (!hasRaw) return;
-                  await _saveDynamicRebuildRequestLogsToFile(rawText);
-                },
-              ),
-            ],
-          ),
-      ],
     );
   }
 }

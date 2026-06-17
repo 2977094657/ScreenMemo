@@ -389,7 +389,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                           const SizedBox(height: AppTheme.spacing4),
                           Text(
                             AppLocalizations.of(context).noEvents,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w500,
                               color: AppTheme.mutedForeground,
@@ -401,9 +401,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                             constraints: const BoxConstraints(maxWidth: 300),
                             child: Text(
                               AppLocalizations.of(context).noEventsSubtitle,
-                              style: const TextStyle(
-                                color: AppTheme.mutedForeground,
-                              ),
+                              style: TextStyle(color: AppTheme.mutedForeground),
                               textAlign: TextAlign.center,
                             ),
                           ),
