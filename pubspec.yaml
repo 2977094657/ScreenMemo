@@ -16,10 +16,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-# 本地开发构建不显式传入 --build-name 时使用一个足够高的版本号，
-# 避免自构建包被 GitHub Releases 自动更新判定为旧版本。
-# 正式发版流程会通过 --build-name 覆盖为 tag 中的真实版本。
-version: 999.999.999+999999999
+# 本地开发构建不显式传入 --build-name 时，默认跟当前已安装的正式包保持一致，
+# 避免 Android 因 versionCode 回退而拒绝覆盖安装。
+# 正式发版流程会通过 --build-name / --build-number 覆盖为 tag 中的版本。
+version: 999.999.999+1999999999
 
 environment:
   sdk: ^3.8.1
