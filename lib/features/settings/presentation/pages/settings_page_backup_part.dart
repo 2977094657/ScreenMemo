@@ -241,277 +241,7 @@ extension _SettingsBackupPart on _SettingsPageState {
     return parts.join(' · ');
   }
 
-  Future<void> _showMergeResultDialog(MergeReport report) async {
-    if (!mounted) return;
-    final AppLocalizations t = AppLocalizations.of(context);
-    final List<String> affectedPackages = report.affectedPackages.toList()
-      ..sort();
-    final String affectedLabel = affectedPackages.join(', ');
-    final Map<String, AppInfo> appInfoMap = {
-      for (final app in await _appService.getAllInstalledApps())
-        app.packageName: app,
-    };
-    final ThemeData theme = Theme.of(context);
-    final double maxHeight = ((MediaQuery.of(context).size.height * 0.6).clamp(
-      280.0,
-      420.0,
-    )).toDouble();
-
-    final Widget statsSection = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          t.mergeReportInserted(report.insertedScreenshots),
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppTheme.spacing2),
-        Text(
-          t.mergeReportSkipped(report.skippedScreenshotDuplicates),
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppTheme.spacing2),
-        Text(
-          t.mergeReportCopied(report.copiedFiles),
-          style: theme.textTheme.bodyMedium,
-        ),
-        if (affectedPackages.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.spacing3),
-          Text(
-            t.mergeReportAffectedPackages(affectedLabel),
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppTheme.spacing1),
-          Wrap(
-            spacing: AppTheme.spacing2,
-            runSpacing: AppTheme.spacing2,
-            children: affectedPackages
-                .map((pkg) => _buildAffectedPackageChip(appInfoMap[pkg], pkg))
-                .toList(),
-          ),
-        ],
-        const SizedBox(height: AppTheme.spacing3),
-        Text(
-          t.mergeReportWarnings,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: AppTheme.spacing1),
-        if (report.warnings.isEmpty)
-          Text(t.mergeReportNoWarnings, style: theme.textTheme.bodySmall)
-        else
-          ...report.warnings.map(
-            (w) => Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
-              child: Text(t.warningBullet(w), style: theme.textTheme.bodySmall),
-            ),
-          ),
-      ],
-    );
-
-    await showUIDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      title: t.mergeCompleteTitle,
-      content: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(right: AppTheme.spacing1),
-          child: statsSection,
-        ),
-      ),
-      actions: [
-        UIDialogAction(text: t.dialogOk, style: UIDialogActionStyle.primary),
-      ],
-    );
-  }
-
-  Future<_ImportMode?> _selectImportMode() async {
-    final AppLocalizations t = AppLocalizations.of(context);
-    final ThemeData theme = Theme.of(context);
-    final _ImportMode initial = _lastImportMode;
-
-    return showModalBottomSheet<_ImportMode>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext sheetContext) {
-        return UISheetSurface(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: AppTheme.spacing3),
-              const UISheetHandle(),
-              Padding(
-                padding: const EdgeInsets.all(AppTheme.spacing4),
-                child: Text(
-                  t.importModeTitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              _buildImportModeOption(
-                sheetContext: sheetContext,
-                title: t.importModeOverwriteTitle,
-                description: t.importModeOverwriteDesc,
-                icon: Icons.warning_amber_rounded,
-                iconColor: theme.colorScheme.error,
-                mode: _ImportMode.overwrite,
-                selectedMode: initial,
-              ),
-              _buildImportModeOption(
-                sheetContext: sheetContext,
-                title: t.importModeMergeTitle,
-                description: t.importModeMergeDesc,
-                icon: Icons.merge_type_rounded,
-                iconColor: theme.colorScheme.primary,
-                mode: _ImportMode.merge,
-                selectedMode: initial,
-              ),
-              const SizedBox(height: AppTheme.spacing3),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(sheetContext, null),
-                  child: Text(t.dialogCancel),
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacing2),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   // 已移除导入来源选择（统一通过 ZIP 导入）
-
-  Widget _buildImportModeOption({
-    required BuildContext sheetContext,
-    required String title,
-    required String description,
-    required IconData icon,
-    required Color iconColor,
-    required _ImportMode mode,
-    required _ImportMode selectedMode,
-  }) {
-    final bool isSelected = mode == selectedMode;
-    final ColorScheme scheme = Theme.of(sheetContext).colorScheme;
-
-    return InkWell(
-      onTap: () {
-        _lastImportMode = mode;
-        Navigator.pop(sheetContext, mode);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacing4,
-          vertical: AppTheme.spacing3,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? scheme.primary.withOpacity(0.08)
-              : Colors.transparent,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
-            ),
-            const SizedBox(width: AppTheme.spacing3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(sheetContext).textTheme.bodyLarge?.copyWith(
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                      color: isSelected ? scheme.primary : scheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing1),
-                  Text(
-                    description,
-                    style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              Padding(
-                padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                child: Icon(Icons.check, color: scheme.primary, size: 20),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAffectedPackageChip(AppInfo? app, String packageName) {
-    final String label = app?.appName.isNotEmpty == true
-        ? app!.appName
-        : packageName;
-    final ImageProvider? iconImage =
-        (app?.icon != null && app!.icon!.isNotEmpty)
-        ? MemoryImage(app.icon!)
-        : null;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing2,
-        vertical: AppTheme.spacing1 + 2,
-      ),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.primary.withOpacity(0.12),
-            backgroundImage: iconImage,
-            child: iconImage == null
-                ? Text(
-                    label.isNotEmpty ? label.characters.first : '?',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(width: AppTheme.spacing1 + 2),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 140),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   String _formatImportExportStageLabel(
     AppLocalizations t,
@@ -539,22 +269,6 @@ extension _SettingsBackupPart on _SettingsPageState {
       }
       return 'Extracting data...';
     }
-    if (stage == 'merge_extracting') {
-      return _formatImportExportStageLabel(t, 'extracting', isExport);
-    }
-    if (stage == 'merge_copying_files') {
-      return t.mergeProgressCopying;
-    }
-    if (stage == 'merge_copying_generic') {
-      return t.mergeProgressCopyingGeneric;
-    }
-    if (stage == 'merge_shard_databases') {
-      return t.mergeProgressMergingDb;
-    }
-    if (stage == 'merge_finalizing') {
-      return t.mergeProgressFinalizing;
-    }
-
     if (isZh) {
       return isExport ? '导出数据进行中…' : '导入数据进行中…';
     }
@@ -776,14 +490,6 @@ extension _SettingsBackupPart on _SettingsPageState {
   Future<void> _importData() async {
     if (_importingData) return;
 
-    final _ImportMode? mode = await _selectImportMode();
-    if (!mounted) return;
-    if (mode == null) {
-      await FlutterLogger.nativeWarn('UI_IMPORT', '用户取消选择导入模式');
-      return;
-    }
-    await FlutterLogger.nativeInfo('UI_IMPORT', '导入模式=${mode.name}');
-
     _settingsSetState(() {
       _importingData = true;
     });
@@ -845,63 +551,28 @@ extension _SettingsBackupPart on _SettingsPageState {
       }
 
       Map<String, dynamic>? importRes;
-      MergeReport? mergeReport;
 
-      if (mode == _ImportMode.merge) {
-        mergeReport = await _screenshotDatabase.mergeDataFromZip(
+      // 覆盖导入优先走原生 ZIP 导入（依赖 zipPath），无法获取路径时回退到 Dart 流式实现
+      if (path != null && path.isNotEmpty) {
+        stageNotifier.value = 'import_native_zip';
+        progressNotifier.value = 0.02;
+        final res = await _screenshotDatabase.importDataFromZip(
           zipPath: path,
+          zipBytes: null,
+          overwrite: true,
+          onProgress: handleProgress,
+        );
+        importRes = res;
+        progressNotifier.value = 1.0;
+      } else if (bytes != null && bytes.isNotEmpty) {
+        importRes = await _screenshotDatabase.importDataFromZipStreaming(
           zipBytes: bytes,
           onProgress: handleProgress,
-          throwOnError: true,
         );
-      } else {
-        // 覆盖导入优先走原生 ZIP 导入（依赖 zipPath），无法获取路径时回退到 Dart 流式实现
-        if (path != null && path.isNotEmpty) {
-          stageNotifier.value = 'import_native_zip';
-          progressNotifier.value = 0.02;
-          final res = await _screenshotDatabase.importDataFromZip(
-            zipPath: path,
-            zipBytes: null,
-            overwrite: true,
-            onProgress: handleProgress,
-          );
-          importRes = res;
-          progressNotifier.value = 1.0;
-        } else if (bytes != null && bytes.isNotEmpty) {
-          importRes = await _screenshotDatabase.importDataFromZipStreaming(
-            zipBytes: bytes,
-            onProgress: handleProgress,
-          );
-        }
       }
 
       if (!mounted) return;
-      if (mode == _ImportMode.merge) {
-        if (mergeReport != null) {
-          await _resyncScreenshotSettingsAfterImport();
-          await FlutterLogger.nativeInfo(
-            'UI_IMPORT',
-            '合并成功 插入截图=${mergeReport.insertedScreenshots} 跳过重复=${mergeReport.skippedScreenshotDuplicates}',
-          );
-          await ScreenshotService.instance.invalidateStatsCache();
-          ScreenshotService.instance.invalidateAvailableDayCountCache();
-          await _showMergeResultDialog(mergeReport);
-        } else {
-          await FlutterLogger.nativeWarn('UI_IMPORT', '合并结果为 null');
-          await showUIDialog<void>(
-            context: context,
-            barrierDismissible: false,
-            title: AppLocalizations.of(context).importFailedTitle,
-            message: AppLocalizations.of(context).importFailedCheckZip,
-            actions: [
-              UIDialogAction(
-                text: AppLocalizations.of(context).dialogOk,
-                style: UIDialogActionStyle.primary,
-              ),
-            ],
-          );
-        }
-      } else if (importRes != null) {
+      if (importRes != null) {
         await _resyncScreenshotSettingsAfterImport();
         await FlutterLogger.nativeInfo(
           'UI_IMPORT',
@@ -1273,68 +944,6 @@ extension _SettingsBackupPart on _SettingsPageState {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(AppLocalizations.of(context).actionImport),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildImportDiagnosticsItem(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing4,
-        vertical: AppTheme.spacing3 - 2,
-      ),
-      decoration: BoxDecoration(
-        border: Border(top: _settingsDividerSide(context)),
-      ),
-      child: Row(
-        children: [
-          _buildSettingsLeadingIcon(context, Icons.fact_check_outlined),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '导入诊断',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '导入完成后自检当前 output/数据库/索引状态，定位“文件存在但无数据”问题',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: _importingData
-                ? null
-                : () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const ImportDiagnosticsPage(),
-                      ),
-                    );
-                  },
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1 - 1,
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-              visualDensity: VisualDensity.compact,
-            ),
-            child: Text(l10n.actionEnter),
           ),
         ],
       ),

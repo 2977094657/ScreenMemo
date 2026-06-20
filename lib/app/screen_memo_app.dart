@@ -160,9 +160,6 @@ class _AppInitializerState extends State<AppInitializer> {
 
   Future<void> _resumeBackgroundTasksIfNeeded() async {
     try {
-      await ScreenshotDatabase.instance.ensureImportOcrRepairTaskResumed();
-    } catch (_) {}
-    try {
       await ScreenshotDatabase.instance.ensureDynamicRebuildTaskResumed();
     } catch (_) {}
   }

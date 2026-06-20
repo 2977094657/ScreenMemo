@@ -22,7 +22,6 @@ part 'screenshot_database_ai_segments.dart';
 part 'screenshot_database_ai_fts.dart';
 part 'screenshot_database_meta.dart';
 part 'screenshot_database_meta_management.dart';
-part 'screenshot_database_import_diagnostics.dart';
 part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
 part 'screenshot_database_query.dart';

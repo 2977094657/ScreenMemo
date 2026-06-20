@@ -974,67 +974,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importDataDesc => '将ZIP文件导入到应用存储';
 
   @override
-  String get importModeTitle => '选择导入方式';
-
-  @override
-  String get importModeOverwriteTitle => '覆盖导入';
-
-  @override
-  String get importModeOverwriteDesc => '替换当前数据目录，适用于完整恢复备份。';
-
-  @override
-  String get importModeMergeTitle => '合并导入';
-
-  @override
-  String get importModeMergeDesc => '保留现有数据，将压缩包内容去重后合并。';
-
-  @override
-  String get mergeProgressCopying => '正在复制截图文件…';
-
-  @override
-  String get mergeProgressCopyingGeneric => '正在复制其他资源…';
-
-  @override
-  String get mergeProgressMergingDb => '正在合并数据库…';
-
-  @override
-  String get mergeProgressFinalizing => '正在完成合并…';
-
-  @override
-  String get mergeCompleteTitle => '合并完成';
-
-  @override
-  String mergeReportInserted(int count) {
-    return '新增截图：$count';
-  }
-
-  @override
-  String mergeReportSkipped(int count) {
-    return '跳过重复：$count';
-  }
-
-  @override
-  String mergeReportCopied(int count) {
-    return '复制文件：$count';
-  }
-
-  @override
-  String mergeReportMemoryEvidence(int count) {
-    return '新增标签证据：$count';
-  }
-
-  @override
-  String mergeReportAffectedPackages(String packages) {
-    return '受影响的应用包：$packages';
-  }
-
-  @override
-  String get mergeReportWarnings => '需要关注的警告：';
-
-  @override
-  String get mergeReportNoWarnings => '未检测到警告。';
-
-  @override
   String get recalculateAllTitle => '重新统计所有数据';
 
   @override
@@ -3308,44 +3247,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get runtimeDiagnosticOpenSettingsAction => '打开设置';
-
-  @override
-  String get importDiagnosticsReportCopied => '已复制诊断报告';
-
-  @override
-  String get importDiagnosticsNoRepairableOcr => '没有待修复的图片文字，诊断已刷新';
-
-  @override
-  String get importDiagnosticsOcrRepairStarted => '已在后台开始修复，可在通知栏查看进度';
-
-  @override
-  String get importDiagnosticsOcrRepairResumed => '后台修复任务已恢复，可在通知栏查看进度';
-
-  @override
-  String get importDiagnosticsOcrRepairStopped => '图片文字修复已停止';
-
-  @override
-  String get importDiagnosticsStopRepairFailed => '停止修复失败';
-
-  @override
-  String get importDiagnosticsTitle => '导入诊断';
-
-  @override
-  String get importDiagnosticsFailedTitle => '诊断失败';
-
-  @override
-  String importDiagnosticsDurationMs(Object durationMs) {
-    return '耗时：${durationMs}ms';
-  }
-
-  @override
-  String get importDiagnosticsBackgroundRepairTask => '后台修复任务';
-
-  @override
-  String get importDiagnosticsStopRepair => '停止修复';
-
-  @override
-  String get importDiagnosticsRepairIndex => '修复索引';
 
   @override
   String get providerAddAtLeastOneEnabledApiKey => '请至少添加一个已启用的 API Key。';

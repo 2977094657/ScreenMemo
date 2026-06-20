@@ -462,58 +462,6 @@
   "exportDataDesc": "导出 ZIP 至 Download/ScreenMemory",
   "importDataTitle": "导入数据",
   "importDataDesc": "将ZIP文件导入到应用存储",
-  "importModeTitle": "选择导入方式",
-  "importModeOverwriteTitle": "覆盖导入",
-  "importModeOverwriteDesc": "替换当前数据目录，适用于完整恢复备份。",
-  "importModeMergeTitle": "合并导入",
-  "importModeMergeDesc": "保留现有数据，将压缩包内容去重后合并。",
-  "mergeProgressCopying": "正在复制截图文件…",
-  "mergeProgressCopyingGeneric": "正在复制其他资源…",
-  "mergeProgressMergingDb": "正在合并数据库…",
-  "mergeProgressFinalizing": "正在完成合并…",
-  "mergeCompleteTitle": "合并完成",
-  "mergeReportInserted": "新增截图：{count}",
-  "@mergeReportInserted": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportSkipped": "跳过重复：{count}",
-  "@mergeReportSkipped": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportCopied": "复制文件：{count}",
-  "@mergeReportCopied": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryEvidence": "新增标签证据：{count}",
-  "@mergeReportMemoryEvidence": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportAffectedPackages": "受影响的应用包：{packages}",
-  "@mergeReportAffectedPackages": {
-    "placeholders": {
-      "packages": {
-        "type": "String"
-      }
-    }
-  },
-  "mergeReportWarnings": "需要关注的警告：",
-  "mergeReportNoWarnings": "未检测到警告。",
   "recalculateAllTitle": "重新统计所有数据",
   "recalculateAllDesc": "重新扫描全部应用以刷新导航栏的天数、应用、截图与容量统计。",
   "recalculateAllAction": "重新统计",
@@ -1679,23 +1627,6 @@
   "runtimeDiagnosticCopyInfoAction": "复制信息",
   "runtimeDiagnosticOpenFileAction": "打开此文件",
   "runtimeDiagnosticOpenSettingsAction": "打开设置",
-  "importDiagnosticsReportCopied": "已复制诊断报告",
-  "importDiagnosticsNoRepairableOcr": "没有待修复的图片文字，诊断已刷新",
-  "importDiagnosticsOcrRepairStarted": "已在后台开始修复，可在通知栏查看进度",
-  "importDiagnosticsOcrRepairResumed": "后台修复任务已恢复，可在通知栏查看进度",
-  "importDiagnosticsOcrRepairStopped": "图片文字修复已停止",
-  "importDiagnosticsStopRepairFailed": "停止修复失败",
-  "importDiagnosticsTitle": "导入诊断",
-  "importDiagnosticsFailedTitle": "诊断失败",
-  "importDiagnosticsDurationMs": "耗时：{durationMs}ms",
-  "@importDiagnosticsDurationMs": {
-    "placeholders": {
-      "durationMs": {}
-    }
-  },
-  "importDiagnosticsBackgroundRepairTask": "后台修复任务",
-  "importDiagnosticsStopRepair": "停止修复",
-  "importDiagnosticsRepairIndex": "修复索引",
   "providerAddAtLeastOneEnabledApiKey": "请至少添加一个已启用的 API Key。",
   "providerSaveBeforeBatchTest": "请先保存提供商，再执行批量测试。",
   "providerKeepOneEnabledApiKey": "请至少保留一个已启用且非空的 API Key。",

@@ -148,6 +148,28 @@ class _MasterDbProbeResult {
   });
 }
 
+String _two(int v) => v.toString().padLeft(2, '0');
+
+String _fmtTime(int ms) {
+  final DateTime t = DateTime.fromMillisecondsSinceEpoch(ms);
+  return '${t.year}-${_two(t.month)}-${_two(t.day)} '
+      '${_two(t.hour)}:${_two(t.minute)}:${_two(t.second)}.'
+      '${t.millisecond.toString().padLeft(3, '0')}';
+}
+
+String _relativeTo(String? basePath, String path) {
+  if (basePath == null || basePath.trim().isEmpty) return path;
+  try {
+    final String baseN = basePath.replaceAll('\\', '/');
+    final String pN = path.replaceAll('\\', '/');
+    if (pN.startsWith(baseN)) {
+      final String rel = pN.substring(baseN.length);
+      return rel.startsWith('/') ? rel.substring(1) : rel;
+    }
+  } catch (_) {}
+  return path;
+}
+
 class _MergeContext {
   final Map<int, int> gidMapping = <int, int>{};
   final Map<String, String> relativePathMapping = <String, String>{};

@@ -23,11 +23,9 @@ import 'package:screen_memo/core/constants/user_settings_keys.dart';
 import 'package:screen_memo/features/apps/application/app_selection_service.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/data/settings/user_settings_service.dart';
-import 'package:screen_memo/models/app_info.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:screen_memo/features/settings/presentation/pages/nsfw_settings_page.dart';
 import 'package:screen_memo/features/storage_analysis/presentation/pages/storage_analysis_page.dart';
-import 'package:screen_memo/features/backup/presentation/pages/import_diagnostics_page.dart';
 import 'package:screen_memo/features/backup/presentation/pages/cloud_backup_settings_page.dart';
 import 'package:screen_memo/features/backup/presentation/pages/export_backup_page.dart';
 import 'package:screen_memo/features/daily_summary/application/daily_summary_service.dart';
@@ -55,8 +53,6 @@ part 'settings_page_logs_part.dart';
 part 'settings_page_mcp_part.dart';
 part 'settings_page_skills_part.dart';
 part 'settings_page_support_part.dart';
-
-enum _ImportMode { overwrite, merge }
 
 enum _SettingsSubPage {
   home,
@@ -182,8 +178,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _aiChatPerfOverlayEnabled = false;
   // 动态页“每日总结”右侧的日志图标（默认关闭）
   bool _dynamicEntryLogIconEnabled = false;
-  // 最近一次导入模式，默认合并
-  _ImportMode _lastImportMode = _ImportMode.merge;
   bool _recalculatingAll = false;
   bool _appHealthLoading = false;
   AppHealthDashboardSnapshot? _appHealthSnapshot;

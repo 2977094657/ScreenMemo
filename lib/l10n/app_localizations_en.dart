@@ -1023,69 +1023,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importDataDesc => 'Import ZIP file to app storage';
 
   @override
-  String get importModeTitle => 'Select import strategy';
-
-  @override
-  String get importModeOverwriteTitle => 'Overwrite import';
-
-  @override
-  String get importModeOverwriteDesc =>
-      'Replace the current data directory. Use when fully restoring from backups.';
-
-  @override
-  String get importModeMergeTitle => 'Merge import';
-
-  @override
-  String get importModeMergeDesc =>
-      'Keep current data and merge archive contents with deduplication.';
-
-  @override
-  String get mergeProgressCopying => 'Copying screenshot files...';
-
-  @override
-  String get mergeProgressCopyingGeneric => 'Copying additional assets...';
-
-  @override
-  String get mergeProgressMergingDb => 'Merging database shards...';
-
-  @override
-  String get mergeProgressFinalizing => 'Finalizing merge...';
-
-  @override
-  String get mergeCompleteTitle => 'Merge complete';
-
-  @override
-  String mergeReportInserted(int count) {
-    return 'New screenshots: $count';
-  }
-
-  @override
-  String mergeReportSkipped(int count) {
-    return 'Skipped duplicates: $count';
-  }
-
-  @override
-  String mergeReportCopied(int count) {
-    return 'Files copied: $count';
-  }
-
-  @override
-  String mergeReportMemoryEvidence(int count) {
-    return 'New tag evidence: $count';
-  }
-
-  @override
-  String mergeReportAffectedPackages(String packages) {
-    return 'Affected app packages: $packages';
-  }
-
-  @override
-  String get mergeReportWarnings => 'Warnings to review:';
-
-  @override
-  String get mergeReportNoWarnings => 'No warnings detected.';
-
-  @override
   String get recalculateAllTitle => 'Recalculate all data';
 
   @override
@@ -3489,47 +3426,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get runtimeDiagnosticOpenSettingsAction => 'Open settings';
-
-  @override
-  String get importDiagnosticsReportCopied => 'Diagnostic report copied';
-
-  @override
-  String get importDiagnosticsNoRepairableOcr =>
-      'No OCR text needs repair; diagnostics refreshed';
-
-  @override
-  String get importDiagnosticsOcrRepairStarted =>
-      'Repair started in the background. Check notification progress.';
-
-  @override
-  String get importDiagnosticsOcrRepairResumed =>
-      'Background repair resumed. Check notification progress.';
-
-  @override
-  String get importDiagnosticsOcrRepairStopped => 'OCR text repair stopped';
-
-  @override
-  String get importDiagnosticsStopRepairFailed => 'Failed to stop repair';
-
-  @override
-  String get importDiagnosticsTitle => 'Import diagnostics';
-
-  @override
-  String get importDiagnosticsFailedTitle => 'Diagnostics failed';
-
-  @override
-  String importDiagnosticsDurationMs(Object durationMs) {
-    return 'Duration: ${durationMs}ms';
-  }
-
-  @override
-  String get importDiagnosticsBackgroundRepairTask => 'Background repair task';
-
-  @override
-  String get importDiagnosticsStopRepair => 'Stop repair';
-
-  @override
-  String get importDiagnosticsRepairIndex => 'Repair index';
 
   @override
   String get providerAddAtLeastOneEnabledApiKey =>

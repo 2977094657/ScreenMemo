@@ -993,68 +993,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get importDataDesc => 'ZIP ファイルをアプリストレージに取り込み';
 
   @override
-  String get importModeTitle => 'インポート方法を選択';
-
-  @override
-  String get importModeOverwriteTitle => '上書きインポート';
-
-  @override
-  String get importModeOverwriteDesc =>
-      '現在のデータディレクトリを置き換えます。バックアップの完全復元に使用します。';
-
-  @override
-  String get importModeMergeTitle => 'マージインポート';
-
-  @override
-  String get importModeMergeDesc => '既存データを保持し、アーカイブ内容を重複排除してマージします。';
-
-  @override
-  String get mergeProgressCopying => 'スクリーンショットファイルをコピーしています…';
-
-  @override
-  String get mergeProgressCopyingGeneric => 'その他のリソースをコピーしています…';
-
-  @override
-  String get mergeProgressMergingDb => 'データベースをマージしています…';
-
-  @override
-  String get mergeProgressFinalizing => 'マージを完了しています…';
-
-  @override
-  String get mergeCompleteTitle => 'マージが完了しました';
-
-  @override
-  String mergeReportInserted(int count) {
-    return '追加されたスクリーンショット: $count';
-  }
-
-  @override
-  String mergeReportSkipped(int count) {
-    return 'スキップした重複: $count';
-  }
-
-  @override
-  String mergeReportCopied(int count) {
-    return 'コピーしたファイル: $count';
-  }
-
-  @override
-  String mergeReportMemoryEvidence(int count) {
-    return '追加されたタグ証拠: $count';
-  }
-
-  @override
-  String mergeReportAffectedPackages(String packages) {
-    return '影響を受けたアプリパッケージ: $packages';
-  }
-
-  @override
-  String get mergeReportWarnings => '確認が必要な警告：';
-
-  @override
-  String get mergeReportNoWarnings => '警告はありません。';
-
-  @override
   String get recalculateAllTitle => 'すべてのデータを再集計';
 
   @override
@@ -3347,47 +3285,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get runtimeDiagnosticOpenSettingsAction => '設定を開く';
-
-  @override
-  String get importDiagnosticsReportCopied => '診断レポートをコピーしました';
-
-  @override
-  String get importDiagnosticsNoRepairableOcr =>
-      '修復が必要な OCR テキストはありません。診断を更新しました';
-
-  @override
-  String get importDiagnosticsOcrRepairStarted =>
-      'バックグラウンドで修復を開始しました。通知で進捗を確認できます。';
-
-  @override
-  String get importDiagnosticsOcrRepairResumed =>
-      'バックグラウンド修復を再開しました。通知で進捗を確認できます。';
-
-  @override
-  String get importDiagnosticsOcrRepairStopped => 'OCR テキスト修復を停止しました';
-
-  @override
-  String get importDiagnosticsStopRepairFailed => '修復の停止に失敗しました';
-
-  @override
-  String get importDiagnosticsTitle => 'インポート診断';
-
-  @override
-  String get importDiagnosticsFailedTitle => '診断に失敗しました';
-
-  @override
-  String importDiagnosticsDurationMs(Object durationMs) {
-    return '所要時間：${durationMs}ms';
-  }
-
-  @override
-  String get importDiagnosticsBackgroundRepairTask => 'バックグラウンド修復タスク';
-
-  @override
-  String get importDiagnosticsStopRepair => '修復を停止';
-
-  @override
-  String get importDiagnosticsRepairIndex => 'インデックスを修復';
 
   @override
   String get providerAddAtLeastOneEnabledApiKey =>

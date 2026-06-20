@@ -460,58 +460,6 @@
   "exportDataDesc": "ZIP を Download/ScreenMemory にエクスポート",
   "importDataTitle": "データをインポート",
   "importDataDesc": "ZIP ファイルをアプリストレージに取り込み",
-  "importModeTitle": "インポート方法を選択",
-  "importModeOverwriteTitle": "上書きインポート",
-  "importModeOverwriteDesc": "現在のデータディレクトリを置き換えます。バックアップの完全復元に使用します。",
-  "importModeMergeTitle": "マージインポート",
-  "importModeMergeDesc": "既存データを保持し、アーカイブ内容を重複排除してマージします。",
-  "mergeProgressCopying": "スクリーンショットファイルをコピーしています…",
-  "mergeProgressCopyingGeneric": "その他のリソースをコピーしています…",
-  "mergeProgressMergingDb": "データベースをマージしています…",
-  "mergeProgressFinalizing": "マージを完了しています…",
-  "mergeCompleteTitle": "マージが完了しました",
-  "mergeReportInserted": "追加されたスクリーンショット: {count}",
-  "@mergeReportInserted": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportSkipped": "スキップした重複: {count}",
-  "@mergeReportSkipped": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportCopied": "コピーしたファイル: {count}",
-  "@mergeReportCopied": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryEvidence": "追加されたタグ証拠: {count}",
-  "@mergeReportMemoryEvidence": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportAffectedPackages": "影響を受けたアプリパッケージ: {packages}",
-  "@mergeReportAffectedPackages": {
-    "placeholders": {
-      "packages": {
-        "type": "String"
-      }
-    }
-  },
-  "mergeReportWarnings": "確認が必要な警告：",
-  "mergeReportNoWarnings": "警告はありません。",
   "recalculateAllTitle": "すべてのデータを再集計",
   "recalculateAllDesc": "すべてのアプリを再スキャンして、ナビゲーションの表示（日数・アプリ・スクリーンショット・サイズ）を更新します。",
   "recalculateAllAction": "再集計",
@@ -1679,23 +1627,6 @@
   "runtimeDiagnosticCopyInfoAction": "情報をコピー",
   "runtimeDiagnosticOpenFileAction": "このファイルを開く",
   "runtimeDiagnosticOpenSettingsAction": "設定を開く",
-  "importDiagnosticsReportCopied": "診断レポートをコピーしました",
-  "importDiagnosticsNoRepairableOcr": "修復が必要な OCR テキストはありません。診断を更新しました",
-  "importDiagnosticsOcrRepairStarted": "バックグラウンドで修復を開始しました。通知で進捗を確認できます。",
-  "importDiagnosticsOcrRepairResumed": "バックグラウンド修復を再開しました。通知で進捗を確認できます。",
-  "importDiagnosticsOcrRepairStopped": "OCR テキスト修復を停止しました",
-  "importDiagnosticsStopRepairFailed": "修復の停止に失敗しました",
-  "importDiagnosticsTitle": "インポート診断",
-  "importDiagnosticsFailedTitle": "診断に失敗しました",
-  "importDiagnosticsDurationMs": "所要時間：{durationMs}ms",
-  "@importDiagnosticsDurationMs": {
-    "placeholders": {
-      "durationMs": {}
-    }
-  },
-  "importDiagnosticsBackgroundRepairTask": "バックグラウンド修復タスク",
-  "importDiagnosticsStopRepair": "修復を停止",
-  "importDiagnosticsRepairIndex": "インデックスを修復",
   "providerAddAtLeastOneEnabledApiKey": "有効な API Key を少なくとも 1 つ追加してください。",
   "providerSaveBeforeBatchTest": "一括テストの前にプロバイダーを保存してください。",
   "providerKeepOneEnabledApiKey": "有効で空ではない API Key を少なくとも 1 つ残してください。",

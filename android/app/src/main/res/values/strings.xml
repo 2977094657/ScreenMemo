@@ -33,7 +33,7 @@
     <string name="import_ocr_notif_done_title">图片文字修复完成</string>
     <string name="import_ocr_notif_done_text">已写入 OCR %1$d 条，空文本 %2$d 条</string>
     <string name="import_ocr_notif_failed_title">图片文字修复失败</string>
-    <string name="import_ocr_notif_failed_generic">任务执行失败，请打开导入诊断查看详情</string>
+    <string name="import_ocr_notif_failed_generic">任务执行失败，请稍后重试</string>
     <string name="import_ocr_notif_cancelled_title">图片文字修复已取消</string>
     <string name="import_ocr_notif_cancelled_text">修复任务已停止，可稍后重新继续</string>
     <string name="dynamic_rebuild_channel_name">动态任务</string>

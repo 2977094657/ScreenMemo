@@ -346,7 +346,6 @@ extension _SettingsLayoutPart on _SettingsPageState {
                 _buildCloudBackupItem(context),
                 _buildExportItem(context),
                 _buildImportItem(context),
-                _buildImportDiagnosticsItem(context),
                 _buildRecalculateAllItem(context),
               ],
             ),

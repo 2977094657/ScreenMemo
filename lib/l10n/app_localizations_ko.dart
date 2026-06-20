@@ -991,67 +991,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get importDataDesc => 'ZIP 파일을 앱 저장소로 가져오기';
 
   @override
-  String get importModeTitle => '가져오기 방식을 선택하세요';
-
-  @override
-  String get importModeOverwriteTitle => '덮어쓰기 가져오기';
-
-  @override
-  String get importModeOverwriteDesc => '현재 데이터 디렉터리를 교체합니다. 전체 백업 복원에 사용하세요.';
-
-  @override
-  String get importModeMergeTitle => '병합 가져오기';
-
-  @override
-  String get importModeMergeDesc => '기존 데이터를 유지하고 압축 파일 내용을 중복 제거 후 병합합니다.';
-
-  @override
-  String get mergeProgressCopying => '스크린샷 파일을 복사하는 중…';
-
-  @override
-  String get mergeProgressCopyingGeneric => '추가 리소스를 복사하는 중…';
-
-  @override
-  String get mergeProgressMergingDb => '데이터베이스를 병합하는 중…';
-
-  @override
-  String get mergeProgressFinalizing => '병합을 마무리하는 중…';
-
-  @override
-  String get mergeCompleteTitle => '병합이 완료되었습니다';
-
-  @override
-  String mergeReportInserted(int count) {
-    return '새 스크린샷: $count';
-  }
-
-  @override
-  String mergeReportSkipped(int count) {
-    return '중복 건수 건너뜀: $count';
-  }
-
-  @override
-  String mergeReportCopied(int count) {
-    return '복사한 파일: $count';
-  }
-
-  @override
-  String mergeReportMemoryEvidence(int count) {
-    return '추가된 태그 증거: $count';
-  }
-
-  @override
-  String mergeReportAffectedPackages(String packages) {
-    return '영향받은 앱 패키지: $packages';
-  }
-
-  @override
-  String get mergeReportWarnings => '확인해야 할 경고:';
-
-  @override
-  String get mergeReportNoWarnings => '경고가 없습니다.';
-
-  @override
   String get recalculateAllTitle => '전체 데이터 다시 집계';
 
   @override
@@ -3352,46 +3291,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get runtimeDiagnosticOpenSettingsAction => '설정 열기';
-
-  @override
-  String get importDiagnosticsReportCopied => '진단 보고서를 복사했습니다';
-
-  @override
-  String get importDiagnosticsNoRepairableOcr => '수리할 OCR 텍스트가 없어 진단을 새로고침했습니다';
-
-  @override
-  String get importDiagnosticsOcrRepairStarted =>
-      '백그라운드에서 수리를 시작했습니다. 알림에서 진행 상황을 확인하세요.';
-
-  @override
-  String get importDiagnosticsOcrRepairResumed =>
-      '백그라운드 수리 작업을 재개했습니다. 알림에서 진행 상황을 확인하세요.';
-
-  @override
-  String get importDiagnosticsOcrRepairStopped => 'OCR 텍스트 수리가 중지되었습니다';
-
-  @override
-  String get importDiagnosticsStopRepairFailed => '수리 중지에 실패했습니다';
-
-  @override
-  String get importDiagnosticsTitle => '가져오기 진단';
-
-  @override
-  String get importDiagnosticsFailedTitle => '진단 실패';
-
-  @override
-  String importDiagnosticsDurationMs(Object durationMs) {
-    return '소요 시간: ${durationMs}ms';
-  }
-
-  @override
-  String get importDiagnosticsBackgroundRepairTask => '백그라운드 수리 작업';
-
-  @override
-  String get importDiagnosticsStopRepair => '수리 중지';
-
-  @override
-  String get importDiagnosticsRepairIndex => '인덱스 수리';
 
   @override
   String get providerAddAtLeastOneEnabledApiKey => '활성화된 API Key를 하나 이상 추가하세요.';
