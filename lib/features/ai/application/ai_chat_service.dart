@@ -16,6 +16,7 @@ import 'package:screen_memo/features/ai/application/ai_settings_service.dart';
 import 'package:screen_memo/features/ai/application/ai_image_generation_service.dart';
 import 'package:screen_memo/features/ai/application/chat_context_service.dart';
 import 'package:screen_memo/features/ai/application/chat_history_merge.dart';
+import 'package:screen_memo/features/search/application/ocr_search_service.dart';
 import 'package:screen_memo/features/timeline/application/dynamic_entry_perf_service.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/core/localization/locale_service.dart';

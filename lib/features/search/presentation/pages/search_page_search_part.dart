@@ -56,16 +56,15 @@ extension _SearchPageSearchPart on _SearchPageState {
       final size = _currentSizeRange();
 
       // 第一批：快速返回少量结果
-      final firstBatch = await ScreenshotService.instance
-          .searchScreenshotsByOcrWithFallback(
-            query,
-            limit: _SearchPageState._firstBatchSize,
-            offset: 0,
-            startMillis: range?.$1,
-            endMillis: range?.$2,
-            minSize: size?.$1,
-            maxSize: size?.$2,
-          );
+      final firstBatch = await OcrSearchService.instance.searchGlobal(
+        query,
+        limit: _SearchPageState._firstBatchSize,
+        offset: 0,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        minSize: size?.$1,
+        maxSize: size?.$2,
+      );
 
       if (!mounted || token != _searchToken) return;
 
@@ -240,17 +239,15 @@ extension _SearchPageSearchPart on _SearchPageState {
 
       // 第二批：后台加载更多结果
       final sw2 = Stopwatch()..start();
-      final moreBatch = await ScreenshotService.instance
-          .searchScreenshotsByOcrWithFallback(
-            query,
-            limit:
-                _SearchPageState._pageSize - _SearchPageState._firstBatchSize,
-            offset: _SearchPageState._firstBatchSize,
-            startMillis: range?.$1,
-            endMillis: range?.$2,
-            minSize: size?.$1,
-            maxSize: size?.$2,
-          );
+      final moreBatch = await OcrSearchService.instance.searchGlobal(
+        query,
+        limit: _SearchPageState._pageSize - _SearchPageState._firstBatchSize,
+        offset: _SearchPageState._firstBatchSize,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        minSize: size?.$1,
+        maxSize: size?.$2,
+      );
 
       if (!mounted || token != _searchToken) return;
 
@@ -281,8 +278,8 @@ extension _SearchPageSearchPart on _SearchPageState {
       }
 
       // 后台统计总数
-      ScreenshotService.instance
-          .countScreenshotsByOcrWithFallback(
+      OcrSearchService.instance
+          .countGlobal(
             query,
             startMillis: range?.$1,
             endMillis: range?.$2,
@@ -342,16 +339,15 @@ extension _SearchPageSearchPart on _SearchPageState {
           endMillis: range?.$2,
         );
       } else {
-        more = await ScreenshotService.instance
-            .searchScreenshotsByOcrWithFallback(
-              _lastQuery,
-              limit: _SearchPageState._pageSize,
-              offset: _offset,
-              startMillis: range?.$1,
-              endMillis: range?.$2,
-              minSize: size?.$1,
-              maxSize: size?.$2,
-            );
+        more = await OcrSearchService.instance.searchGlobal(
+          _lastQuery,
+          limit: _SearchPageState._pageSize,
+          offset: _offset,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+          minSize: size?.$1,
+          maxSize: size?.$2,
+        );
       }
       if (!mounted || token != _searchToken) return;
       _searchSetState(() {

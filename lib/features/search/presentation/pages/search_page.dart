@@ -14,6 +14,7 @@ import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/features/apps/application/app_selection_service.dart';
 import 'package:screen_memo/data/platform/path_service.dart';
 import 'package:screen_memo/features/capture/application/screenshot_service.dart';
+import 'package:screen_memo/features/search/application/ocr_search_service.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
 import 'package:screen_memo/core/utils/merged_event_summary.dart';

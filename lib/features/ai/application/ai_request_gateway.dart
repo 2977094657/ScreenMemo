@@ -8,7 +8,6 @@ import 'package:screen_memo/features/ai/application/ai_providers_service.dart';
 import 'package:screen_memo/features/ai/application/provider_request_headers.dart';
 import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/features/ai/application/openai_responses_extract.dart';
-import 'package:screen_memo/features/app_health/application/app_health_service.dart';
 
 part 'ai_request_gateway_payloads.dart';
 part 'ai_request_gateway_streaming_helpers.dart';
@@ -155,12 +154,6 @@ class AIRequestGateway {
   }
 
   Future<void> _markEndpointSuccess(AIEndpoint endpoint) async {
-    unawaited(
-      AppHealthService.instance.recordApiSuccess(
-        model: endpoint.model,
-        providerType: endpoint.providerType,
-      ),
-    );
     final int? keyId = endpoint.providerKeyId;
     if (keyId == null) return;
     await AIProvidersService.instance.markProviderKeySuccess(keyId);
@@ -172,14 +165,6 @@ class AIRequestGateway {
     required Object error,
     required int attemptCountForKey,
   }) async {
-    unawaited(
-      AppHealthService.instance.recordApiFailure(
-        errorType: errorType,
-        errorMessage: error.toString(),
-        model: endpoint.model,
-        providerType: endpoint.providerType,
-      ),
-    );
     final int? keyId = endpoint.providerKeyId;
     if (keyId == null) return;
     final bool auth = errorType == 'auth_failed';

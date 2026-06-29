@@ -2682,8 +2682,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
 
       // 2) 回退 OCR 搜索（按 capture_time 取附近时间窗）
       try {
-        final List<ScreenshotRecord> shots = await ScreenshotDatabase.instance
-            .searchScreenshotsByOcr(
+        final List<ScreenshotRecord> shots = await OcrSearchService.instance
+            .searchGlobal(
               q,
               limit: fetchLimit,
               offset: 0,

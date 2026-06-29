@@ -12,6 +12,7 @@ import 'package:screen_memo/core/widgets/ui_dialog.dart';
 import 'package:screen_memo/models/app_info.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/features/capture/application/screenshot_service.dart';
+import 'package:screen_memo/features/search/application/ocr_search_service.dart';
 import 'package:screen_memo/features/gallery/presentation/widgets/screenshot_item_widget.dart';
 import 'package:screen_memo/core/widgets/search_styles.dart';
 import 'package:screen_memo/core/widgets/screenshot_style_tab_bar.dart';

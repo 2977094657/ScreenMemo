@@ -17,8 +17,12 @@ extension _ScreenshotGalleryDataPart on _ScreenshotGalleryPageState {
     });
     if (q.isEmpty) return;
     try {
-      final results = await ScreenshotService.instance
-          .searchScreenshotsByOcrForApp(_packageName, q, limit: 400, offset: 0);
+      final results = await OcrSearchService.instance.searchForApp(
+        _packageName,
+        q,
+        limit: 400,
+        offset: 0,
+      );
       if (!mounted) return;
       _gallerySetState(() {
         _searchResults = results;

@@ -875,7 +875,7 @@ extension AIChatServiceToolExecExt on AIChatService {
     try {
       Future<List<ScreenshotRecord>> searchForPkgs(List<String> pkgs) async {
         if (pkgs.isEmpty) {
-          return await ScreenshotDatabase.instance.searchScreenshotsByOcr(
+          return await OcrSearchService.instance.searchGlobal(
             queryText,
             limit: shotFetch,
             offset: 0,
@@ -887,7 +887,7 @@ extension AIChatServiceToolExecExt on AIChatService {
           );
         }
         if (pkgs.length == 1) {
-          return await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+          return await OcrSearchService.instance.searchForApp(
             pkgs.single,
             queryText,
             limit: shotFetch,
@@ -902,7 +902,7 @@ extension AIChatServiceToolExecExt on AIChatService {
         final List<List<ScreenshotRecord>> perApp =
             await Future.wait(<Future<List<ScreenshotRecord>>>[
               for (final pkg in pkgs)
-                ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+                OcrSearchService.instance.searchForApp(
                   pkg,
                   queryText,
                   limit: shotFetch,
@@ -1409,7 +1409,7 @@ extension AIChatServiceToolExecExt on AIChatService {
 
     Future<List<ScreenshotRecord>> searchForPkgs(List<String> pkgs) async {
       if (pkgs.isEmpty) {
-        return await ScreenshotDatabase.instance.searchScreenshotsByOcr(
+        return await OcrSearchService.instance.searchGlobal(
           queryText,
           limit: limit,
           offset: offset,
@@ -1421,7 +1421,7 @@ extension AIChatServiceToolExecExt on AIChatService {
         );
       }
       if (pkgs.length == 1) {
-        return await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+        return await OcrSearchService.instance.searchForApp(
           pkgs.single,
           queryText,
           limit: limit,
@@ -1440,7 +1440,7 @@ extension AIChatServiceToolExecExt on AIChatService {
       final List<List<ScreenshotRecord>> perApp =
           await Future.wait(<Future<List<ScreenshotRecord>>>[
             for (final pkg in pkgs)
-              ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+              OcrSearchService.instance.searchForApp(
                 pkg,
                 queryText,
                 limit: perAppFetch,
@@ -1514,7 +1514,7 @@ extension AIChatServiceToolExecExt on AIChatService {
         totalCount = results.length;
       } else {
         if (effectiveAppPackageNames.isEmpty) {
-          totalCount = await ScreenshotDatabase.instance.countScreenshotsByOcr(
+          totalCount = await OcrSearchService.instance.countGlobal(
             queryText,
             startMillis: s,
             endMillis: e,
@@ -1522,19 +1522,18 @@ extension AIChatServiceToolExecExt on AIChatService {
             queryAdvanced: queryAdv,
           );
         } else if (effectiveAppPackageNames.length == 1) {
-          totalCount = await ScreenshotDatabase.instance
-              .countScreenshotsByOcrForApp(
-                effectiveAppPackageNames.single,
-                queryText,
-                startMillis: s,
-                endMillis: e,
-                allowAdvanced: false,
-                queryAdvanced: queryAdv,
-              );
+          totalCount = await OcrSearchService.instance.countForApp(
+            effectiveAppPackageNames.single,
+            queryText,
+            startMillis: s,
+            endMillis: e,
+            allowAdvanced: false,
+            queryAdvanced: queryAdv,
+          );
         } else {
           final List<int> parts = await Future.wait(<Future<int>>[
             for (final pkg in effectiveAppPackageNames)
-              ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
+              OcrSearchService.instance.countForApp(
                 pkg,
                 queryText,
                 startMillis: s,
@@ -1995,7 +1994,6 @@ extension AIChatServiceToolExecExt on AIChatService {
         ];
     }
   }
-
 }
 
 class _AIImageSendPayload {

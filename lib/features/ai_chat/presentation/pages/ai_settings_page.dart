@@ -31,6 +31,7 @@ import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/data/platform/path_service.dart';
 import 'package:screen_memo/features/nsfw/application/nsfw_preference_service.dart';
+import 'package:screen_memo/features/search/application/ocr_search_service.dart';
 import 'package:screen_memo/core/performance/ui_perf_logger.dart';
 import 'package:screen_memo/features/timeline/application/dynamic_entry_perf_service.dart';
 import 'package:screen_memo/features/ai_chat/presentation/widgets/chat_context_sheet.dart';

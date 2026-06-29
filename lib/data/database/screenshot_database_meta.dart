@@ -811,27 +811,48 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         columns: ['app_package_name', 'year'],
         orderBy: 'year DESC',
       );
+      final Map<int, List<Map<String, Object?>>> shardsByYear =
+          <int, List<Map<String, Object?>>>{};
+      for (final sh in shards) {
+        final int y = sh['year'] as int;
+        (shardsByYear[y] ??= <Map<String, Object?>>[]).add(sh);
+      }
+      final List<List<int>> scanYearMonths = <List<int>>[];
+      final Set<String> seenYm = <String>{};
+      void addScanYearMonth(int y, int m) {
+        final String key = '$y-$m';
+        if (seenYm.add(key)) scanYearMonths.add(<int>[y, m]);
+      }
+
+      if (ymFilter != null) {
+        for (final ym in ymFilter) {
+          addScanYearMonth(ym[0], ym[1]);
+        }
+      } else {
+        final years = shardsByYear.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
+        for (final y in years) {
+          for (int m = 12; m >= 1; m--) {
+            addScanYearMonth(y, m);
+          }
+        }
+      }
+      scanYearMonths.sort((a, b) {
+        final int yc = b[0].compareTo(a[0]);
+        if (yc != 0) return yc;
+        return b[1].compareTo(a[1]);
+      });
 
       outer:
-      for (final sh in shards) {
-        final String pkg = sh['app_package_name'] as String;
-        final int y = sh['year'] as int;
-        final shardDb = await _openShardDb(pkg, y);
-        if (shardDb == null) continue;
-        final String appName = appNameCache[pkg] ?? pkg;
-        final Iterable<int> months = () {
-          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms =
-              ymFilter!
-                  .where((ym) => ym[0] == y)
-                  .map((ym) => ym[1])
-                  .toSet()
-                  .toList()
-                ..sort((a, b) => b.compareTo(a));
-          if (ms.isEmpty) return const <int>[];
-          return ms;
-        }();
-        for (final m in months) {
+      for (final ym in scanYearMonths) {
+        final int y = ym[0];
+        final int m = ym[1];
+        final yearShards = shardsByYear[y] ?? const <Map<String, Object?>>[];
+        for (final sh in yearShards) {
+          final String pkg = sh['app_package_name'] as String;
+          final shardDb = await _openShardDb(pkg, y);
+          if (shardDb == null) continue;
+          final String appName = appNameCache[pkg] ?? pkg;
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
@@ -877,11 +898,261 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
                 filters.join(' AND ') +
                 ' ORDER BY m.capture_time DESC LIMIT ?';
             args.add(perTableLimit);
+            final List<Map<String, Object?>> maps = await shardDb.rawQuery(
+              sql,
+              args,
+            );
+            for (final mapp in maps) {
+              final full = Map<String, dynamic>.from(mapp);
+              full['app_package_name'] = pkg;
+              full['app_name'] = appName;
+              final localId = (mapp['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(y, m, localId);
+              rows.add(full);
+            }
+          } catch (_) {}
+        }
+        if (rows.length >= target) break outer;
+      }
+
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (_) {
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  Future<int> countScreenshotsByOcrLike(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    try {
+      final String q = query.trim().toLowerCase();
+      if (q.isEmpty) return 0;
+
+      // 时间范围限制到需扫描的年月
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      int total = 0;
+      final db = await database;
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms =
+              ymFilter
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final parts = q
+                .split(RegExp(r"\s+"))
+                .where((e) => e.isNotEmpty)
+                .toList();
+            final List<String> filters = <String>[
+              'm.is_deleted = 0',
+              'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0',
+            ];
+            final List<Object?> args = <Object?>[];
+            for (final w in parts) {
+              filters.add('LOWER(m.ocr_text) LIKE ?');
+              args.add('%' + w + '%');
+            }
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args
+                ..add(s)
+                ..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args
+                ..add(minSize)
+                ..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+            final String sql =
+                'SELECT COUNT(*) AS c FROM ' +
+                t +
+                ' m WHERE ' +
+                filters.join(' AND ');
+            final List<Map<String, Object?>> rows = await shardDb.rawQuery(
+              sql,
+              args,
+            );
+            total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+          } catch (_) {}
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrLikeForApp(
+    String appPackageName,
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim().toLowerCase();
+      if (q.isEmpty) return <ScreenshotRecord>[];
+
+      String appName = appPackageName;
+      try {
+        final r = await db.query(
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [appPackageName],
+          limit: 1,
+        );
+        if (r.isNotEmpty) {
+          appName = (r.first['app_name'] as String?) ?? appPackageName;
+        }
+      } catch (_) {}
+
+      final int requested = ((offset ?? 0) + (limit ?? 100));
+      final int target = (requested <= 0 ? 400 : requested * 4);
+      final int perTableLimit = (() {
+        final int base = requested <= 0 ? 400 : requested * 2;
+        if (base < 200) return 200;
+        if (base > 5000) return 5000;
+        return base;
+      })();
+
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return <ScreenshotRecord>[];
+
+      outer:
+      for (final y in years) {
+        if (ymFilter != null && ymFilter.every((ym) => ym[0] != y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final parts = q
+                .split(RegExp(r"\s+"))
+                .where((e) => e.isNotEmpty)
+                .toList();
+            final List<String> filters = <String>[
+              'm.is_deleted = 0',
+              'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0',
+            ];
+            final List<Object?> args = <Object?>[];
+            for (final w in parts) {
+              filters.add('LOWER(m.ocr_text) LIKE ?');
+              args.add('%' + w + '%');
+            }
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args
+                ..add(s)
+                ..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args
+                ..add(minSize)
+                ..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+
+            final String sql =
+                'SELECT m.* FROM ' +
+                t +
+                ' m WHERE ' +
+                filters.join(' AND ') +
+                ' ORDER BY m.capture_time DESC LIMIT ?';
+            args.add(perTableLimit);
             final List<Map<String, Object?>> maps = await (shardDb as Database)
                 .rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
-              full['app_package_name'] = pkg;
+              full['app_package_name'] = appPackageName;
               full['app_name'] = appName;
               final localId = (mapp['id'] as int?) ?? 0;
               full['id'] = _encodeGid(y, m, localId);
@@ -909,7 +1180,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
-  Future<int> countScreenshotsByOcrLike(
+  Future<int> countScreenshotsByOcrLikeForApp(
+    String appPackageName,
     String query, {
     int? startMillis,
     int? endMillis,
@@ -921,7 +1193,6 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       final String q = query.trim().toLowerCase();
       if (q.isEmpty) return 0;
 
-      // 时间范围限制到需扫描的年月
       List<List<int>>? ymFilter;
       if (startMillis != null || endMillis != null) {
         final int s = startMillis ?? 0;
@@ -933,15 +1204,11 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       int total = 0;
-      final shards = await db.query(
-        'shard_registry',
-        columns: ['app_package_name', 'year'],
-        orderBy: 'year DESC',
-      );
-      for (final sh in shards) {
-        final String pkg = sh['app_package_name'] as String;
-        final int y = sh['year'] as int;
-        final shardDb = await _openShardDb(pkg, y);
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return 0;
+      for (final y in years) {
+        if (ymFilter != null && ymFilter.every((ym) => ym[0] != y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
         if (shardDb == null) continue;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
@@ -2887,6 +3154,12 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         columns: ['app_package_name', 'year'],
         orderBy: 'year DESC',
       );
+      final Map<int, List<Map<String, Object?>>> shardsByYear =
+          <int, List<Map<String, Object?>>>{};
+      for (final sh in shards) {
+        final int y = sh['year'] as int;
+        (shardsByYear[y] ??= <Map<String, Object?>>[]).add(sh);
+      }
 
       // 若提供时间范围，则优先限定需要扫描的年月集合
       List<List<int>>? ymFilter;
@@ -2898,28 +3171,42 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           DateTime.fromMillisecondsSinceEpoch(e),
         );
       }
+      final List<List<int>> scanYearMonths = <List<int>>[];
+      final Set<String> seenYm = <String>{};
+      void addScanYearMonth(int y, int m) {
+        final String key = '$y-$m';
+        if (seenYm.add(key)) scanYearMonths.add(<int>[y, m]);
+      }
+
+      if (ymFilter != null) {
+        for (final ym in ymFilter) {
+          addScanYearMonth(ym[0], ym[1]);
+        }
+      } else {
+        final years = shardsByYear.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
+        for (final y in years) {
+          for (int m = 12; m >= 1; m--) {
+            addScanYearMonth(y, m);
+          }
+        }
+      }
+      scanYearMonths.sort((a, b) {
+        final int yc = b[0].compareTo(a[0]);
+        if (yc != 0) return yc;
+        return b[1].compareTo(a[1]);
+      });
 
       outer:
-      for (final sh in shards) {
-        final String pkg = sh['app_package_name'] as String;
-        final int y = sh['year'] as int;
-        final shardDb = await _openShardDb(pkg, y);
-        if (shardDb == null) continue;
-        final String appName = appNameCache[pkg] ?? pkg;
-        // 选择需要扫描的月份
-        final Iterable<int> months = () {
-          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms =
-              ymFilter!
-                  .where((ym) => ym[0] == y)
-                  .map((ym) => ym[1])
-                  .toSet()
-                  .toList()
-                ..sort((a, b) => b.compareTo(a));
-          if (ms.isEmpty) return const <int>[];
-          return ms;
-        }();
-        for (final m in months) {
+      for (final ym in scanYearMonths) {
+        final int y = ym[0];
+        final int m = ym[1];
+        final yearShards = shardsByYear[y] ?? const <Map<String, Object?>>[];
+        for (final sh in yearShards) {
+          final String pkg = sh['app_package_name'] as String;
+          final shardDb = await _openShardDb(pkg, y);
+          if (shardDb == null) continue;
+          final String appName = appNameCache[pkg] ?? pkg;
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
@@ -3014,10 +3301,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final localId = (mapp['id'] as int?) ?? 0;
               full['id'] = _encodeGid(y, m, localId);
               rows.add(full);
-              if (rows.length >= target) break outer;
             }
           } catch (_) {}
         }
+        if (rows.length >= target) break outer;
       }
 
       rows.sort((a, b) {

@@ -15,6 +15,7 @@ import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/app/navigation/navigation_service.dart';
 import 'package:screen_memo/data/settings/user_settings_service.dart';
 import 'package:screen_memo/features/app_health/application/app_health_service.dart';
+import 'package:screen_memo/features/search/application/ocr_search_service.dart';
 
 /// 截屏服务异常类
 class ScreenshotServiceException implements Exception {
@@ -1788,19 +1789,60 @@ class ScreenshotService {
     }
   }
 
-  /// 索引可用性：检测 SQLite 是否支持 FTS（fts5/fts4）。
-  Future<bool> isOcrIndexAvailable() async {
-    try {
-      return await _database.isOcrIndexAvailable();
-    } catch (e) {
-      return false;
-    }
+  // ========== 带回退的单应用 OCR 搜索与计数 ==========
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrForAppWithFallback(
+    String appPackageName,
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+    bool rankByRelevance = false,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
+  }) async {
+    return OcrSearchService.instance.searchForApp(
+      appPackageName,
+      query,
+      limit: limit,
+      offset: offset,
+      startMillis: startMillis,
+      endMillis: endMillis,
+      minSize: minSize,
+      maxSize: maxSize,
+      rankByRelevance: rankByRelevance,
+      allowAdvanced: allowAdvanced,
+      queryAdvanced: queryAdvanced,
+    );
   }
 
-  bool _isLikelyCjkNoSpacesQuery(String query) {
-    final String q = query.trim();
-    if (q.isEmpty || RegExp(r'\s').hasMatch(q)) return false;
-    return RegExp(r'[\u4e00-\u9fff]').hasMatch(q);
+  Future<int> countScreenshotsByOcrForAppWithFallback(
+    String appPackageName,
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
+  }) async {
+    return OcrSearchService.instance.countForApp(
+      appPackageName,
+      query,
+      startMillis: startMillis,
+      endMillis: endMillis,
+      minSize: minSize,
+      maxSize: maxSize,
+      allowAdvanced: allowAdvanced,
+      queryAdvanced: queryAdvanced,
+    );
+  }
+
+  /// 索引可用性：检测 SQLite 是否支持 FTS（fts5/fts4）。
+  Future<bool> isOcrIndexAvailable() async {
+    return OcrSearchService.instance.isOcrIndexAvailable();
   }
 
   // ========== 带回退的全局 OCR 搜索与计数 ==========
@@ -1812,87 +1854,22 @@ class ScreenshotService {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool rankByRelevance = false,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
-    try {
-      bool indexAvailable = false;
-      try {
-        indexAvailable = await _database.isOcrIndexAvailable();
-      } catch (_) {}
-      if (_isLikelyCjkNoSpacesQuery(query)) {
-        int? likeCount;
-        if (indexAvailable) {
-          try {
-            likeCount = await _database.countScreenshotsByOcrLike(
-              query,
-              startMillis: startMillis,
-              endMillis: endMillis,
-              minSize: minSize,
-              maxSize: maxSize,
-            );
-          } catch (_) {}
-        }
-        List<ScreenshotRecord> likeResults = <ScreenshotRecord>[];
-        try {
-          likeResults = await _database.searchScreenshotsByOcrLike(
-            query,
-            limit: limit,
-            offset: offset,
-            startMillis: startMillis,
-            endMillis: endMillis,
-            minSize: minSize,
-            maxSize: maxSize,
-          );
-        } catch (_) {}
-        if (!indexAvailable ||
-            likeResults.isNotEmpty ||
-            (likeCount != null && likeCount > 0)) {
-          return likeResults;
-        }
-        try {
-          final List<ScreenshotRecord> ftsResults = await _database
-              .searchScreenshotsByOcr(
-                query,
-                limit: limit,
-                offset: offset,
-                startMillis: startMillis,
-                endMillis: endMillis,
-                minSize: minSize,
-                maxSize: maxSize,
-              );
-          return ftsResults.isNotEmpty ? ftsResults : likeResults;
-        } catch (_) {
-          return likeResults;
-        }
-      }
-      if (indexAvailable) {
-        try {
-          final List<ScreenshotRecord> ftsResults = await _database
-              .searchScreenshotsByOcr(
-                query,
-                limit: limit,
-                offset: offset,
-                startMillis: startMillis,
-                endMillis: endMillis,
-                minSize: minSize,
-                maxSize: maxSize,
-              );
-          if (ftsResults.isNotEmpty) {
-            return ftsResults;
-          }
-        } catch (_) {}
-      }
-      return await _database.searchScreenshotsByOcrLike(
-        query,
-        limit: limit,
-        offset: offset,
-        startMillis: startMillis,
-        endMillis: endMillis,
-        minSize: minSize,
-        maxSize: maxSize,
-      );
-    } catch (_) {
-      return <ScreenshotRecord>[];
-    }
+    return OcrSearchService.instance.searchGlobal(
+      query,
+      limit: limit,
+      offset: offset,
+      startMillis: startMillis,
+      endMillis: endMillis,
+      minSize: minSize,
+      maxSize: maxSize,
+      rankByRelevance: rankByRelevance,
+      allowAdvanced: allowAdvanced,
+      queryAdvanced: queryAdvanced,
+    );
   }
 
   Future<int> countScreenshotsByOcrWithFallback(
@@ -1901,63 +1878,18 @@ class ScreenshotService {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
-    try {
-      bool indexAvailable = false;
-      try {
-        indexAvailable = await _database.isOcrIndexAvailable();
-      } catch (_) {}
-      if (_isLikelyCjkNoSpacesQuery(query)) {
-        int likeCount = 0;
-        try {
-          likeCount = await _database.countScreenshotsByOcrLike(
-            query,
-            startMillis: startMillis,
-            endMillis: endMillis,
-            minSize: minSize,
-            maxSize: maxSize,
-          );
-        } catch (_) {}
-        if (likeCount > 0 || !indexAvailable) {
-          return likeCount;
-        }
-        try {
-          final int ftsCount = await _database.countScreenshotsByOcr(
-            query,
-            startMillis: startMillis,
-            endMillis: endMillis,
-            minSize: minSize,
-            maxSize: maxSize,
-          );
-          return ftsCount > 0 ? ftsCount : likeCount;
-        } catch (_) {
-          return likeCount;
-        }
-      }
-      if (indexAvailable) {
-        try {
-          final int ftsCount = await _database.countScreenshotsByOcr(
-            query,
-            startMillis: startMillis,
-            endMillis: endMillis,
-            minSize: minSize,
-            maxSize: maxSize,
-          );
-          if (ftsCount > 0) {
-            return ftsCount;
-          }
-        } catch (_) {}
-      }
-      return await _database.countScreenshotsByOcrLike(
-        query,
-        startMillis: startMillis,
-        endMillis: endMillis,
-        minSize: minSize,
-        maxSize: maxSize,
-      );
-    } catch (_) {
-      return 0;
-    }
+    return OcrSearchService.instance.countGlobal(
+      query,
+      startMillis: startMillis,
+      endMillis: endMillis,
+      minSize: minSize,
+      maxSize: maxSize,
+      allowAdvanced: allowAdvanced,
+      queryAdvanced: queryAdvanced,
+    );
   }
 
   /// 获取指定应用的截屏总数量
