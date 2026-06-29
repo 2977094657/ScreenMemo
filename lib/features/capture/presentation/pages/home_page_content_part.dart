@@ -178,10 +178,14 @@ extension _HomePageContentPart on _HomePageState {
               vertical: AppTheme.spacing1,
             ),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final app = _selectedApps[index];
-                return _buildAppListItem(app, index);
-              }, childCount: _selectedApps.length),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final app = _selectedApps[index];
+                  return _buildAppListItem(app, index);
+                },
+                childCount: _selectedApps.length,
+                addAutomaticKeepAlives: false,
+              ),
             ),
           )
         else if (showInitialLoading)
@@ -453,36 +457,33 @@ extension _HomePageContentPart on _HomePageState {
                   clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(
-                      child: app.icon != null
-                          ? Image.memory(
-                              app.icon!,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.contain,
-                            )
-                          : Container(
-                              decoration: BoxDecoration(
-                                color: app.isInstalled
-                                    ? cs.surfaceContainerHighest
-                                    : Colors.grey.shade400,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              alignment: Alignment.center,
-                              child: app.isInstalled
-                                  ? Icon(
-                                      Icons.android,
-                                      color: cs.onSurfaceVariant,
-                                      size: 32,
-                                    )
-                                  : Text(
-                                      _appInitial(app),
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                            ),
+                      child: LazyAppIcon(
+                        packageName: app.packageName,
+                        initialIcon: app.icon,
+                        size: 48,
+                        fallback: Container(
+                          decoration: BoxDecoration(
+                            color: app.isInstalled
+                                ? cs.surfaceContainerHighest
+                                : Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: app.isInstalled
+                              ? Icon(
+                                  Icons.android,
+                                  color: cs.onSurfaceVariant,
+                                  size: 32,
+                                )
+                              : Text(
+                                  _appInitial(app),
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
                     if (_customEnabledPackages.contains(app.packageName))
                       Positioned(

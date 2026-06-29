@@ -16,6 +16,7 @@ import 'package:screen_memo/core/widgets/selection_checkbox.dart';
 import 'package:screen_memo/core/widgets/search_styles.dart';
 import 'package:screen_memo/features/capture/application/ime_exclusion_service.dart';
 import 'package:screen_memo/features/apps/presentation/widgets/app_selection_widget.dart';
+import 'package:screen_memo/features/apps/presentation/widgets/lazy_app_icon.dart';
 import 'package:screen_memo/features/capture/data/per_app_screenshot_settings_service.dart';
 import 'package:screen_memo/features/daily_summary/application/daily_summary_service.dart';
 import 'package:screen_memo/features/daily_summary/presentation/pages/daily_summary_page.dart';
