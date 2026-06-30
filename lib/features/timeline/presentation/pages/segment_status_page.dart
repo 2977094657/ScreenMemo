@@ -21,6 +21,7 @@ import 'package:screen_memo/core/logging/flutter_logger.dart';
 import 'package:screen_memo/data/database/screenshot_database.dart';
 import 'package:screen_memo/data/settings/user_settings_service.dart';
 import 'package:screen_memo/core/theme/app_theme.dart';
+import 'package:screen_memo/core/utils/json_string_field_extractor.dart';
 import 'package:screen_memo/core/constants/user_settings_keys.dart';
 import 'package:screen_memo/core/utils/merged_event_summary.dart';
 import 'package:screen_memo/core/widgets/model_logo.dart';

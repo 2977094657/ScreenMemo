@@ -34,66 +34,70 @@ extension _SegmentEntryCardLogicPart on _SegmentEntryCardState {
     }
   }
 
+  static void _markEmptySummaryDiagLogged(int segmentId) {
+    _SegmentEntryCardState._emptySummaryDiagLoggedSegmentIds.add(segmentId);
+    while (_SegmentEntryCardState._emptySummaryDiagLoggedSegmentIds.length >
+        _SegmentEntryCardState._autoRetryRememberCap) {
+      _SegmentEntryCardState._emptySummaryDiagLoggedSegmentIds.remove(
+        _SegmentEntryCardState._emptySummaryDiagLoggedSegmentIds.first,
+      );
+    }
+  }
+
   bool _isNonEmptyJsonLike(String? s) {
     final String t = (s ?? '').trim();
     if (t.isEmpty) return false;
     return t.toLowerCase() != 'null';
   }
 
-  String _extractJsonStringValueFromRaw(String raw, String key) {
-    final String s = raw;
-    if (s.isEmpty) return '';
-
-    int idx = s.indexOf('"$key"');
-    if (idx < 0) return '';
-    idx = s.indexOf(':', idx);
-    if (idx < 0) return '';
-    idx++;
-
-    // Skip whitespace.
-    while (idx < s.length) {
-      final int cu = s.codeUnitAt(idx);
-      if (cu == 32 || cu == 9 || cu == 10 || cu == 13) {
-        idx++;
-        continue;
-      }
-      break;
-    }
-    if (idx >= s.length || s[idx] != '"') return '';
-
-    // Extract the JSON string literal without requiring the full JSON object to be valid.
-    final int start = idx;
-    idx++;
-    bool escaped = false;
-    for (; idx < s.length; idx++) {
-      final int cu = s.codeUnitAt(idx);
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (cu == 92 /* \ */ ) {
-        escaped = true;
-        continue;
-      }
-      if (cu == 34 /* " */ ) {
-        final String literal = s.substring(start, idx + 1);
-        try {
-          final dynamic v = jsonDecode(literal);
-          if (v is String) return v.trim();
-        } catch (_) {
-          return '';
-        }
-        return '';
-      }
-    }
-    return '';
+  String _extractOverallSummaryFromRawStructuredJson(String? raw) {
+    return extractOverallSummaryFromRaw(raw);
   }
 
-  String _extractOverallSummaryFromRawStructuredJson(String? raw) {
-    final String t = (raw ?? '').trim();
-    if (t.isEmpty) return '';
-    if (t.toLowerCase() == 'null') return '';
-    return _extractJsonStringValueFromRaw(t, 'overall_summary');
+  void _maybeLogEmptySummaryDiag({
+    required int segmentId,
+    required bool hasSummary,
+    required bool structuredJsonTruncated,
+    required bool structuredJsonParseFailed,
+    required String? structuredJsonRaw,
+    required String? overallSummaryPreviewRaw,
+  }) {
+    if (segmentId <= 0) return;
+    if (!hasSummary &&
+        (structuredJsonRaw ?? '').trim().isEmpty &&
+        (overallSummaryPreviewRaw ?? '').trim().isEmpty) {
+      return;
+    }
+    if (_SegmentEntryCardState._emptySummaryDiagLoggedSegmentIds.contains(
+      segmentId,
+    )) {
+      return;
+    }
+    _markEmptySummaryDiagLogged(segmentId);
+    final String preview = (overallSummaryPreviewRaw ?? '').trim();
+    final String structured = (structuredJsonRaw ?? '').trim();
+    final int previewKey = preview.indexOf('overall_summary');
+    final int structuredKey = structured.indexOf('overall_summary');
+    unawaited(
+      FlutterLogger.nativeWarn(
+        'SegmentTimelineDiag',
+        'ui.entry.emptySummary segment=$segmentId hasSummary=$hasSummary '
+            'structuredTruncated=$structuredJsonTruncated '
+            'parseFailed=$structuredJsonParseFailed '
+            'previewLen=${preview.length} structuredLen=${structured.length} '
+            'previewHasKey=${previewKey >= 0} structuredHasKey=${structuredKey >= 0} '
+            'previewHead=${_diagHead(preview)} structuredHead=${_diagHead(structured)}',
+      ).catchError((_) {}),
+    );
+  }
+
+  String _diagHead(String value, {int limit = 96}) {
+    if (value.isEmpty) return '-';
+    final String oneLine = value
+        .replaceAll('\r', r'\r')
+        .replaceAll('\n', r'\n');
+    if (oneLine.length <= limit) return oneLine;
+    return '${oneLine.substring(0, limit)}…';
   }
 
   void _maybeAutoRetryInvalidStructuredJson({
@@ -103,13 +107,15 @@ extension _SegmentEntryCardLogicPart on _SegmentEntryCardState {
   }) {
     if (segmentId <= 0) return;
     if (_retrying) return;
-    if (structuredJsonTruncated)
+    if (structuredJsonTruncated) {
       return; // likely truncated for CursorWindow fallback
+    }
     if (!_isNonEmptyJsonLike(structuredJsonRaw)) return;
     if (_SegmentEntryCardState._autoRetryTriggeredSegmentIds.contains(
       segmentId,
-    ))
+    )) {
       return;
+    }
     _markAutoRetryTriggered(segmentId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

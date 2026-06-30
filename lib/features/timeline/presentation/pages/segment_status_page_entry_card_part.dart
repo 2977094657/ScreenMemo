@@ -47,6 +47,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       AppLocalizations.of(context).thinkingInProgress;
   static const int _autoRetryRememberCap = 2048;
   static final Set<int> _autoRetryTriggeredSegmentIds = <int>{};
+  static final Set<int> _emptySummaryDiagLoggedSegmentIds = <int>{};
 
   final ScrollController _tagScrollController = ScrollController();
 
@@ -104,15 +105,6 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   @override
   Widget build(BuildContext context) {
     final int id = (_segmentData['id'] as int?) ?? 0;
-    final bool isZh = (() {
-      try {
-        return Localizations.localeOf(
-          context,
-        ).languageCode.toLowerCase().startsWith('zh');
-      } catch (_) {
-        return true;
-      }
-    })();
     // 移除 per-item FutureBuilder，使用后端联表元数据；展开时懒加载样本
     final int sampleCount = (_segmentData['sample_count'] as int?) ?? 0;
     final int start = (_segmentData['start_time'] as int?) ?? 0;
@@ -191,18 +183,28 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final bool aiRetryFailed = _aiNeedsManualRetry(structured);
     final String aiRetryMsg = _aiRetryMessage(context, structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
+    final String? overallSummaryPreviewRaw =
+        (_segmentData['overall_summary_preview'] as String?)?.toString();
     String computedSummary = _extractOverallSummary(structured);
+    if (computedSummary.isEmpty) {
+      computedSummary = _extractOverallSummaryFromRawStructuredJson(
+        overallSummaryPreviewRaw,
+      );
+    }
     if (computedSummary.isEmpty) {
       computedSummary = _extractOverallSummaryFromRawStructuredJson(
         structuredJsonRaw,
       );
     }
-    if (computedSummary.isEmpty &&
-        structuredJsonTruncated &&
-        ((_segmentData['has_summary'] as int?) ?? 0) != 0) {
-      computedSummary = isZh
-          ? '摘要过长，请进入详情查看'
-          : 'Summary is too long. Open details to view.';
+    if (!_summaryStreaming && computedSummary.isEmpty) {
+      _maybeLogEmptySummaryDiag(
+        segmentId: id,
+        hasSummary: ((_segmentData['has_summary'] as int?) ?? 0) != 0,
+        structuredJsonTruncated: structuredJsonTruncated,
+        structuredJsonParseFailed: structuredJsonParseFailed,
+        structuredJsonRaw: structuredJsonRaw,
+        overallSummaryPreviewRaw: overallSummaryPreviewRaw,
+      );
     }
     final String summary = _summaryStreaming
         ? (_summaryStreamingText.isEmpty

@@ -143,6 +143,48 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
     );
   }
 
+  void _logSegmentTimelineUiDiag(String message, {bool warn = false}) {
+    final Future<void> log = warn
+        ? FlutterLogger.nativeWarn('SegmentTimelineDiag', 'ui.$message')
+        : FlutterLogger.nativeInfo('SegmentTimelineDiag', 'ui.$message');
+    unawaited(log.catchError((_) {}));
+  }
+
+  String _segmentTimelineUiRowsPreview(
+    List<Map<String, dynamic>> rows, {
+    int limit = 5,
+  }) {
+    if (rows.isEmpty) return '-';
+    final String suffix = rows.length > limit ? ',...' : '';
+    return rows
+            .take(limit)
+            .map((Map<String, dynamic> row) {
+              final Object? id = row['id'];
+              final Object? start = row['start_time'];
+              final Object? end = row['end_time'];
+              final Object? samples = row['sample_count'];
+              final Object? summary = row['has_summary'];
+              return 'id=$id start=$start end=$end samples=$samples summary=$summary';
+            })
+            .join(' | ') +
+        suffix;
+  }
+
+  String _segmentTimelineUiCountPreview(
+    Map<String, int> counts, {
+    int limit = 8,
+  }) {
+    if (counts.isEmpty) return '-';
+    final List<String> keys = counts.keys.toList()
+      ..sort((String a, String b) => b.compareTo(a));
+    final String suffix = keys.length > limit ? ',...' : '';
+    return keys
+            .take(limit)
+            .map((String key) => '$key:${counts[key] ?? 0}')
+            .join(',') +
+        suffix;
+  }
+
   Future<void> _loadPrivacyMode() async {
     final Stopwatch sw = Stopwatch()..start();
     _beginEntryPerfLoad('segment.privacyMode');
@@ -267,6 +309,9 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
         loadedDayKeys = batch.dayKeys;
         dayCountsByKey = batch.dayCountsByKey;
         hasMoreOlder = batch.hasMoreOlder;
+        _logSegmentTimelineUiDiag(
+          'refresh.dayBatch dayKeys=${loadedDayKeys.length} pinned=$pinnedDateKey selectedBefore=${_selectedDateKey ?? ''} cutoff=${rebuildCutoffDayKey ?? '(none)'} counts=${_segmentTimelineUiCountPreview(dayCountsByKey)} hasMoreOlder=$hasMoreOlder',
+        );
         selectedDateKey = loadedDayKeys.contains(pinnedDateKey)
             ? pinnedDateKey
             : (loadedDayKeys.isEmpty ? null : loadedDayKeys.first);
@@ -280,6 +325,13 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
           segmentsByDay = <String, List<Map<String, dynamic>>>{
             selectedDateKey: segments,
           };
+          final int expectedCount = dayCountsByKey[selectedDateKey] ?? 0;
+          final bool mismatch =
+              expectedCount > 0 && expectedCount != segments.length;
+          _logSegmentTimelineUiDiag(
+            'refresh.initialDayLoaded date=$selectedDateKey expected=$expectedCount actual=${segments.length} cutoff=${rebuildCutoffDayKey ?? '(none)'} mismatch=$mismatch rows=${_segmentTimelineUiRowsPreview(segments)}',
+            warn: mismatch,
+          );
           dayCountsByKey = <String, int>{
             ...dayCountsByKey,
             selectedDateKey: segments.length,
@@ -559,6 +611,10 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       return;
     }
     final int generation = _timelineLoadGeneration;
+    final int expectedCount = _dayCountsByKey[normalized] ?? 0;
+    _logSegmentTimelineUiDiag(
+      'dayLoad.start date=$normalized expected=$expectedCount generation=$generation cutoff=${_dynamicRebuildTimelineCutoffDayKey() ?? '(none)'} loadedDays=${_loadedDayKeys.length} loaded=${_segmentsByDay.containsKey(normalized)} loading=${_loadingDayKeys.contains(normalized)}',
+    );
     _segmentStatusSetState(() {
       _loadingDayKeys = <String>{..._loadingDayKeys, normalized};
     });
@@ -575,6 +631,12 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
         'segment.dayLoad.done',
         detail:
             'ms=${sw.elapsedMilliseconds} day=$normalized segments=${segments.length}',
+      );
+      final bool mismatch =
+          expectedCount > 0 && expectedCount != segments.length;
+      _logSegmentTimelineUiDiag(
+        'dayLoad.done date=$normalized expected=$expectedCount actual=${segments.length} generation=$generation mismatch=$mismatch rows=${_segmentTimelineUiRowsPreview(segments)} ms=${sw.elapsedMilliseconds}',
+        warn: mismatch,
       );
       if (!mounted || generation != _timelineLoadGeneration) return;
       final Map<String, List<Map<String, dynamic>>> nextSegmentsByDay =
@@ -598,6 +660,10 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
         'segment.dayLoad.error',
         detail:
             'ms=${sw.elapsedMilliseconds} day=$normalized error=${e.toString()}',
+      );
+      _logSegmentTimelineUiDiag(
+        'dayLoad.error date=$normalized expected=$expectedCount generation=$generation error=${e.toString()} ms=${sw.elapsedMilliseconds}',
+        warn: true,
       );
       if (!mounted || generation != _timelineLoadGeneration) return;
       _segmentStatusSetState(() {
@@ -649,6 +715,9 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       return;
     }
 
+    _logSegmentTimelineUiDiag(
+      'jump.start date=$normalized knownCount=$knownCount cutoff=${cutoff ?? '(none)'} loadedDays=${_loadedDayKeys.length}',
+    );
     final SegmentTimelineDayBatch dayBatch = await _db
         .listSegmentTimelineDayBatch(
           distinctDayCount: _SegmentStatusPageState._initialDayTabs,
@@ -662,6 +731,9 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
         ? (<String>{..._loadedDayKeys, normalized}.toList()
             ..sort((String a, String b) => b.compareTo(a)))
         : dayBatch.dayKeys;
+    _logSegmentTimelineUiDiag(
+      'jump.dayBatch date=$normalized dayKeys=${nextDayKeys.length} batchCounts=${_segmentTimelineUiCountPreview(dayBatch.dayCountsByKey)} knownCount=$knownCount hasMoreOlder=${dayBatch.hasMoreOlder}',
+    );
     final int generation = ++_timelineLoadGeneration;
     _segmentStatusSetState(() {
       _selectedDateKey = normalized;
@@ -687,6 +759,14 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
             truncateResultColumns: true,
           );
       if (!mounted || generation != _timelineLoadGeneration) return;
+      final int expectedCount =
+          dayBatch.dayCountsByKey[normalized] ?? knownCount;
+      final bool mismatch =
+          expectedCount > 0 && expectedCount != segments.length;
+      _logSegmentTimelineUiDiag(
+        'jump.dayLoaded date=$normalized expected=$expectedCount actual=${segments.length} generation=$generation mismatch=$mismatch rows=${_segmentTimelineUiRowsPreview(segments)}',
+        warn: mismatch,
+      );
       final Map<String, List<Map<String, dynamic>>> nextSegmentsByDay =
           <String, List<Map<String, dynamic>>>{
             ..._segmentsByDay,
@@ -706,6 +786,10 @@ extension _SegmentStatusStateHelpersPart on _SegmentStatusPageState {
       });
     } catch (_) {
       if (!mounted || generation != _timelineLoadGeneration) return;
+      _logSegmentTimelineUiDiag(
+        'jump.dayLoadError date=$normalized knownCount=$knownCount generation=$generation',
+        warn: true,
+      );
       _segmentStatusSetState(() {
         _loadingDayKeys = <String>{..._loadingDayKeys}..remove(normalized);
       });

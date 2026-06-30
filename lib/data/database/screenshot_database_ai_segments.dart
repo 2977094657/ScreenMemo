@@ -1,5 +1,47 @@
 part of 'screenshot_database.dart';
 
+const String _segmentTimelineDiagTag = 'SegmentTimelineDiag';
+
+void _logSegmentTimelineDiag(String message, {bool warn = false}) {
+  final Future<void> log = warn
+      ? FlutterLogger.nativeWarn(_segmentTimelineDiagTag, message)
+      : FlutterLogger.nativeInfo(_segmentTimelineDiagTag, message);
+  unawaited(log.catchError((_) {}));
+}
+
+String _segmentTimelineDayInfoPreview(
+  List<SegmentTimelineDayInfo> days, {
+  int limit = 8,
+}) {
+  if (days.isEmpty) return '-';
+  final Iterable<SegmentTimelineDayInfo> shown = days.take(limit);
+  final String suffix = days.length > limit ? ',...' : '';
+  return shown
+          .map((SegmentTimelineDayInfo info) => '${info.dayKey}:${info.count}')
+          .join(',') +
+      suffix;
+}
+
+String _segmentTimelineRowPreview(
+  List<Map<String, dynamic>> rows, {
+  int limit = 5,
+}) {
+  if (rows.isEmpty) return '-';
+  final Iterable<Map<String, dynamic>> shown = rows.take(limit);
+  final String suffix = rows.length > limit ? ',...' : '';
+  return shown
+          .map((Map<String, dynamic> row) {
+            final Object? id = row['id'];
+            final Object? start = row['start_time'];
+            final Object? end = row['end_time'];
+            final Object? sampleCount = row['sample_count'];
+            final Object? hasSummary = row['has_summary'];
+            return 'id=$id start=$start end=$end samples=$sampleCount summary=$hasSummary';
+          })
+          .join(' | ') +
+      suffix;
+}
+
 extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
   String _segmentsRootWhere([String? alias]) {
     final String p = (alias == null || alias.isEmpty) ? '' : '$alias.';
@@ -297,6 +339,7 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
     String? maxDateKeyInclusive,
     bool requireSamples = true,
   }) async {
+    final Stopwatch sw = Stopwatch()..start();
     final db = await database;
     final int safeDayCount = math.max(1, distinctDayCount);
     final String beforeKey = (beforeDateKey ?? '').trim();
@@ -464,6 +507,10 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
     }
 
     if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      _logSegmentTimelineDiag(
+        'dayBatch.empty reason=blankCutoff distinct=$safeDayCount before=$beforeKey pinned=$pinnedKey max=(blank) requireSamples=$requireSamples ms=${sw.elapsedMilliseconds}',
+        warn: true,
+      );
       return const SegmentTimelineDayBatch(
         days: <SegmentTimelineDayInfo>[],
         hasMoreOlder: false,
@@ -476,6 +523,9 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
       limit: safeDayCount,
     );
     if (days.isEmpty) {
+      _logSegmentTimelineDiag(
+        'dayBatch.empty reason=noDays distinct=$safeDayCount before=$beforeKey pinned=$pinnedKey max=${maxKeyInclusive.isEmpty ? '(none)' : maxKeyInclusive} requireSamples=$requireSamples ms=${sw.elapsedMilliseconds}',
+      );
       return const SegmentTimelineDayBatch(
         days: <SegmentTimelineDayInfo>[],
         hasMoreOlder: false,
@@ -542,6 +592,9 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
     }
 
     final bool hasMoreOlder = await hasOlderThan(days.last.dayKey);
+    _logSegmentTimelineDiag(
+      'dayBatch.result distinct=$safeDayCount before=$beforeKey pinned=$pinnedKey max=${maxKeyInclusive.isEmpty ? '(none)' : maxKeyInclusive} requireSamples=$requireSamples days=${days.length} first=${days.first.dayKey}:${days.first.count} last=${days.last.dayKey}:${days.last.count} hasMoreOlder=$hasMoreOlder preview=${_segmentTimelineDayInfoPreview(days)} ms=${sw.elapsedMilliseconds}',
+    );
     return SegmentTimelineDayBatch(days: days, hasMoreOlder: hasMoreOlder);
   }
 
@@ -650,6 +703,56 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
         .toList(growable: false);
   }
 
+  Future<Map<String, int>> _segmentTimelineDayDiagCounts(
+    Database db, {
+    required String dateKey,
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    const String dayExpr =
+        "date(s.start_time / 1000, 'unixepoch', 'localtime')";
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+    final String rootGlobalCond =
+        "${_segmentsRootWhere('s')} AND (s.segment_kind IS NULL OR s.segment_kind = 'global')";
+    try {
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        '''
+        SELECT
+          SUM(CASE WHEN $rootGlobalCond AND s.start_time >= ? AND s.start_time <= ? THEN 1 ELSE 0 END) AS range_root,
+          SUM(CASE WHEN $rootGlobalCond AND s.start_time >= ? AND s.start_time <= ? AND $hasSamplesCond THEN 1 ELSE 0 END) AS range_samples,
+          SUM(CASE WHEN $rootGlobalCond AND $dayExpr = ? THEN 1 ELSE 0 END) AS dayexpr_root,
+          SUM(CASE WHEN $rootGlobalCond AND $dayExpr = ? AND $hasSamplesCond THEN 1 ELSE 0 END) AS dayexpr_samples
+        FROM segments s
+        ''',
+        <Object?>[
+          startMillis,
+          endMillis,
+          startMillis,
+          endMillis,
+          dateKey,
+          dateKey,
+        ],
+      );
+      final Map<String, Object?> row = rows.isEmpty
+          ? const <String, Object?>{}
+          : rows.first;
+      int read(String key) => ((row[key] as num?) ?? 0).toInt();
+      return <String, int>{
+        'range_root': read('range_root'),
+        'range_samples': read('range_samples'),
+        'dayexpr_root': read('dayexpr_root'),
+        'dayexpr_samples': read('dayexpr_samples'),
+      };
+    } catch (e) {
+      _logSegmentTimelineDiag(
+        'daySegments.diagCounts.error date=$dateKey error=$e',
+        warn: true,
+      );
+      return const <String, int>{};
+    }
+  }
+
   Future<List<Map<String, dynamic>>> listSegmentTimelineDaySegments({
     required String dateKey,
     bool onlyNoSummary = false,
@@ -657,24 +760,39 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
     String? maxDateKeyInclusive,
     bool truncateResultColumns = false,
   }) async {
+    final Stopwatch sw = Stopwatch()..start();
     final String normalized = dateKey.trim();
     if (normalized.isEmpty) return <Map<String, dynamic>>[];
     final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
     if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      _logSegmentTimelineDiag(
+        'daySegments.empty reason=blankCutoff date=$normalized requireSamples=$requireSamples onlyNoSummary=$onlyNoSummary truncate=$truncateResultColumns ms=${sw.elapsedMilliseconds}',
+        warn: true,
+      );
       return <Map<String, dynamic>>[];
     }
     if (maxKeyInclusive.isNotEmpty &&
         normalized.compareTo(maxKeyInclusive) > 0) {
+      _logSegmentTimelineDiag(
+        'daySegments.empty reason=afterCutoff date=$normalized max=$maxKeyInclusive requireSamples=$requireSamples onlyNoSummary=$onlyNoSummary truncate=$truncateResultColumns ms=${sw.elapsedMilliseconds}',
+        warn: true,
+      );
       return <Map<String, dynamic>>[];
     }
     final int? startMillis = _parseYmdToStartMillis(normalized);
-    if (startMillis == null) return <Map<String, dynamic>>[];
+    if (startMillis == null) {
+      _logSegmentTimelineDiag(
+        'daySegments.empty reason=badDateKey date=$normalized requireSamples=$requireSamples onlyNoSummary=$onlyNoSummary truncate=$truncateResultColumns ms=${sw.elapsedMilliseconds}',
+        warn: true,
+      );
+      return <Map<String, dynamic>>[];
+    }
     final int endMillis =
         DateTime.fromMillisecondsSinceEpoch(
           startMillis,
         ).add(const Duration(days: 1)).millisecondsSinceEpoch -
         1;
-    return listSegmentsEx(
+    final List<Map<String, dynamic>> rows = await listSegmentsEx(
       limit: 1 << 30,
       onlyNoSummary: onlyNoSummary,
       requireSamples: requireSamples,
@@ -682,6 +800,22 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
       endMillis: endMillis,
       truncateResultColumns: truncateResultColumns,
     );
+    Map<String, int> diagCounts = const <String, int>{};
+    final bool warn = rows.isEmpty;
+    if (warn) {
+      final db = await database;
+      diagCounts = await _segmentTimelineDayDiagCounts(
+        db,
+        dateKey: normalized,
+        startMillis: startMillis,
+        endMillis: endMillis,
+      );
+    }
+    _logSegmentTimelineDiag(
+      'daySegments.result date=$normalized rows=${rows.length} range=$startMillis..$endMillis max=${maxKeyInclusive.isEmpty ? '(none)' : maxKeyInclusive} requireSamples=$requireSamples onlyNoSummary=$onlyNoSummary truncate=$truncateResultColumns preview=${_segmentTimelineRowPreview(rows)}${diagCounts.isEmpty ? '' : ' diagCounts=$diagCounts'} ms=${sw.elapsedMilliseconds}',
+      warn: warn,
+    );
+    return rows;
   }
 
   Future<List<Map<String, dynamic>>> _attachSegmentSampleStats(
@@ -835,6 +969,16 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
     const int previewOutputTextChars = 2048;
     const int previewStructuredJsonChars = 32768;
     const int previewCategoriesChars = 2048;
+    const int previewOverallSummaryChars = 8192;
+    const String overallSummaryKeyPosSql = '''
+      CASE
+        WHEN INSTR(r.structured_json, '"overall_summary"') > 0
+          THEN INSTR(r.structured_json, '"overall_summary"')
+        WHEN INSTR(r.structured_json, char(92) || '"overall_summary' || char(92) || '"') > 0
+          THEN INSTR(r.structured_json, char(92) || '"overall_summary' || char(92) || '"')
+        ELSE 0
+      END
+    ''';
     final String resultColumnsSql = truncateResultColumns
         ? '''
           SUBSTR(r.output_text, 1, ?) AS output_text,
@@ -843,19 +987,37 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
             WHEN LENGTH(r.structured_json) <= ? THEN r.structured_json
             ELSE SUBSTR(
               r.structured_json,
-              MAX(1, INSTR(r.structured_json, '"overall_summary"')),
+              MAX(1, $overallSummaryKeyPosSql),
               ?
             )
           END AS structured_json,
           SUBSTR(r.categories, 1, ?) AS categories,
           CASE WHEN r.output_text IS NOT NULL AND LENGTH(r.output_text) > ? THEN 1 ELSE 0 END AS output_text_truncated,
           CASE WHEN r.structured_json IS NOT NULL AND LENGTH(r.structured_json) > ? THEN 1 ELSE 0 END AS structured_json_truncated,
-          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated
+          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated,
+          CASE
+            WHEN r.structured_json IS NULL THEN NULL
+            WHEN $overallSummaryKeyPosSql <= 0 THEN NULL
+            ELSE SUBSTR(
+              r.structured_json,
+              $overallSummaryKeyPosSql,
+              ?
+            )
+          END AS overall_summary_preview
         '''
         : '''
           r.output_text,
           r.structured_json,
-          r.categories
+          r.categories,
+          CASE
+            WHEN r.structured_json IS NULL THEN NULL
+            WHEN $overallSummaryKeyPosSql <= 0 THEN NULL
+            ELSE SUBSTR(
+              r.structured_json,
+              $overallSummaryKeyPosSql,
+              ?
+            )
+          END AS overall_summary_preview
         ''';
     final List<Object?> resultColumnParams = truncateResultColumns
         ? <Object?>[
@@ -866,13 +1028,41 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
             previewOutputTextChars,
             previewStructuredJsonChars,
             previewCategoriesChars,
+            previewOverallSummaryChars,
           ]
-        : const <Object?>[];
+        : const <Object?>[previewOverallSummaryChars];
+
+    const int previewMergeDecisionJsonChars = 4096;
+    const int previewMergeDecisionReasonChars = 2048;
+    const String segmentColumnsSql = '''
+          s.id,
+          s.start_time,
+          s.end_time,
+          s.duration_sec,
+          s.sample_interval_sec,
+          s.status,
+          s.segment_kind,
+          s.app_packages,
+          s.merge_attempted,
+          s.merged_flag,
+          s.merged_into_id,
+          s.merge_prev_id,
+          SUBSTR(s.merge_decision_json, 1, ?) AS merge_decision_json,
+          SUBSTR(s.merge_decision_reason, 1, ?) AS merge_decision_reason,
+          s.merge_forced,
+          s.merge_decision_at,
+          s.created_at,
+          s.updated_at
+        ''';
+    final List<Object?> segmentColumnParams = <Object?>[
+      previewMergeDecisionJsonChars,
+      previewMergeDecisionReasonChars,
+    ];
 
     final String sql =
         '''
         SELECT
-          s.*,
+          $segmentColumnsSql,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
           $resultColumnsSql
         FROM segments s
@@ -884,6 +1074,7 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
 
     try {
       final List<Object?> params = <Object?>[
+        ...segmentColumnParams,
         ...resultColumnParams,
         ...whereParams,
         limit,
@@ -912,7 +1103,7 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
         final String fallbackSql =
             '''
         SELECT
-          s.*,
+          $segmentColumnsSql,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
           SUBSTR(r.output_text, 1, ?) AS output_text,
           CASE
@@ -923,14 +1114,23 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
             -- without fetching megabytes into CursorWindow.
             ELSE SUBSTR(
               r.structured_json,
-              MAX(1, INSTR(r.structured_json, '"overall_summary"')),
+              MAX(1, $overallSummaryKeyPosSql),
               ?
             )
           END AS structured_json,
           SUBSTR(r.categories, 1, ?) AS categories,
           CASE WHEN r.output_text IS NOT NULL AND LENGTH(r.output_text) > ? THEN 1 ELSE 0 END AS output_text_truncated,
           CASE WHEN r.structured_json IS NOT NULL AND LENGTH(r.structured_json) > ? THEN 1 ELSE 0 END AS structured_json_truncated,
-          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated
+          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated,
+          CASE
+            WHEN r.structured_json IS NULL THEN NULL
+            WHEN $overallSummaryKeyPosSql <= 0 THEN NULL
+            ELSE SUBSTR(
+              r.structured_json,
+              $overallSummaryKeyPosSql,
+              ?
+            )
+          END AS overall_summary_preview
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
         $whereSql
@@ -939,7 +1139,8 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
       ''';
 
         final List<Object?> fallbackParams = <Object?>[
-          // Placeholders appear in SELECT first (SUBSTR), then WHERE, then LIMIT/OFFSET.
+          // Placeholders appear in SELECT first (segment SUBSTR, result SUBSTR), then WHERE, then LIMIT/OFFSET.
+          ...segmentColumnParams,
           maxOutputTextChars,
           maxStructuredJsonChars,
           maxStructuredJsonChars,
@@ -947,6 +1148,7 @@ extension ScreenshotDatabaseAISegments on ScreenshotDatabase {
           maxOutputTextChars,
           maxStructuredJsonChars,
           maxCategoriesChars,
+          previewOverallSummaryChars,
           ...whereParams,
           limit,
           safeOffset,
