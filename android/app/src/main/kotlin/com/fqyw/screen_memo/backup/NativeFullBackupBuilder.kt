@@ -8,9 +8,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.nio.channels.OverlappingFileLockException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,7 +42,6 @@ class NativeFullBackupBuilder(private val context: Context) {
         deviceId: String,
         onProgress: ((processedFiles: Int, totalFiles: Int, currentEntry: String) -> Unit)? = null,
     ): NativeBackupResult {
-        cleanupOldTempFiles()
         val now = Date()
         val timestamp = fileTimestamp(now)
         val safeDeviceId = sanitizeDeviceId(deviceId)
@@ -52,6 +54,7 @@ class NativeFullBackupBuilder(private val context: Context) {
         if (stageDir.exists()) stageDir.deleteRecursively()
         stageDir.mkdirs()
 
+        var completed = false
         try {
             val inventory = scanInventory(stageDir)
             if (inventory.isEmpty()) {
@@ -70,6 +73,7 @@ class NativeFullBackupBuilder(private val context: Context) {
                 }
             }
             val totalBytes = inventory.sumOf { it.bytes }
+            completed = true
             return NativeBackupResult(
                 file = zipFile,
                 archiveFileName = fileName,
@@ -77,6 +81,12 @@ class NativeFullBackupBuilder(private val context: Context) {
                 totalFiles = inventory.size,
             )
         } finally {
+            if (!completed) {
+                try {
+                    zipFile.delete()
+                } catch (_: Exception) {
+                }
+            }
             try {
                 stageDir.deleteRecursively()
             } catch (_: Exception) {
@@ -309,20 +319,6 @@ class NativeFullBackupBuilder(private val context: Context) {
         zip.closeEntry()
     }
 
-    private fun cleanupOldTempFiles() {
-        val dir = File(appContext.cacheDir, TEMP_DIR_NAME)
-        if (!dir.exists()) return
-        val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-        dir.listFiles()?.forEach { file ->
-            if (file.lastModified() < cutoff) {
-                try {
-                    if (file.isDirectory) file.deleteRecursively() else file.delete()
-                } catch (_: Exception) {
-                }
-            }
-        }
-    }
-
     private fun shouldSkipOutputRelativePath(relativePath: String): Boolean {
         val lower = relativePath.replace('\\', '/').lowercase()
         if (lower.endsWith(".db-journal")) return true
@@ -388,7 +384,8 @@ class NativeFullBackupBuilder(private val context: Context) {
 
     companion object {
         private const val TAG = "NativeFullBackupBuilder"
-        private const val TEMP_DIR_NAME = "cloud_backup"
+        internal const val TEMP_DIR_NAME = "cloud_backup"
+        private const val LOCK_FILE_NAME = ".worker.lock"
         private const val MANIFEST_FILE_NAME = "backup_manifest.json"
         private const val MASTER_DB_ARCHIVE_PATH = "output/databases/screenshot_memo.db"
         private val OUTPUT_IGNORED_DIRS = setOf("cache", "tmp", "temp", ".thumbnails")
@@ -405,5 +402,49 @@ class NativeFullBackupBuilder(private val context: Context) {
             "app_databases",
             "app_files",
         )
+
+        internal fun cleanupTempArtifacts(dir: File): Boolean {
+            var success = true
+            dir.listFiles()?.forEach { file ->
+                val isStage = file.isDirectory && file.name.startsWith("stage_")
+                val isArchive = file.isFile &&
+                    file.name.startsWith("screen_memo_full_") &&
+                    file.name.endsWith(".zip", ignoreCase = true)
+                if (!isStage && !isArchive) return@forEach
+                try {
+                    val deleted = if (file.isDirectory) file.deleteRecursively() else file.delete()
+                    if (!deleted && file.exists()) success = false
+                } catch (_: Exception) {
+                    success = false
+                }
+            }
+            return success
+        }
+
+        internal fun tryAcquireRunLock(dir: File): Closeable? {
+            dir.mkdirs()
+            val handle = RandomAccessFile(File(dir, LOCK_FILE_NAME), "rw")
+            try {
+                val lock = try {
+                    handle.channel.tryLock()
+                } catch (_: OverlappingFileLockException) {
+                    null
+                }
+                if (lock == null) {
+                    handle.close()
+                    return null
+                }
+                return Closeable {
+                    try {
+                        lock.release()
+                    } finally {
+                        handle.close()
+                    }
+                }
+            } catch (e: Exception) {
+                handle.close()
+                throw e
+            }
+        }
     }
 }

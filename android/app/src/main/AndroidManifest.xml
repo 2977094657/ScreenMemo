@@ -152,6 +152,11 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
+        <service
             android:name=".mcp.McpServerService"
             android:exported="false"
             android:stopWithTask="false"

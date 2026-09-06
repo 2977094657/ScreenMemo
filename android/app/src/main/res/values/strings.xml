@@ -4,6 +4,9 @@
     <string name="app_name_en">Screen Memo</string>
     <string name="app_name_ja">スクリーンメモ</string>
     <string name="app_name_ko">스크린메모</string>
+    <string name="cloud_backup_channel_name">百度网盘备份</string>
+    <string name="cloud_backup_notification_title">正在备份到百度网盘</string>
+    <string name="cloud_backup_notification_text">正在打包并上传完整备份</string>
     <string name="accessibility_service_description">屏忆的核心功能依靠此服务。若不开启，将无法进行截屏。</string>
     <string name="foreground_service_title">屏幕截图服务运行中</string>
     <string name="foreground_service_content">点击返回应用</string>

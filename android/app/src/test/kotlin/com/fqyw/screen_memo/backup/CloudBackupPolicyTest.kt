@@ -16,7 +16,7 @@ class CloudBackupPolicyTest {
             CloudBackupPolicy.isDue(
                 enabled = false,
                 force = false,
-                lastSuccessAt = 0L,
+                lastRunAt = 0L,
                 nowMillis = now,
                 frequencyDays = 1,
             ),
@@ -25,7 +25,7 @@ class CloudBackupPolicyTest {
             CloudBackupPolicy.isDue(
                 enabled = false,
                 force = true,
-                lastSuccessAt = now,
+                lastRunAt = now,
                 nowMillis = now,
                 frequencyDays = 30,
             ),
@@ -34,7 +34,7 @@ class CloudBackupPolicyTest {
             CloudBackupPolicy.isDue(
                 enabled = true,
                 force = false,
-                lastSuccessAt = 0L,
+                lastRunAt = 0L,
                 nowMillis = now,
                 frequencyDays = 30,
             ),
@@ -43,7 +43,7 @@ class CloudBackupPolicyTest {
             CloudBackupPolicy.isDue(
                 enabled = true,
                 force = false,
-                lastSuccessAt = last,
+                lastRunAt = last,
                 nowMillis = now,
                 frequencyDays = 5,
             ),
@@ -52,7 +52,7 @@ class CloudBackupPolicyTest {
             CloudBackupPolicy.isDue(
                 enabled = true,
                 force = false,
-                lastSuccessAt = last,
+                lastRunAt = last,
                 nowMillis = now,
                 frequencyDays = 6,
             ),

@@ -2,6 +2,8 @@ package com.fqyw.screen_memo
 
 import com.fqyw.screen_memo.app.AppContextProvider
 import com.fqyw.screen_memo.backup.CloudBackupScheduler
+import com.fqyw.screen_memo.backup.CloudBackupProgressStore
+import com.fqyw.screen_memo.backup.NativeFullBackupBuilder
 import com.fqyw.screen_memo.daily.DailySummaryScheduler
 import com.fqyw.screen_memo.diagnostics.RuntimeDiagnostics
 import com.fqyw.screen_memo.dynamic.DynamicRebuildService
@@ -11,9 +13,12 @@ import com.fqyw.screen_memo.importing.ImportOcrRepairService
 import com.fqyw.screen_memo.logging.FileLogger
 import com.fqyw.screen_memo.logging.OutputFileLogger
 import com.fqyw.screen_memo.prefs.LegacyAppPrefsSanitizer
+import com.fqyw.screen_memo.settings.UserSettingsKeysNative
+import com.fqyw.screen_memo.settings.UserSettingsStorage
 
 import android.app.Application
 import android.content.Context
+import java.io.File
 import kotlin.system.exitProcess
 
 class ScreenMemoApplication : Application() {
@@ -43,6 +48,30 @@ class ScreenMemoApplication : Application() {
         FileLogger.init(this)
         try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
         RuntimeDiagnostics.logProcessStart(this, TAG, "application_onCreate", force = true)
+
+        try {
+            val backupDir = File(cacheDir, NativeFullBackupBuilder.TEMP_DIR_NAME)
+            NativeFullBackupBuilder.tryAcquireRunLock(backupDir)?.use {
+                if (!NativeFullBackupBuilder.cleanupTempArtifacts(backupDir)) {
+                    FileLogger.w(TAG, "遗留云备份缓存清理不完整")
+                }
+                val lastStatus = UserSettingsStorage.getString(
+                    this,
+                    UserSettingsKeysNative.CLOUD_BACKUP_LAST_STATUS,
+                    "",
+                ).orEmpty()
+                if (lastStatus == "running") {
+                    CloudBackupProgressStore.markInactive(this, "interrupted", 0, "process_restarted")
+                    UserSettingsStorage.putString(
+                        this,
+                        UserSettingsKeysNative.CLOUD_BACKUP_LAST_STATUS,
+                        "interrupted",
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "遗留云备份缓存清理失败：${e.message}")
+        }
 
         // 不再在 Application 级别缓存 FlutterEngine。
         // 前台采集服务会让进程长时间存活，复用同一个 Engine 会把上一次 Activity 的

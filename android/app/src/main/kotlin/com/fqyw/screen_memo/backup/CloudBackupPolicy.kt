@@ -15,15 +15,15 @@ object CloudBackupPolicy {
     fun isDue(
         enabled: Boolean,
         force: Boolean,
-        lastSuccessAt: Long,
+        lastRunAt: Long,
         nowMillis: Long,
         frequencyDays: Int,
     ): Boolean {
         if (force) return true
         if (!enabled) return false
-        if (lastSuccessAt <= 0L) return true
+        if (lastRunAt <= 0L) return true
         val days = frequencyDays.coerceAtLeast(1)
-        return nowMillis - lastSuccessAt >= days * DAY_MS
+        return nowMillis - lastRunAt >= days * DAY_MS
     }
 
     fun requiredNetworkType(allowMobileData: Boolean): NetworkType {

@@ -398,6 +398,9 @@ class LogExportService {
         try {
           encoder.close();
         } catch (_) {}
+        try {
+          if (await zipFile.exists()) await zipFile.delete();
+        } catch (_) {}
       }
     }
   }
@@ -757,6 +760,9 @@ class LogExportService {
         try {
           encoder.close();
         } catch (_) {}
+        try {
+          if (await zipFile.exists()) await zipFile.delete();
+        } catch (_) {}
       }
     }
   }
@@ -803,6 +809,9 @@ class LogExportService {
       if (!closed) {
         try {
           encoder.close();
+        } catch (_) {}
+        try {
+          if (await zipFile.exists()) await zipFile.delete();
         } catch (_) {}
       }
     }

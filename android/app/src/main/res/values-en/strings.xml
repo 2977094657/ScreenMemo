@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Screen Memo</string>
+    <string name="cloud_backup_channel_name">Baidu Netdisk backup</string>
+    <string name="cloud_backup_notification_title">Backing up to Baidu Netdisk</string>
+    <string name="cloud_backup_notification_text">Packaging and uploading a full backup</string>
     <string name="accessibility_service_description">ScreenMemo’s core features rely on this service. Without enabling it, screenshots cannot be captured.</string>
     <string name="fgs_special_use_subtype">Keep the accessibility screenshot service running in the background</string>
     <string name="notification_channel_name">Screen capture service</string>

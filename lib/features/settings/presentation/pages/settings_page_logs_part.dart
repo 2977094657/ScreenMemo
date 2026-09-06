@@ -77,12 +77,18 @@ extension _SettingsLogsPart on _SettingsPageState {
       final archive = entry == null
           ? await LogExportService.createZipForAll()
           : await LogExportService.createZipForBrowserEntry(entry);
-      if (!mounted) return;
-
-      final int zipBytes = await archive.length();
-      await Share.shareXFiles(<XFile>[
-        XFile(archive.path),
-      ], text: l10n.logShareText);
+      late final int zipBytes;
+      try {
+        if (!mounted) return;
+        zipBytes = await archive.length();
+        await Share.shareXFiles(<XFile>[
+          XFile(archive.path),
+        ], text: l10n.logShareText);
+      } finally {
+        try {
+          await archive.delete();
+        } catch (_) {}
+      }
 
       if (!mounted) return;
       UINotifier.success(
